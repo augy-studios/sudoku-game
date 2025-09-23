@@ -290,12 +290,23 @@ function renderGrid() {
                     score -= parseInt(localStorage.getItem('sudoku:wrong') || 100);
                     updateScores();
                 }
+                highlightSame(e.target.value);
             });
+            inp.addEventListener('focus', () => highlightSame(inp.value));
+            inp.addEventListener('click', () => highlightSame(inp.value));
             div.appendChild(inp);
             rowFrag.appendChild(div);
         }
         gridEl.appendChild(rowFrag);
     }
+}
+
+function highlightSame(value) {
+    const inputs = gridEl.querySelectorAll('input');
+    inputs.forEach(inp => {
+        if (value && inp.value === value) inp.classList.add('same');
+        else inp.classList.remove('same');
+    });
 }
 
 function isComplete() {

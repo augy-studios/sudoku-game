@@ -290,6 +290,13 @@ header {
   animation: flash .4s ease;
 }
 
+/* Same-number highlight */
+.cell input.same {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 100vmax rgba(153, 255, 153, .08);
+}
+
 @keyframes flash {
   from {
     box-shadow: inset 0 0 0 9999px rgba(22, 163, 74, .18);
