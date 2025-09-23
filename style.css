@@ -33,13 +33,406 @@
 
 :root {
   --brand: #99ff99;
-  --bg: #f7faf8;
-  --card: #ffffff;
-  --ink: #0f1721;
-  --muted: #667085;
-  --ring: rgba(153, 255, 153, 0.5);
+  --bg: #f7faf7;
+  --panel: #ffffff;
+  --text: #0f172a;
+  --muted: #5b6573;
+  --grid: #e6f5e6;
+  --cell-border: #cfe9cf;
+  --error: #e11d48;
   --ok: #16a34a;
-  --warn: #ea580c;
-  --busy: #b91c1c;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .08);
 }
 
+[data-theme="dark"] {
+  --bg: #0b0f0b;
+  --panel: #101610;
+  --text: #e5efe5;
+  --muted: #9fb3a1;
+  --grid: #0f140f;
+  --cell-border: #1e2a1e;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .5);
+}
+
+/* Auto mode follows system setting unless user explicitly picks light/dark */
+[data-theme="auto"] {
+  color-scheme: light dark;
+}
+
+/* When in auto and the OS is dark, flip the variables */
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    --bg: #0b0f0b;
+    --panel: #101610;
+    --text: #e5efe5;
+    --muted: #9fb3a1;
+    --grid: #0f140f;
+    --cell-border: #1e2a1e;
+    --shadow: 0 10px 30px rgba(0,0,0,.5);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(180deg, rgba(153, 255, 153, .35), rgba(153, 255, 153, 0));
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(0, 0, 0, .05);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  letter-spacing: .2px;
+}
+
+.brand .dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 6px rgba(153, 255, 153, .25), 0 0 18px rgba(153, 255, 153, .6);
+}
+
+.greeting {
+  cursor: pointer;
+  user-select: none;
+  font-weight: 600;
+}
+
+.greeting span.name {
+  color: #127a12;
+  padding-left: 4px;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.select,
+.button,
+.input,
+.switch {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid rgba(0, 0, 0, .08);
+  border-radius: 14px;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+}
+
+.select,
+.input {
+  padding-right: 36px;
+}
+
+.select:focus,
+.button:focus,
+.input:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.button {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .04s ease, box-shadow .2s ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, .12);
+}
+
+.button.primary {
+  background: linear-gradient(180deg, var(--brand), #56d356);
+  border: none;
+}
+
+.wrap {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 18px;
+  align-items: start;
+  margin-top: 14px;
+}
+
+@media (max-width: 980px) {
+  .wrap {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid rgba(0, 0, 0, .06);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+  padding: 16px;
+  position: relative;
+}
+
+.card h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+
+/* Sudoku Grid */
+.board {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 0;
+  border: 2px solid var(--brand);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--grid);
+}
+
+.cell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1/1;
+  border: 1px solid var(--cell-border);
+  display: grid;
+  place-items: center;
+}
+
+.cell:nth-child(3n+1) {
+  border-left-width: 2px;
+}
+
+.cell:nth-child(-n+9) {
+  border-top-width: 2px;
+}
+
+.cell:nth-child(9n) {
+  border-right-width: 2px;
+}
+
+.row-3 .cell,
+.row-6 .cell {
+  border-bottom-width: 2px;
+}
+
+.cell input {
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  font-size: clamp(18px, 3vw, 28px);
+  font-weight: 700;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  caret-color: var(--brand);
+}
+
+.cell input[readonly] {
+  color: #0a8c0a;
+}
+
+.cell input.error {
+  background: rgba(225, 29, 72, .1);
+}
+
+.cell input.correct {
+  background: rgba(22, 163, 74, .1);
+  animation: flash .4s ease;
+}
+
+@keyframes flash {
+  from {
+    box-shadow: inset 0 0 0 9999px rgba(22, 163, 74, .18);
+  }
+
+  to {
+    box-shadow: inset 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+
+.hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.hint-btn {
+  flex: 1 1 90px;
+  text-align: center;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.stat {
+  background: linear-gradient(180deg, rgba(153, 255, 153, .25), rgba(153, 255, 153, 0));
+  border: 1px dashed rgba(0, 0, 0, .08);
+  border-radius: 16px;
+  padding: 12px;
+  text-align: center;
+}
+
+.stat .label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stat .value {
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.kbd {
+  background: rgba(0, 0, 0, .06);
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.leaderboard table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.leaderboard th,
+.leaderboard td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, .08);
+  font-size: 14px;
+}
+
+.leaderboard th {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.badge {
+  display: inline-block;
+  background: var(--brand);
+  color: #0a3d0a;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 18px;
+}
+
+/* Switch */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.switch select {
+  border: none;
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Modal */
+dialog {
+  border: 0;
+  border-radius: 16px;
+  padding: 0;
+  box-shadow: var(--shadow);
+  background: var(--panel);
+  color: var(--text);
+  width: min(520px, 92vw);
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, .35);
+}
+
+.modal-head {
+  padding: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, .06);
+  font-weight: 700;
+}
+
+.modal-body {
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.modal-foot {
+  padding: 16px;
+  border-top: 1px solid rgba(0, 0, 0, .06);
+  text-align: right;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.field input {
+  background: var(--panel);
+  border: 1px solid rgba(0, 0, 0, .12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text);
+}

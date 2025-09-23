@@ -27,7 +27,8 @@
     <meta property="og:type" content="website">
     <meta property="og:title" content="Sudoku | UwU Apps" />
     <meta property="og:site_name" content="UwU Apps" />
-    <meta property="og:description" content="Your pocket Sudoku game! Play daily challenges, no ads, and global leaderboards!" />
+    <meta property="og:description"
+        content="Your pocket Sudoku game! Play daily challenges, no ads, and global leaderboards!" />
 
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Jua">
     <link rel="stylesheet" href="/style.css">
@@ -44,8 +45,117 @@
     <script defer="" src="https://use.fontawesome.com/releases/v6.5.2/js/all.js"></script>
 </head>
 
-<body>
-    Sudoku
+<body data-theme="light">
+    <header>
+        <div class="container topbar">
+            <div class="brand">
+                <div class="dot"></div> Sudoku — Premium
+            </div>
+            <div class="controls">
+                <div id="greeting" class="greeting" title="Click to set nickname">Good <span
+                        id="timeofday">Day</span><span class="name" id="username"></span>!</div>
+                <div class="switch" title="Theme">
+                    <span class="kbd">Theme</span>
+                    <select id="themePicker" class="select">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="auto">Auto</option>
+                    </select>
+                </div>
+                <button class="button" id="settingsBtn" title="Settings">⚙️ Settings</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container wrap">
+        <section class="card">
+            <div class="board">
+                <div class="controls" style="justify-content: space-between; margin-bottom: 12px;">
+                    <div class="controls" style="gap:8px;">
+                        <select id="difficulty" class="select" title="Difficulty">
+                            <option value="easy">Easy</option>
+                            <option value="medium">Medium</option>
+                            <option value="hard">Hard</option>
+                        </select>
+                        <button id="newGame" class="button primary">New Game</button>
+                        <button id="dailyBtn" class="button">Daily Challenge</button>
+                        <input id="dailyDate" class="input" type="date" title="Pick a date to play that day's daily" />
+                        <button id="loadDaily" class="button">Load Date</button>
+                    </div>
+                    <div class="controls" style="gap:8px;">
+                        <button id="checkBtn" class="button">Check</button>
+                        <button id="hintBtn" class="button">Hint</button>
+                        <button id="solveBtn" class="button">Solve</button>
+                        <button id="clearBtn" class="button">Clear</button>
+                    </div>
+                </div>
+                <div id="grid" class="grid" aria-label="Sudoku grid"></div>
+                <div class="hints">
+                    <div class="stat">
+                        <div class="label">Score</div>
+                        <div class="value" id="score">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="label">High Score</div>
+                        <div class="value" id="highscore">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="label">Time</div>
+                        <div class="value" id="timer">00:00</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="card leaderboard">
+            <h2>Daily Leaderboard <span class="badge" id="lbDate">—</span></h2>
+            <div class="controls" style="margin-bottom:8px;">
+                <button class="button" id="refreshLB">Refresh</button>
+                <button class="button" id="howToConnect">How to connect</button>
+            </div>
+            <div id="lbStatus" style="font-size:13px; color:var(--muted); margin-bottom:8px;">Not connected. Open
+                Settings to configure Supabase to enable global leaderboards.</div>
+            <div style="overflow:auto; max-height: 420px;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Nickname</th>
+                            <th>Score</th>
+                            <th>When</th>
+                        </tr>
+                    </thead>
+                    <tbody id="lbBody"></tbody>
+                </table>
+            </div>
+        </aside>
+    </main>
+
+    <footer class="footer">Built for static hosting (Vercel). Leaderboards use optional Supabase — configure in
+        Settings. Daily puzzles are deterministic by date.</footer>
+
+    <!-- Settings Modal -->
+    <dialog id="settingsModal">
+        <div class="modal-head">Settings</div>
+        <div class="modal-body">
+            <div class="field">
+                <label for="nickname">Nickname (used for greeting & leaderboards)</label>
+                <input id="nickname" type="text" placeholder="Your nickname" />
+            </div>
+            <div class="field">
+                <label for="correctPts">Points per correct entry</label>
+                <input id="correctPts" type="number" min="1" step="1" />
+            </div>
+            <div class="field">
+                <label for="wrongPts">Points deducted per wrong try</label>
+                <input id="wrongPts" type="number" step="1" />
+            </div>
+        </div>
+        <div class="modal-foot">
+            <button class="button" id="closeSettings">Close</button>
+            <button class="button primary" id="saveSettings">Save</button>
+        </div>
+    </dialog>
 
     <script src="/script.js"></script>
 </body>
