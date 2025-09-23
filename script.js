@@ -437,14 +437,17 @@ document.getElementById('hintBtn').addEventListener('click', () => {
     }
 });
 document.getElementById('solveBtn').addEventListener('click', () => {
-    // reveal all (no score)
     const inputs = gridEl.querySelectorAll('input');
-    for (let r = 0; r < 9; r++)
+    for (let r = 0; r < 9; r++) {
         for (let c = 0; c < 9; c++) {
             const idx = r * 9 + c;
-            inputs[idx].value = String(solution[r][c]);
+            const inp = inputs[idx];
+            inp.value = String(solution[r][c]);
+            inp.readOnly = true;  // lock everything since puzzle is solved
         }
+    }
     puzzle = clone2D(solution);
+    fixed = solution.map(row => row.map(() => true)); // mark all as fixed
     updateScores();
     stopTimer();
 });
