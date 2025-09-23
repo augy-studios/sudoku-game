@@ -19,7 +19,7 @@ function timeOfDay() {
 function updateGreeting() {
     document.getElementById('timeofday').textContent = timeOfDay();
     const name = localStorage.getItem('sudoku:nickname');
-    document.getElementById('username').textContent = name ? `, ${name}` : '';
+    document.getElementById('username').textContent = name ? `${name}` : '';
 }
 updateGreeting();
 const greetingEl = document.getElementById('greeting');
