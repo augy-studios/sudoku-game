@@ -49,10 +49,10 @@
     <header>
         <div class="container topbar">
             <div class="brand">
-                <div class="dot"></div> Sudoku — Premium
+                <div class="dot"></div> Sudoku | UwU Apps
             </div>
             <div class="controls">
-                <div id="greeting" class="greeting" title="Click to set nickname">Good <span
+                <div id="greeting" class="greeting" title="Click to set nickname">Good<span
                         id="timeofday">Day</span><span class="name" id="username"></span>!</div>
                 <div class="switch" title="Theme">
                     <span class="kbd">Theme</span>
@@ -62,7 +62,6 @@
                         <option value="auto">Auto</option>
                     </select>
                 </div>
-                <button class="button" id="settingsBtn" title="Settings">⚙️ Settings</button>
             </div>
         </div>
     </header>
@@ -111,10 +110,7 @@
             <h2>Daily Leaderboard <span class="badge" id="lbDate">—</span></h2>
             <div class="controls" style="margin-bottom:8px;">
                 <button class="button" id="refreshLB">Refresh</button>
-                <button class="button" id="howToConnect">How to connect</button>
             </div>
-            <div id="lbStatus" style="font-size:13px; color:var(--muted); margin-bottom:8px;">Not connected. Open
-                Settings to configure Supabase to enable global leaderboards.</div>
             <div style="overflow:auto; max-height: 420px;">
                 <table>
                     <thead>
@@ -131,8 +127,8 @@
         </aside>
     </main>
 
-    <footer class="footer">Built for static hosting (Vercel). Leaderboards use optional Supabase — configure in
-        Settings. Daily puzzles are deterministic by date.</footer>
+    <footer class="footer">Made with ❤️ by Augy. <a href="https://donate.stripe.com/28o2akeAr3hv0DK6oo"
+            target="_blank">Buy me a coffee!</a></footer>
 
     <!-- Settings Modal -->
     <dialog id="settingsModal">
