@@ -34,12 +34,9 @@ greetingEl.addEventListener('click', () => {
 
 // ---------- Settings Modal ----------
 const settingsModal = document.getElementById('settingsModal');
-const howtoModal = document.getElementById('howtoModal');
 const settingsBtn = document.getElementById('settingsBtn');
 const closeSettings = document.getElementById('closeSettings');
 const saveSettings = document.getElementById('saveSettings');
-const closeHowto = document.getElementById('closeHowto');
-document.getElementById('closeHowto').addEventListener('click', () => howtoModal.close());
 
 settingsBtn.addEventListener('click', () => {
     document.getElementById('nickname').value = localStorage.getItem('sudoku:nickname') || '';
@@ -489,17 +486,17 @@ function maybePromptNickname() {
 
 // ---------- Leaderboard (via serverless API) ----------
 function updateLBStatus() {
-    // Always “connected” in API mode; serverless function holds secrets
-    document.getElementById('lbStatus').textContent =
-        'Using API backend (serverless).';
+    const el = document.getElementById('lbStatus');
+    if (el) {
+        el.textContent = 'API Connected';
+    }
 }
 
 async function submitDailyScore() {
-    // Called after completing a daily
     const nickname = localStorage.getItem('sudoku:nickname') || 'Anonymous';
-    if (!currentDailyDateStr) return; // should be set by startDaily
+    if (!currentDailyDateStr) return;
     try {
-        const r = await fetch('/api/leaderboard', {
+        const r = await fetch('/api/leaderboard', { // <-- remove .js
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
