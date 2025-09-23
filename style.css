@@ -253,9 +253,9 @@ header {
   border-right-width: 2px;
 }
 
-.row-3 .cell,
-.row-6 .cell {
-  border-bottom-width: 2px;
+.grid > :nth-child(27n + 1),
+.grid > :nth-child(54n + 1) {
+  border-top-width: 2px;
 }
 
 .cell input {

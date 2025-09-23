@@ -295,12 +295,6 @@ function renderGrid() {
             rowFrag.appendChild(div);
         }
         gridEl.appendChild(rowFrag);
-        if (r === 2 || r === 5) {
-            const br = document.createElement('div');
-            br.className = 'row-' + (r + 1);
-            br.style.height = '0';
-            gridEl.appendChild(br);
-        }
     }
 }
 
