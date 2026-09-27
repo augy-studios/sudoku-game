@@ -6,5 +6,22 @@
     "rewrites": [{
         "source": "/",
         "destination": "/"
+    }],
+    "functions": {
+        "api/game/start.js": {
+            "includeFiles": "js/{levels,seed,sudoku}.js"
+        },
+        "api/game/finish.js": {
+            "maxDuration": 30,
+            "includeFiles": "js/{levels,seed,sudoku,record,score}.js"
+        },
+        "api/game/submit.js": {
+            "maxDuration": 30,
+            "includeFiles": "js/{levels,seed,sudoku,record,score}.js"
+        }
+    },
+    "headers": [{
+        "source": "/sw.js",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }]
 }

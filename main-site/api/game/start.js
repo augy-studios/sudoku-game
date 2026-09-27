@@ -1,0 +1,74 @@
+// POST /api/game/start
+//   { client_key, mode, level?, seed?, max_hints?, date? }
+//   -> { game_id, seed, server_seed, created_at, date }
+// The start ticket. A game can only go on the leaderboard if it began here,
+// which is what gives it a start time no browser can move. Games started
+// offline play the same; they just have no ticket.
+//
+// mode is "solo", "daily" or "race" (a network race's host; the guest plays
+// the other side of the same ticket). With no seed, the server picks one at
+// `level`, and only those games earn the time bonuses: a seed the player
+// chose could have been solved beforehand. A daily's seed is the day's, from
+// a secret. max_hints is 0 to 81, or null for no limit.
+
+import { endpoint, HttpError, clientKey, limit } from "../_lib/http.js";
+import { rest, rpc } from "../_lib/supabase.js";
+import { dailyConfigured, dailyDate, dailySeed } from "../_lib/daily.js";
+import { LEVEL_IDS } from "../../js/levels.js";
+import { newSeed, parseSeed } from "../../js/seed.js";
+
+export default endpoint("POST", async ({ req, body }) => {
+  const key = clientKey(body.client_key);
+  const mode = body.mode;
+  if (!["solo", "daily", "race"].includes(mode)) throw new HttpError(400, "bad_mode");
+
+  const maxHints = body.max_hints ?? null;
+  if (maxHints !== null && !(Number.isInteger(maxHints) && maxHints >= 0 && maxHints <= 81)) {
+    throw new HttpError(400, "bad_max_hints");
+  }
+
+  await limit(req, "start", 600, 60);
+
+  let seed;
+  let serverSeed;
+  let date = null;
+  if (mode === "daily") {
+    if (!dailyConfigured()) throw new HttpError(503, "no_daily", "The daily puzzle is not set up yet.");
+    date = dailyDate(body.date);
+    seed = dailySeed(date);
+    // A second ticket for the same day from the same browser could follow a
+    // first look at the puzzle, so it plays without the time bonuses.
+    const seen = await rest(
+      `sudoku_games?select=id&mode=eq.daily&daily_date=eq.${date}&host_key=eq.${encodeURIComponent(key)}&limit=1`
+    );
+    serverSeed = !seen?.length;
+  } else if (body.seed == null) {
+    const level = body.level ?? "M";
+    if (!LEVEL_IDS.includes(level)) throw new HttpError(400, "bad_level");
+    seed = newSeed(level);
+    serverSeed = true;
+  } else {
+    seed = parseSeed(body.seed);
+    if (!seed) throw new HttpError(400, "bad_seed");
+    serverSeed = false;
+  }
+
+  const [row] = await rest("sudoku_games?select=id,created_at", {
+    method: "POST",
+    prefer: "return=representation",
+    body: {
+      mode,
+      seed: seed.text,
+      level: seed.level,
+      daily_date: date,
+      server_seed: serverSeed,
+      max_hints: maxHints,
+      host_key: key,
+    },
+  });
+
+  // Now and then, clear out what nobody will submit.
+  if (Math.random() < 0.02) rpc("sudoku_prune", {}).catch(() => {});
+
+  return { game_id: row.id, seed: seed.text, server_seed: serverSeed, created_at: row.created_at, date };
+});
