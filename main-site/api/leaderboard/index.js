@@ -1,11 +1,17 @@
-// GET /api/leaderboard?board=best|total|daily[&date=YYYY-MM-DD]
+// GET /api/leaderboard?board=best|total|daily|made[&date=YYYY-MM-DD][&seed=...][&q=...]
 //   best  (default) -> { board, entries: [{ rank, name, score, mode, level, elapsed_ms }] }
 //   total           -> { board, entries: [{ rank, name, total, games }] }
 //   daily           -> { board, date, entries: [{ rank, name, score, elapsed_ms, mistakes, hints }] }
+//   made, seed      -> { board, seed, entries: [{ rank, name, score, elapsed_ms, mistakes, hints }] },
+//                      one made puzzle's own board
+//   made            -> { board, q, puzzles: [{ seed, level, players, top_score }] },
+//                      made puzzles with a board, most played first, those
+//                      whose seed holds q if there is one
 // Public, no login, one row per name, cached briefly at the edge.
 
 import { endpoint, HttpError } from "../_lib/http.js";
 import { rest } from "../_lib/supabase.js";
+import { parseSeed } from "../../js/seed.js";
 
 const LIMIT = 100;
 
@@ -19,6 +25,12 @@ const BOARDS = {
     query: () => `sudoku_leaderboard_total?select=name,total,games&order=total.desc,games.asc,last_at.asc&limit=${LIMIT}`,
     row: (r) => ({ name: r.name, total: Number(r.total), games: r.games }),
   },
+  made: {
+    query: (seed) =>
+      `sudoku_leaderboard_made?select=name,score,elapsed_ms,mistakes,hints&seed=eq.${encodeURIComponent(seed)}` +
+      `&order=score.desc,created_at.asc&limit=${LIMIT}`,
+    row: (r) => ({ name: r.name, score: r.score, elapsed_ms: r.elapsed_ms, mistakes: r.mistakes, hints: r.hints }),
+  },
   daily: {
     query: (date) =>
       `sudoku_leaderboard_daily?select=name,score,elapsed_ms,mistakes,hints&daily_date=eq.${date}` +
@@ -27,15 +39,39 @@ const BOARDS = {
   },
 };
 
+// A search: letters and digits only, as a seed's are, dashes aside.
+const searchKey = (q) => String(q ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 80);
+
+async function madePuzzles(q) {
+  const key = searchKey(q);
+  const rows = await rest(
+    `sudoku_made_puzzles?select=seed,level,players,top_score` +
+      (key ? `&seed_key=like.*${key}*` : "") +
+      `&order=players.desc,last_at.desc&limit=${LIMIT}`
+  );
+  return (rows ?? []).map((r) => ({ seed: r.seed, level: r.level, players: r.players, top_score: r.top_score }));
+}
+
 export default endpoint("GET", async ({ req, res }) => {
   const board = req.query?.board ?? "best";
   const spec = BOARDS[board];
-  if (!spec) throw new HttpError(400, "bad_board", "board is best, total or daily.");
+  if (!spec) throw new HttpError(400, "bad_board", "board is best, total, daily or made.");
+  if (board === "made" && req.query?.seed == null) {
+    const puzzles = await madePuzzles(req.query?.q);
+    res.setHeader("Cache-Control", "public, max-age=0, s-maxage=30, stale-while-revalidate=60");
+    return { board, q: searchKey(req.query?.q), puzzles };
+  }
+  let seed = null;
+  if (board === "made") {
+    seed = parseSeed(req.query.seed);
+    if (!seed?.made) throw new HttpError(400, "bad_seed", "That is not a made puzzle's seed.");
+  }
   const date = String(req.query?.date ?? "");
   if (board === "daily" && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, "bad_date");
 
-  const rows = await rest(spec.query(date));
+  const rows = await rest(spec.query(board === "made" ? seed.text : date));
   res.setHeader("Cache-Control", "public, max-age=0, s-maxage=30, stale-while-revalidate=60");
   const entries = (rows ?? []).map((r, i) => ({ rank: i + 1, ...spec.row(r) }));
+  if (board === "made") return { board, seed: seed.text, entries };
   return board === "daily" ? { board, date, entries } : { board, entries };
 });

@@ -61,6 +61,23 @@ wrong digits, the candidates can be shown, and Solve fills the rest. Kept
 in this browser, never scored, and nothing is sent. Save image downloads the
 clues as a PNG.
 
+**Create.** The fifth tab makes a puzzle. The clues go in as in the solver,
+and Check it says whether they have exactly one answer: when there are more,
+it points at a cell two answers disagree on, where a clue is wanted. A
+puzzle that passes is rated (by its blanks, and at least Hard if singles
+alone cannot finish it) and gets a seed that carries the whole puzzle, to
+copy, play, or save as an image with the clues.
+
+**Made puzzles.** Their seeds, like `H-FYWQ-75KD-...`, are the puzzle
+packed into one number: which cells hold clues as 81 bits, and the clues in
+base 9 above them, written in the seed alphabet, never under 12 characters
+so never taken for a generated seed. One only parses if its puzzle has
+exactly one answer. It plays like any seed, pasted into the new-game Seed
+box, which also takes a copied puzzle. Its maker knows the answer, so a
+made puzzle never goes on the main boards: played solo it goes on a board of
+its own (mode `made`, from migration 002), without time bonuses, and in a
+network game it is not scored.
+
 **Copy puzzle.** On every game, its result and the solver: the puzzle's clues
 as 81 characters with . for blanks, which the solver's Paste and most sudoku
 apps read.
@@ -79,7 +96,8 @@ be told apart at a glance in every theme.
 **Seeds.** A seed looks like `H-BXK4-M9TR`, the letter being the level. The
 same seed is always the same puzzle. It shows during play and at the end,
 where it can be copied; paste one into the new-game screen to play that
-puzzle again, and its level comes with it.
+puzzle again, and its level comes with it. A made puzzle's longer seed
+shows as Copy seed instead.
 
 **Undo.** Unlimited, in every mode. It takes back your last move that still
 stands, including a hint. In co-op it only ever takes back your own moves.
@@ -90,8 +108,9 @@ digit and placing it again does not earn it twice.
 game: none, 1, 3, 5, all, or any number from 0 to 81. Each hint past the free
 ones costs points, and a hinted cell never earns its own. A hint fills the
 selected cell if it needs it, or else the first empty one. The number of free
-hints is part of the start ticket, and the API scores with it. **Solve** fills the board and ends the game; a game
-finished with Solve is never ranked.
+hints is part of the start ticket, and the API scores with it. **Solve**
+fills the board and ends the game; a game finished with Solve is never
+ranked.
 
 **Replay.** When a game ends it plays back on the board by itself (a setting
 turns this off), with play, pause, a step back or forward, a slider and the
@@ -100,10 +119,12 @@ hints, so a player can see where it went wrong. It plays at 0.5x, 1x, 2x or
 4x, remembered in this browser.
 
 **Sharing a replay.** Share replay, on any finished game, makes a link such
-as `/?watch=AGUBRgFnA...&seed=E-2345-6789&game=s`, through the device's share
-sheet where it has one and the clipboard otherwise. The link is the whole
-game: the seed and every move, two bytes each (kind, player, cell, digit).
-Nothing is stored anywhere, and a link opens offline once the site has been
+as `/?r=sE23456789.R_FysATRHlpv...`, through the device's share sheet where
+it has one and the clipboard otherwise. The link is the whole game: the
+kind of game, the seed without dashes, and every move packed into one
+number (record.js): a right digit is only its cell, since the reader has the
+answer too. About 40% shorter than the first links,
+`/?watch=...&seed=...&game=...`, which still play. Nothing is stored anywhere, and a link opens offline once the site has been
 visited. Opening one plays the replay without touching the viewer's own
 saved game; Close replay goes back to it, and Play this seed fills in the
 new-game screen. A shared replay shows no score, since a link can be edited
@@ -133,7 +154,9 @@ beforehand, so it scores everything else.
 
 Three boards: each name's best game, each name's total, and today's daily.
 Solo games, dailies and both sides of a race count. Co-op games and games
-finished with Solve do not. A game counts only if it started while online:
+finished with Solve do not. Made puzzles have a board each instead, under
+Puzzles, where they are listed most played first and found by searching
+their seeds; pasting a whole seed opens its board, which can also play it. A game counts only if it started while online:
 starting asks `/api/game/start` for a ticket, whose time comes from the
 server. Games started offline play the same, and say they are not scored.
 

@@ -4,7 +4,7 @@
 // in sudoku.js. A set of candidates is a mask with digits as bits 1 to 9,
 // the same as a cell's notes, so the board can draw one as the other.
 
-import { ROW, COL, BOX, PEERS } from "./sudoku.js";
+import { ROW, COL, BOX, PEERS, countSolutions, findSolutions } from "./sudoku.js";
 
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
@@ -99,4 +99,34 @@ export function nextStep(grid, prefer = null) {
     first ??= step;
   }
   return first;
+}
+
+// Fewer clues than this never has one answer.
+export const MIN_CLUES = 17;
+
+// Whether typed-in clues make a proper puzzle, with one answer:
+// { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
+// "few" (and n, the clues there are), "none", or "many" (and c, a cell two
+// of the answers disagree on, and the two digits they put there).
+export function checkClues(clues) {
+  const n = clues.filter(Boolean).length;
+  if (!n) return { ok: false, why: "empty" };
+  if (clashes(clues).size) return { ok: false, why: "clash" };
+  if (n < MIN_CLUES) return { ok: false, why: "few", n };
+  if (countSolutions(clues, 2) === 0) return { ok: false, why: "none" };
+  const [a, b] = findSolutions(clues, 2);
+  if (!b) return { ok: true, solution: a };
+  const c = a.findIndex((d, i) => d !== b[i]);
+  return { ok: false, why: "many", c, digits: [a[c], b[c]].sort((x, y) => x - y) };
+}
+
+// A made puzzle's level, roughly: how many blanks it leaves, against the
+// levels' own 40, 48, 52 and up to 64, and at least Hard if singles alone
+// cannot finish it. Takes a puzzle with one answer.
+export function rateLevel(clues) {
+  const grid = clues.slice();
+  for (let step = nextStep(grid); step; step = nextStep(grid)) grid[step.c] = step.d;
+  const blanks = clues.filter((d) => !d).length;
+  if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
+  return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

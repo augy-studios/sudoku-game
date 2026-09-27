@@ -8,10 +8,10 @@
 
 import assert from "node:assert/strict";
 import { LEVEL_IDS } from "../main-site/js/levels.js";
-import { newSeed, parseSeed, puzzleFor } from "../main-site/js/seed.js";
+import { newSeed, parseSeed, puzzleFor, madeSeed } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
-import { play, packLog, unpackLog, fromWire, toWire, logText } from "../main-site/js/record.js";
-import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount } from "../main-site/js/steps.js";
+import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
+import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
 
 let passed = 0;
@@ -138,6 +138,20 @@ test("replay links and wire logs round-trip", () => {
   assert.match(logText(log), /^n\d+\.4\.10 p/);
 });
 
+test("short replay links round-trip, at under 60% of the length", () => {
+  const strip = (log) => log.map(({ k, c, d, b }) => [k, c, d, b]);
+  const wrong = (solution[blanks[2]] % 9) + 1;
+  const log = [a("n", blanks[1], 4, 10), a("p", blanks[2], wrong, 20), a("e", blanks[2], 0, 30), a("h", blanks[3], 0, 40), a("u", 0, 0, 50), ...solveLog()];
+  const packed = packReplay(log, solution);
+  assert.deepEqual(strip(unpackReplay(packed, puzzle, solution)), strip(log));
+  assert.ok(packed.length < packLog(log).length * 0.6, `${packed.length} against ${packLog(log).length}`);
+  const coop = [a("n", blanks[1], 4, 10, 1), ...solveLog()].map((x, i) => ({ ...x, b: i % 2 }));
+  assert.deepEqual(strip(unpackReplay(packReplay(coop, solution, 2), puzzle, solution, 2)), strip(coop), "co-op keeps its players");
+  assert.deepEqual(unpackReplay(packReplay([], solution), puzzle, solution), [], "an empty game");
+  assert.equal(unpackReplay("!!", puzzle, solution), null);
+  assert.equal(unpackReplay(packed.slice(0, -3), puzzle, solution), null, "a cut link");
+});
+
 test("scores scale with level, pace and time", () => {
   assert.equal(turnBonus(1000), 50);
   assert.equal(turnBonus(30000), 0);
@@ -181,6 +195,46 @@ test("the solver reads pasted grids", () => {
   const grid = parseGrid(text);
   assert.equal(puzzleText(grid), text.replace(/0/g, "."), "a copied puzzle uses . for blanks");
   assert.deepEqual(parseGrid(puzzleText(grid)), grid, "and pastes back the same");
+});
+
+test("made puzzles' seeds carry the puzzle", () => {
+  for (const level of LEVEL_IDS) {
+    for (let i = 0; i < 10; i++) {
+      const { puzzle, solution } = puzzleFor(newSeed(level));
+      const seed = madeSeed(rateLevel(puzzle), puzzle);
+      assert.ok(seed.body.length > 8, "never mistaken for a generated seed");
+      const back = parseSeed(seed.text.toLowerCase().replace(/-/g, " "));
+      assert.equal(back.text, seed.text);
+      assert.equal(back.made, true);
+      assert.deepEqual(puzzleFor(back).puzzle, puzzle);
+      assert.deepEqual(puzzleFor(back).solution, solution);
+    }
+  }
+  assert.equal(parseSeed("H-BXK4-M9TR").made, undefined, "generated seeds are as they were");
+  const { puzzle } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const loose = puzzle.slice();
+  loose[loose.findIndex(Boolean)] = 0;
+  assert.equal(parseSeed(madeSeed("M", loose).text), null, "a puzzle with two answers is no seed");
+  assert.equal(parseSeed("M-BBBB-BBBB-BBBB"), null, "nor is an empty grid");
+});
+
+test("clues are checked for exactly one answer", () => {
+  const { puzzle } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  assert.equal(checkClues(puzzle).ok, true);
+  assert.equal(checkClues(new Array(81).fill(0)).why, "empty");
+  const clash = puzzle.slice();
+  const i = clash.findIndex((d) => !d);
+  clash[i] = clash[PEERS[i].find((o) => clash[o])];
+  assert.equal(checkClues(clash).why, "clash");
+  const few = new Array(81).fill(0);
+  few[0] = 1;
+  assert.deepEqual(checkClues(few), { ok: false, why: "few", n: 1 });
+  const loose = puzzle.slice();
+  loose[loose.findIndex(Boolean)] = 0;
+  const many = checkClues(loose);
+  assert.equal(many.why, "many");
+  assert.equal(loose[many.c], 0, "the cell pointed at is empty");
+  assert.notEqual(many.digits[0], many.digits[1]);
 });
 
 test("the solver finds clashes and candidates", () => {

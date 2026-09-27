@@ -1,22 +1,30 @@
-// The solver: a puzzle from a book, a newspaper or another app, typed in,
-// and help finishing it. Two stages. First the clues go in, and the
-// engine's own solver checks they have exactly one answer; then the person
-// solves it here, with hints that say why, a check of their digits, the
-// candidates, and the whole answer if they want it. Nothing is scored, and
-// nothing leaves the browser.
+// The solver and the puzzle maker, which share one screen: a board to type
+// a puzzle into, row by row or pasted in, checked with the engine's own
+// solver for exactly one answer.
+//
+// The solver is for a puzzle from a book, a newspaper or another app. Once
+// its clues check out, the person solves it here, with hints that say why,
+// a check of their digits, the candidates, and the whole answer if they
+// want it.
+//
+// The maker is for a puzzle of the person's own. Once it checks out, it has
+// a seed that carries the whole puzzle, to share, play, copy or save as an
+// image.
+//
+// Nothing here is scored or leaves the browser, until a made puzzle is
+// played as a game.
 
-import { solve, countSolutions, ROW, COL } from "./sudoku.js";
-import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText } from "./steps.js";
+import { ROW, COL } from "./sudoku.js";
+import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
+import { madeSeed } from "./seed.js";
+import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
-import { showPanel, renderSetup } from "./game.js";
-import { store, copyText } from "./ui.js";
+import { showPanel, renderSetup, launch } from "./game.js";
+import { store, copyText, hydrateIcons } from "./ui.js";
 import { confetti } from "./confetti.js";
 import { savePuzzleImage } from "./image.js";
 
-const STORAGE = "uwusudoku.solver";
-// Fewer clues than this never has one answer.
-const MIN_CLUES = 17;
 const BOX_NAMES = ["top left", "top middle", "top right", "middle left", "centre", "middle right", "bottom left", "bottom middle", "bottom right"];
 
 const $ = (id) => document.getElementById(id);
@@ -24,10 +32,17 @@ const empty = () => new Array(81).fill(0);
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 let board = null;
-// stage is "enter" while the clues go in, and "solve" once they have one
-// answer. Kept in this browser, so a reload comes back to the same puzzle.
-const s = { open: false, stage: "enter", clues: empty(), values: empty(), candidates: false };
-let solution = null; // the answer, in the solve stage
+
+// One of these for the solver and one for the maker, each kept in this
+// browser so a reload comes back to the same puzzle. stage is "enter" while
+// the clues go in; then "solve" in the solver, or "made" in the maker.
+const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false });
+const states = { solver: fresh(), create: fresh() };
+let mode = "solver";
+let s = states.solver;
+
+let solution = null; // the answer, from the solve or made stage on
+let made = null; // the made puzzle's seed, in the made stage
 let history = []; // earlier grids of this stage, for undo
 let selected = null;
 let padDigit = 0;
@@ -37,29 +52,46 @@ let mark = null; // the cell a hint just filled
 let note = ""; // says what just happened, until the next change
 let editTimer = null;
 
+const creating = () => mode === "create";
 // The grid this stage edits.
-const grid = () => (s.stage === "enter" ? s.clues : s.values);
+const grid = () => (s.stage === "solve" ? s.values : s.clues);
+const goLabel = () => (creating() ? "Check it" : "Help me solve it");
 
 /* ---- keeping it ---- */
 
+const storageKey = (which) => `uwusudoku.${which}`;
+
 function save() {
-  store.set(STORAGE, s);
+  store.set(storageKey(mode), s);
 }
 
-function load() {
-  const saved = store.getJSON(STORAGE);
+// Also works out the answer, and the made seed, for a stage past "enter".
+function settle() {
+  solution = null;
+  made = null;
+  if (s.stage === "enter") return;
+  const check = checkClues(s.clues);
+  if (!check.ok) {
+    s.stage = "enter";
+    return;
+  }
+  solution = check.solution;
+  if (s.stage === "made") made = madeSeed(rateLevel(s.clues), s.clues);
+}
+
+function load(which) {
+  const saved = store.getJSON(storageKey(which));
   const ok = (a) => Array.isArray(a) && a.length === 81 && a.every((d) => Number.isInteger(d) && d >= 0 && d <= 9);
   if (!saved || !ok(saved.clues)) return;
-  s.clues = saved.clues;
-  s.open = saved.open === true;
-  s.candidates = saved.candidates === true;
-  if (saved.stage !== "solve" || !ok(saved.values)) return;
-  const answer = countSolutions(s.clues) === 1 ? solve(s.clues) : null;
-  if (answer && s.clues.every((d, c) => !d || saved.values[c] === d)) {
-    s.stage = "solve";
-    s.values = saved.values;
-    solution = answer;
+  const st = states[which];
+  st.clues = saved.clues;
+  st.open = saved.open === true;
+  st.candidates = saved.candidates === true;
+  if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
+    st.stage = "solve";
+    st.values = saved.values;
   }
+  if (which === "create" && saved.stage === "made") st.stage = "made";
 }
 
 /* ---- words ---- */
@@ -80,6 +112,26 @@ function hintText(step, reveal) {
   return `${d} goes in ${where(c)}. That takes more than one step to see, so it comes from the answer.`;
 }
 
+// Why clues are not a puzzle yet, from checkClues. A solver's clues were
+// copied from somewhere, so the fault is likely a typo; a maker's are their
+// own, so the way on is to change them.
+function problemText(check) {
+  const { why } = check;
+  if (why === "empty") return creating() ? "Put some clues in first." : "Type in the puzzle's digits first.";
+  if (why === "clash") return "The red digits clash: the same digit twice in a row, column or box. Fix them first.";
+  if (why === "few") {
+    return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
+  }
+  if (why === "none") {
+    return creating()
+      ? "These clues have no answer: no digit repeats, but they cannot all be right together. Change or take out a clue, then check again."
+      : "This puzzle has no answer, so a digit is probably mistyped. Check it against the original.";
+  }
+  const [a, b] = check.digits;
+  const either = `It has more than one answer: ${where(check.c)} could be ${a} or ${b}, for one.`;
+  return creating() ? `${either} Add a clue there or nearby, then check again.` : `${either} A clue is probably missing or wrong; check it against the original.`;
+}
+
 /* ---- state ---- */
 
 function isSolved() {
@@ -87,7 +139,7 @@ function isSolved() {
 }
 
 function canEdit() {
-  return s.stage === "enter" || !isSolved();
+  return s.stage === "enter" || (s.stage === "solve" && !isSolved());
 }
 
 // Digits the person put in that are not the answer's.
@@ -101,8 +153,8 @@ function wrongCells() {
 // Puts a new grid in this stage, undoably.
 function change(next) {
   history.push(grid().slice());
-  if (s.stage === "enter") s.clues = next;
-  else s.values = next;
+  if (s.stage === "solve") s.values = next;
+  else s.clues = next;
   checked = false;
   pending = null;
   mark = null;
@@ -113,6 +165,17 @@ function change(next) {
 function say(text) {
   note = text;
   render();
+}
+
+// Forgets everything about the stage before.
+function resetStage() {
+  history = [];
+  selected = null;
+  padDigit = 0;
+  checked = false;
+  pending = null;
+  mark = null;
+  note = "";
 }
 
 /* ---- actions ---- */
@@ -191,8 +254,8 @@ function erase() {
 
 function undo() {
   if (!history.length) return;
-  if (s.stage === "enter") s.clues = history.pop();
-  else s.values = history.pop();
+  if (s.stage === "solve") s.values = history.pop();
+  else s.clues = history.pop();
   checked = false;
   pending = null;
   mark = null;
@@ -214,15 +277,24 @@ function pasteText(text) {
   if (!next) return say("That paste is not a puzzle. It needs 81 cells in reading order: digits for clues, and 0 or . for blanks.");
   change(next);
   selected = null;
-  say(`Pasted ${plural(next.filter(Boolean).length, "clue")}. Check them against the original, then tap Help me solve it.`);
+  say(`Pasted ${plural(next.filter(Boolean).length, "clue")}. Check them over, then tap ${goLabel()}.`);
+}
+
+// A label that says how a copy or save went, then goes back.
+function flash(id, text, back) {
+  $(id).textContent = text;
+  setTimeout(() => ($(id).textContent = back), 1500);
 }
 
 // The clues, in the same form Paste takes.
 async function onCopy() {
   if (!s.clues.some(Boolean)) return;
-  const ok = await copyText(puzzleText(s.clues));
-  $("solverCopyLabel").textContent = ok ? "Copied" : "Copy failed";
-  setTimeout(() => ($("solverCopyLabel").textContent = "Copy puzzle"), 1500);
+  flash("solverCopyLabel", (await copyText(puzzleText(s.clues))) ? "Copied" : "Copy failed", "Copy puzzle");
+}
+
+async function onSeedCopy() {
+  if (!made) return;
+  flash("solverSeedCopyLabel", (await copyText(made.text)) ? "Copied" : "Copy failed", "Copy seed");
 }
 
 // The clues as a PNG, to print or send.
@@ -234,8 +306,7 @@ async function onImage() {
   } catch {
     ok = false;
   }
-  $("solverImageLabel").textContent = ok ? "Saved" : "Save failed";
-  setTimeout(() => ($("solverImageLabel").textContent = "Save image"), 1500);
+  flash("solverImageLabel", ok ? "Saved" : "Save failed", "Save image");
 }
 
 async function onPasteBtn() {
@@ -246,26 +317,40 @@ async function onPasteBtn() {
   }
 }
 
-// From typing the clues to solving: only a puzzle with one answer.
+// Only clues with exactly one answer go on: to solving, in the solver, or
+// to sharing, in the maker.
 function onGo() {
-  const n = s.clues.filter(Boolean).length;
-  if (!n) return say("Type in the puzzle's digits first.");
-  if (clashes(s.clues).size) return say("The red digits clash: the same digit twice in a row, column or box. Fix them first.");
-  if (n < MIN_CLUES) return say(`A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${n}. Check for missing ones.`);
-  const count = countSolutions(s.clues, 2);
-  if (count === 0) return say("This puzzle has no answer, so a digit is probably mistyped. Check it against the original.");
-  if (count > 1) return say("This puzzle has more than one answer, so a clue is probably missing or wrong. Check it against the original.");
-  solution = solve(s.clues);
+  const check = checkClues(s.clues);
+  if (!check.ok) {
+    // Where two answers part, so the person can see where a clue is wanted.
+    if (check.why === "many") selected = check.c;
+    return say(problemText(check));
+  }
+  resetStage();
+  solution = check.solution;
+  if (creating()) {
+    s.stage = "made";
+    made = madeSeed(rateLevel(s.clues), s.clues);
+    save();
+    return say(`It has exactly one answer, so it is a proper puzzle. ${madeSummary()}`);
+  }
   s.stage = "solve";
   s.values = s.clues.slice();
-  history = [];
-  selected = null;
-  padDigit = 0;
-  checked = false;
-  pending = null;
-  mark = null;
   save();
   say("It has one answer. Fill it in here, and tap Hint whenever you are stuck.");
+}
+
+function madeSummary() {
+  return `Rated ${LEVELS[made.level].name}, with ${plural(s.clues.filter(Boolean).length, "clue")}. Share the seed, copy the puzzle or save it as an image.`;
+}
+
+// A made puzzle, played as a game. It scores only on its own board: its
+// maker knows the answer.
+function onPlay() {
+  if (!made) return;
+  s.open = false;
+  save();
+  launch({ mode: "solo", seed: made, maxHints: null });
 }
 
 function disarmEdit() {
@@ -277,7 +362,7 @@ function disarmEdit() {
 
 // Back to the clues. Digits already filled in ask for a second tap.
 function onEdit() {
-  const progress = s.values.some((d, c) => d && !s.clues[c]);
+  const progress = s.stage === "solve" && s.values.some((d, c) => d && !s.clues[c]);
   if (progress && !editTimer) {
     $("solverEdit").classList.add("armed");
     $("solverEditLabel").textContent = "Tap again: your digits go";
@@ -288,12 +373,10 @@ function onEdit() {
   s.stage = "enter";
   s.values = empty();
   solution = null;
-  history = [];
-  checked = false;
-  pending = null;
-  mark = null;
+  made = null;
+  resetStage();
   save();
-  say("Change the clues, then tap Help me solve it again.");
+  say(`Change the clues, then tap ${goLabel()} again.`);
 }
 
 function onCheck() {
@@ -360,20 +443,38 @@ function toggleCandidates() {
 /* ---- drawing ---- */
 
 function defaultStatus() {
+  const n = s.clues.filter(Boolean).length;
   if (s.stage === "enter") {
-    const n = s.clues.filter(Boolean).length;
     if (clashes(s.clues).size) return "The red digits clash: the same digit twice in a row, column or box.";
+    if (creating()) {
+      if (!n) return "Type your clues in, row by row, 0 or . for a blank. Check it tells you whether it has exactly one answer.";
+      return `${plural(n, "clue")} so far. Tap Check it to see whether it has exactly one answer.`;
+    }
     if (!n) return "Pick the first cell and type the puzzle row by row, 0 or . for a blank. Or paste in the whole puzzle.";
     return `${plural(n, "clue")} so far. Tap Help me solve it when they are all in.`;
   }
+  if (s.stage === "made") return `It has exactly one answer. ${madeSummary()}`;
   if (isSolved()) return "Solved. Every digit is right.";
   if (clashes(s.values).size) return "The red digits clash: the same digit twice in a row, column or box.";
   return `${plural(s.values.filter((d) => !d).length, "cell")} to go. Stuck? Tap Hint.`;
 }
 
+const TITLES = {
+  solver: { enter: "Type in a puzzle", solve: "Solve it" },
+  create: { enter: "Make a puzzle", made: "Your puzzle" },
+};
+
+const FOOTS = {
+  solver: "Not scored, and nothing leaves this browser. Paste takes 81 cells in reading order, with 0 or . for blanks.",
+  create: "Paste takes 81 cells in reading order, with 0 or . for blanks. A made puzzle gets a leaderboard of its own.",
+  made: "The seed carries the whole puzzle: paste it into the Seed box on the new-game screen to play it. Played solo, it scores on its own board, never the main ones.",
+};
+
 function render() {
   if (!board) return;
-  const enter = s.stage === "enter";
+  const { stage } = s;
+  const enter = stage === "enter";
+  const solving = stage === "solve";
   const g = grid();
   const solved = isSolved();
   const settings = getSettings();
@@ -382,10 +483,10 @@ function render() {
 
   board.set({
     // While the clues go in they are drawn as clues.
-    puzzle: enter ? g : s.clues,
-    solution: enter ? g : solution,
+    puzzle: solving ? s.clues : g,
+    solution: solving ? solution : g,
     values: g,
-    notes: !enter && s.candidates && !solved ? candidates(g) : empty(),
+    notes: solving && s.candidates && !solved ? candidates(g) : empty(),
     selected,
     interactive: canEdit(),
     highlightSame: settings.highlight_same,
@@ -395,8 +496,11 @@ function render() {
     wrong,
   });
 
-  $("solverTitle").textContent = enter ? "Type in a puzzle" : "Solve it";
+  $("solverTitle").textContent = TITLES[mode][stage];
   $("solverStatus").textContent = note || defaultStatus();
+  $("solverSeed").textContent = made ? `Seed ${made.text}` : "";
+  $("solverSeed").classList.toggle("hidden", !made);
+  $("solverFoot").textContent = stage === "made" ? FOOTS.made : FOOTS[mode];
 
   const counts = new Array(10).fill(0);
   for (const v of g) counts[v]++;
@@ -410,14 +514,36 @@ function render() {
     btn.setAttribute("aria-label", settings.show_counts ? `${d}, ${left} left` : String(d));
   });
 
-  for (const id of ["solverPaste", "solverClear", "solverGo"]) $(id).classList.toggle("hidden", !enter);
-  for (const id of ["solverCheck", "solverHint", "solverSolve", "solverEdit"]) $(id).classList.toggle("hidden", enter);
-  $("solverCands").classList.toggle("hidden", enter || solved);
+  // What each stage shows.
+  const shown = {
+    solverPad: enter || solving,
+    solverTools: enter || solving,
+    solverPaste: enter,
+    solverClear: enter,
+    solverGo: enter,
+    solverCheck: solving,
+    solverHint: solving,
+    solverSolve: solving,
+    solverCands: solving && !solved,
+    solverEdit: !enter,
+    solverPlay: stage === "made",
+    solverSeedCopy: stage === "made",
+  };
+  for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
+
+  const icon = creating() ? "check" : "bulb";
+  if ($("solverGoIcon").dataset.icon !== icon) {
+    $("solverGoIcon").dataset.icon = icon;
+    hydrateIcons($("solverGo"));
+  }
+  $("solverGoLabel").textContent = goLabel();
+
+  const any = s.clues.some(Boolean);
   $("solverUndo").disabled = !history.length;
   $("solverErase").disabled = !canEdit();
-  $("solverClear").disabled = !s.clues.some(Boolean);
-  $("solverCopy").disabled = !s.clues.some(Boolean);
-  $("solverImage").disabled = !s.clues.some(Boolean);
+  $("solverClear").disabled = !any;
+  $("solverCopy").disabled = !any;
+  $("solverImage").disabled = !any;
   for (const id of ["solverCheck", "solverHint", "solverSolve"]) $(id).disabled = solved;
   $("solverHintLabel").textContent = pending ? "Show it" : "Hint";
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
@@ -426,12 +552,19 @@ function render() {
 
 /* ---- in and out ---- */
 
-export function openSolver() {
-  s.open = true;
-  save();
-  selected = null;
-  padDigit = 0;
-  note = "";
+// which: "solver" or "create".
+export function openSolver(which = "solver") {
+  if (which !== mode) {
+    disarmEdit();
+    mode = which;
+    s = states[mode];
+  }
+  for (const [name, st] of Object.entries(states)) {
+    st.open = name === mode;
+    store.set(storageKey(name), st);
+  }
+  resetStage();
+  settle();
   showPanel("solver");
   render();
 }
@@ -462,10 +595,12 @@ function onKey(e) {
   e.preventDefault();
 }
 
-// reopen: go back into the solver if it was open when the page was left.
+// reopen: go back into the solver or the maker if one was open when the
+// page was left.
 export function initSolver({ reopen = true } = {}) {
   board = new BoardView($("solverBoard"), { onSelect: selectCell });
-  load();
+  load("solver");
+  load("create");
 
   $("solverPad").addEventListener("click", (e) => {
     const b = e.target.closest("[data-digit]");
@@ -479,6 +614,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverHint").addEventListener("click", onHint);
   $("solverSolve").addEventListener("click", onSolveAll);
   $("solverGo").addEventListener("click", onGo);
+  $("solverPlay").addEventListener("click", onPlay);
+  $("solverSeedCopy").addEventListener("click", onSeedCopy);
   $("solverCands").addEventListener("click", toggleCandidates);
   $("solverCopy").addEventListener("click", onCopy);
   $("solverImage").addEventListener("click", onImage);
@@ -492,5 +629,6 @@ export function initSolver({ reopen = true } = {}) {
   });
   onSettingsChange(render);
 
-  if (reopen && s.open && !$("setup").classList.contains("hidden")) openSolver();
+  const open = Object.keys(states).find((name) => states[name].open);
+  if (reopen && open && !$("setup").classList.contains("hidden")) openSolver(open);
 }

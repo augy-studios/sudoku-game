@@ -113,6 +113,16 @@ export function solve(grid) {
   return out;
 }
 
+// Up to `limit` of the grid's solutions, for showing where two differ.
+export function findSolutions(grid, limit = 2) {
+  const out = [];
+  search(grid, () => DIGITS, (g) => {
+    out.push(g.slice());
+    return out.length >= limit;
+  });
+  return out;
+}
+
 // A shuffled copy. `rand` returns unsigned 32 bit integers.
 function shuffled(items, rand) {
   const a = items.slice();

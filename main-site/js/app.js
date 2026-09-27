@@ -108,8 +108,8 @@ function boot() {
   initLeaderboard();
   initSettings();
   const joinCode = takeJoinCode();
-  // A shared replay: /?watch=...&seed=...&game=...; see game.js. It stays
-  // in the address while it is watched, so a reload shows it again.
+  // A shared replay: /?r=...; see game.js. It stays in the address while it
+  // is watched, so a reload shows it again.
   const replayLink = readReplayLink(new URLSearchParams(location.search));
   initGame({ joinCode, replayLink });
   // After the game, which has already put up a saved game or a replay if

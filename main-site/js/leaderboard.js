@@ -1,9 +1,12 @@
 // The leaderboard window: best score, total points, or today's daily, one
-// row per name.
+// row per name; and made puzzles, each with a board of its own, found by
+// searching their seeds.
 
 import { api, localDate } from "./api.js";
 import { LEVELS } from "./levels.js";
-import { escapeHtml, openModal } from "./ui.js";
+import { parseSeed } from "./seed.js";
+import { escapeHtml, openModal, closeModal, copyText } from "./ui.js";
+import { playSeed } from "./game.js";
 
 // "12:05", or "1:02:05" past an hour.
 export function formatTime(ms) {
@@ -20,22 +23,33 @@ const BOARDS = {
   best: {
     head: ["#", "Name", "Score", "Game"],
     row: (e) => [e.rank, e.name, e.score, `${MODE[e.mode] ?? ""}${LEVELS[e.level]?.name ?? ""}, ${formatTime(e.elapsed_ms)}`],
-    about: () => "Each name's single best game.",
+    about: () => "Each name's single best game. Made puzzles have boards of their own, under Puzzles.",
   },
   total: {
     head: ["#", "Name", "Total", "Games"],
     row: (e) => [e.rank, e.name, e.total, e.games],
-    about: () => "Every game added under a name, scores added up.",
+    about: () => "Every game added under a name, scores added up. Made puzzles are left out.",
   },
   daily: {
     head: ["#", "Name", "Score", "Time"],
     row: (e) => [e.rank, e.name, e.score, formatTime(e.elapsed_ms)],
     about: (date) => `Today's daily puzzle, ${date}. One entry per name.`,
   },
+  made: {
+    head: ["#", "Name", "Score", "Time"],
+    row: (e) => [e.rank, e.name, e.score, formatTime(e.elapsed_ms)],
+    about: () => "Puzzles people made in the Create tab, each with its own board. Their makers know the answers, so these are for fun.",
+  },
 };
 
+const $ = (id) => document.getElementById(id);
+
 let board = "best";
+let madeSeed = null; // a made puzzle's seed, when its board is open
 let loading = 0;
+
+// A made seed is long: its level and first groups say enough in a list.
+const shortSeed = (text) => (text.length > 16 ? `${text.slice(0, 14)}…` : text);
 
 function setTab(next) {
   board = next;
@@ -44,11 +58,52 @@ function setTab(next) {
     el.classList.toggle("active", on);
     el.setAttribute("aria-selected", String(on));
   });
+  $("madeSearch").classList.toggle("hidden", board !== "made");
+}
+
+function table(head, rows) {
+  return `<table class="board-table">
+    <thead><tr>${head.map((h) => `<th scope="col">${h}</th>`).join("")}</tr></thead>
+    <tbody>${rows.map((r) => `<tr>${r.map((v) => `<td>${escapeHtml(v)}</td>`).join("")}</tr>`).join("")}</tbody>
+  </table>`;
+}
+
+// The made puzzles, most played first, or those matching the search.
+function renderPuzzles(data) {
+  const puzzles = data.puzzles ?? [];
+  if (!puzzles.length) {
+    return `<p class="board-empty">${
+      data.q ? "No made puzzle with a board has a seed like that. Paste a whole seed to open its board." : "Nobody has played a made puzzle yet. Make one in the Create tab."
+    }</p>`;
+  }
+  return `<ul class="made-list">${puzzles
+    .map(
+      (p) => `<li><button class="made-row" type="button" data-seed="${escapeHtml(p.seed)}">
+        <span class="made-row-seed">${escapeHtml(shortSeed(p.seed))}</span>
+        <span class="made-row-info">${escapeHtml(LEVELS[p.level]?.name ?? "")}, ${p.players} ${p.players === 1 ? "player" : "players"}, best ${p.top_score}</span>
+      </button></li>`
+    )
+    .join("")}</ul>`;
+}
+
+// One made puzzle's board, with its seed, and a way to play it.
+function renderMade(data) {
+  const entries = data.entries ?? [];
+  return `<div class="made-head">
+      <p class="made-seed">Seed ${escapeHtml(madeSeed)}</p>
+      <div class="round-actions">
+        <button class="btn btn-primary pill" type="button" data-made="play">Play it</button>
+        <button class="btn btn-quiet pill" type="button" data-made="copy">Copy seed</button>
+        <button class="btn btn-quiet pill" type="button" data-made="back">All puzzles</button>
+      </div>
+      <p class="mode-note" id="madeMsg" role="status" aria-live="polite"></p>
+    </div>
+    ${entries.length ? table(BOARDS.made.head, entries.map(BOARDS.made.row)) : `<p class="board-empty">Nobody has finished this puzzle yet. Be the first.</p>`}`;
 }
 
 async function load() {
-  const body = document.getElementById("boardBody");
-  const note = document.getElementById("boardNote");
+  const body = $("boardBody");
+  const note = $("boardNote");
   const ticket = ++loading;
   const spec = BOARDS[board];
   const date = localDate();
@@ -56,16 +111,16 @@ async function load() {
   note.textContent = spec.about(date);
 
   try {
-    const data = await api.leaderboard(board, board === "daily" ? date : undefined);
+    const extra = board === "daily" ? { date } : board === "made" ? (madeSeed ? { seed: madeSeed } : { q: $("madeQuery").value }) : {};
+    const data = await api.leaderboard(board, extra);
     if (ticket !== loading) return;
+    if (board === "made") {
+      body.innerHTML = madeSeed ? renderMade(data) : renderPuzzles(data);
+      return;
+    }
     const entries = data.entries ?? [];
     body.innerHTML = entries.length
-      ? `<table class="board-table">
-          <thead><tr>${spec.head.map((h) => `<th scope="col">${h}</th>`).join("")}</tr></thead>
-          <tbody>${entries
-            .map((e) => `<tr>${spec.row(e).map((v) => `<td>${escapeHtml(v)}</td>`).join("")}</tr>`)
-            .join("")}</tbody>
-        </table>`
+      ? table(spec.head, entries.map(spec.row))
       : `<p class="board-empty">${
           board === "daily" ? "Nobody has finished today's puzzle yet. Be the first." : "No scores yet. Finish a game and add yours."
         }</p>`;
@@ -79,18 +134,53 @@ async function load() {
   }
 }
 
-export function openLeaderboard(which = board) {
+// A whole made seed opens its board straight away; anything else searches.
+function onSearch(e) {
+  e.preventDefault();
+  const seed = parseSeed($("madeQuery").value);
+  madeSeed = seed?.made ? seed.text : null;
+  load();
+}
+
+async function onMadeAction(action) {
+  const msg = $("madeMsg");
+  if (action === "back") {
+    madeSeed = null;
+    load();
+  } else if (action === "copy") {
+    msg.textContent = (await copyText(madeSeed)) ? "Seed copied." : "Copy failed.";
+  } else if (action === "play") {
+    const seed = parseSeed(madeSeed);
+    if (seed && playSeed(seed)) closeModal("boardModal");
+    else msg.textContent = "Finish or leave the game you are playing first.";
+  }
+}
+
+// which: a board; for "made", seed opens that puzzle's board.
+export function openLeaderboard(which = board, seed = null) {
+  if (which === "made") madeSeed = seed ?? madeSeed;
   setTab(which);
   openModal("boardModal");
   load();
 }
 
 export function initLeaderboard() {
-  document.getElementById("boardBtn").addEventListener("click", () => openLeaderboard());
-  document.getElementById("boardTabs").addEventListener("click", (e) => {
+  $("boardBtn").addEventListener("click", () => openLeaderboard());
+  $("boardTabs").addEventListener("click", (e) => {
     const tab = e.target.closest("[data-board]");
     if (!tab || tab.dataset.board === board) return;
     setTab(tab.dataset.board);
     load();
+  });
+  $("madeSearch").addEventListener("submit", onSearch);
+  $("boardBody").addEventListener("click", (e) => {
+    const row = e.target.closest("[data-seed]");
+    if (row) {
+      madeSeed = row.dataset.seed;
+      load();
+      return;
+    }
+    const action = e.target.closest("[data-made]");
+    if (action) onMadeAction(action.dataset.made);
   });
 }

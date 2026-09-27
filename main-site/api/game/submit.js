@@ -76,5 +76,6 @@ export default endpoint("POST", async ({ req, body }) => {
     games: row.games,
     total_rank: Number(row.total_rank),
     daily_rank: row.daily_rank == null ? null : Number(row.daily_rank),
+    seed_rank: row.seed_rank == null ? null : Number(row.seed_rank),
   };
 });

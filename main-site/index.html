@@ -109,11 +109,12 @@
 
                 <div class="field-group">
                     <p class="field-label" id="modeLabel">Play</p>
-                    <div class="mode-toggle quarters" id="modePick" role="radiogroup" aria-labelledby="modeLabel">
+                    <div class="mode-toggle fifths" id="modePick" role="radiogroup" aria-labelledby="modeLabel">
                         <button class="mode-btn" type="button" role="radio" aria-checked="true" data-pick="solo"><span data-icon="grid"></span>Solo</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="daily"><span data-icon="calendar"></span>Daily</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="network"><span data-icon="wifi"></span>Network</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="solver"><span data-icon="wand"></span>Solver</button>
+                        <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="create"><span data-icon="pencil"></span>Create</button>
                     </div>
                     <p class="field-note" id="playModeNote"></p>
                 </div>
@@ -158,13 +159,13 @@
                 <div class="field-group" id="seedGroup">
                     <label class="field-label" for="seedInput">Seed</label>
                     <div class="guess">
-                        <input id="seedInput" class="field seed-field" type="text" placeholder="Random" maxlength="20"
+                        <input id="seedInput" class="field seed-field" type="text" placeholder="Random" maxlength="200"
                             autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go">
                         <button id="seedClear" class="icon-btn" type="button" aria-label="Clear the seed">
                             <span data-icon="close"></span>
                         </button>
                     </div>
-                    <p class="field-note" id="seedNote">Leave it empty for a new puzzle, or paste a seed to play that one again.</p>
+                    <p class="field-note" id="seedNote">Leave it empty for a new puzzle, or paste a seed or a copied puzzle to play that one.</p>
                 </div>
 
                 <button id="startBtn" class="btn btn-primary pill start-btn" type="button">
@@ -207,6 +208,7 @@
                 <div class="board-wrap"><div id="solverBoard"></div></div>
 
                 <p id="solverStatus" class="status solver-status" role="status" aria-live="polite"></p>
+                <p id="solverSeed" class="made-seed hidden"></p>
 
                 <div id="solverPad" class="pad" aria-label="Numbers">
                     <button class="pad-btn" type="button" data-digit="1">1<span class="count"></span></button>
@@ -231,14 +233,16 @@
                 </div>
 
                 <div class="game-actions">
-                    <button id="solverGo" class="btn btn-primary pill" type="button"><span data-icon="bulb"></span>Help me solve it</button>
+                    <button id="solverGo" class="btn btn-primary pill" type="button"><span data-icon="bulb" id="solverGoIcon"></span><span id="solverGoLabel">Help me solve it</span></button>
+                    <button id="solverPlay" class="btn btn-primary pill" type="button"><span data-icon="play"></span>Play it</button>
+                    <button id="solverSeedCopy" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="solverSeedCopyLabel">Copy seed</span></button>
                     <button id="solverCands" class="btn btn-quiet pill" type="button" aria-pressed="false"><span data-icon="dots"></span><span id="solverCandsLabel">Show candidates</span></button>
                     <button id="solverCopy" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="solverCopyLabel">Copy puzzle</span></button>
                     <button id="solverImage" class="btn btn-quiet pill" type="button"><span data-icon="image"></span><span id="solverImageLabel">Save image</span></button>
                     <button id="solverEdit" class="btn btn-quiet pill" type="button"><span data-icon="pencil"></span><span id="solverEditLabel">Edit puzzle</span></button>
                     <button id="solverBack" class="btn btn-quiet pill" type="button"><span data-icon="exit"></span>Back</button>
                 </div>
-                <p class="field-note play-note">Not scored, and nothing leaves this browser. Paste takes 81 cells in reading order, with 0 or . for blanks.</p>
+                <p class="field-note play-note" id="solverFoot"></p>
             </section>
 
             <!-- The game, live and then as a replay. -->
@@ -362,14 +366,21 @@
                     <span data-icon="close"></span>
                 </button>
             </div>
-            <div class="mode-toggle thirds" id="boardTabs" role="tablist" aria-label="Board">
+            <div class="mode-toggle quarters" id="boardTabs" role="tablist" aria-label="Board">
                 <button class="mode-btn" type="button" role="tab" data-board="best" aria-selected="true" aria-controls="boardBody">Best score</button>
                 <button class="mode-btn" type="button" role="tab" data-board="total" aria-selected="false" aria-controls="boardBody">Total points</button>
                 <button class="mode-btn" type="button" role="tab" data-board="daily" aria-selected="false" aria-controls="boardBody">Today</button>
+                <button class="mode-btn" type="button" role="tab" data-board="made" aria-selected="false" aria-controls="boardBody">Puzzles</button>
             </div>
+            <form id="madeSearch" class="guess made-search hidden" role="search" autocomplete="off">
+                <label for="madeQuery" class="visually-hidden">Search made puzzles by seed</label>
+                <input id="madeQuery" class="field seed-field" type="search" placeholder="Search by seed, or paste one" maxlength="200"
+                    spellcheck="false" autocapitalize="characters" enterkeyhint="search">
+                <button class="btn btn-primary" type="submit">Search</button>
+            </form>
             <div id="boardBody" class="board-body" role="tabpanel"></div>
             <p id="boardNote" class="mode-note"></p>
-            <p class="mode-note">Solo games, dailies and network races count. Co-op games and games finished with Solve do not. Anyone who picks the same name shares its entry.</p>
+            <p class="mode-note">Solo games, dailies and network races count. Co-op games and games finished with Solve do not, and made puzzles only count on their own boards. Anyone who picks the same name shares its entry.</p>
         </div>
     </div>
 

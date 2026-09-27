@@ -165,10 +165,12 @@ export function logText(log) {
   return log.map((a) => `${a.k}${a.c}.${a.d}.${a.t}`).join(" ");
 }
 
-/* ---- packing a game into a link ----
-   Two bytes an action: the kind, the player, the cell and the digit. Times
-   are left out, so a shared replay plays at an even pace. A damaged link
-   cannot unpack to an impossible game: the page replays it and stops. */
+/* ---- the first replay links ----
+   Two bytes an action: the kind, the player, the cell and the digit. New
+   links use the shorter form below; this one is still read, for links
+   already shared. Times are left out, so a shared replay plays at an even
+   pace. A damaged link cannot unpack to an impossible game: the page
+   replays it and stops. */
 
 function toBase64Url(bytes) {
   let bin = "";
@@ -209,6 +211,73 @@ export function unpackLog(packed, puzzle, solution) {
     if (!k || c > 80 || d > 9) return null;
     log.push({ k, c, d, t: i * 500, b: (v >> 11) & 1 });
   }
+  return play(puzzle, solution, log).error ? null : log;
+}
+
+/* ---- the shorter replay link ----
+   About half the length of the two bytes an action above, which is kept to
+   read links already shared. The reader has the puzzle's answer too, so a
+   right digit needs only its cell. Each action is a kind, then what that
+   kind needs, then in a co-op game the player, all packed as one number in
+   mixed radix and written in base 64. The number starts from 1, so it ends
+   where the log does. Times are left out, as above. */
+
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+// Kind 0, the commonest by far, is a right digit placed.
+const SHORT = [
+  { radix: 81, is: (a, sol) => a.k === "p" && a.d === sol[a.c], pack: (a) => a.c, unpack: (v, sol) => ({ k: "p", c: v, d: sol[v] }) },
+  { radix: 729, is: (a) => a.k === "p", pack: (a) => a.c * 9 + a.d - 1, unpack: (v) => ({ k: "p", c: Math.floor(v / 9), d: (v % 9) + 1 }) },
+  { radix: 729, is: (a) => a.k === "n", pack: (a) => a.c * 9 + a.d - 1, unpack: (v) => ({ k: "n", c: Math.floor(v / 9), d: (v % 9) + 1 }) },
+  { radix: 81, is: (a) => a.k === "e", pack: (a) => a.c, unpack: (v) => ({ k: "e", c: v, d: 0 }) },
+  { radix: 81, is: (a) => a.k === "h", pack: (a) => a.c, unpack: (v) => ({ k: "h", c: v, d: 0 }) },
+  { radix: 1, is: (a) => a.k === "u", pack: () => 0, unpack: () => ({ k: "u", c: 0, d: 0 }) },
+  { radix: 1, is: (a) => a.k === "s", pack: () => 0, unpack: () => ({ k: "s", c: 0, d: 0 }) },
+];
+const SHORT_KINDS = BigInt(SHORT.length);
+
+// players: 2 for a co-op game, whose actions each say whose they were.
+export function packReplay(log, solution, players = 1) {
+  let n = 1n;
+  for (let i = log.length - 1; i >= 0; i--) {
+    const a = log[i];
+    const kind = SHORT.findIndex((s) => s.is(a, solution));
+    if (players === 2) n = n * 2n + BigInt(a.b & 1);
+    n = n * BigInt(SHORT[kind].radix) + BigInt(SHORT[kind].pack(a));
+    n = n * SHORT_KINDS + BigInt(kind);
+  }
+  let out = "";
+  for (; n > 0n; n /= 64n) out = B64[Number(n % 64n)] + out;
+  return out;
+}
+
+// The log a packed replay stands for, with made up even times, or null if
+// it is damaged.
+export function unpackReplay(packed, puzzle, solution, players = 1) {
+  const text = String(packed ?? "");
+  if (!text || text.length > MAX_ACTIONS * 3) return null;
+  let n = 0n;
+  for (const ch of text) {
+    const v = B64.indexOf(ch);
+    if (v < 0) return null;
+    n = n * 64n + BigInt(v);
+  }
+  const log = [];
+  while (n > 1n) {
+    if (log.length >= MAX_ACTIONS) return null;
+    const kind = SHORT[Number(n % SHORT_KINDS)];
+    n /= SHORT_KINDS;
+    const radix = BigInt(kind.radix);
+    const a = kind.unpack(Number(n % radix), solution);
+    n /= radix;
+    let b = 0;
+    if (players === 2) {
+      b = Number(n % 2n);
+      n /= 2n;
+    }
+    log.push({ ...a, t: log.length * 1000, b });
+  }
+  if (n !== 1n) return null;
   return play(puzzle, solution, log).error ? null : log;
 }
 

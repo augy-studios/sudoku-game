@@ -62,8 +62,13 @@ export const api = {
   finish: (body) => call("POST", "/api/game/finish", { ...body, client_key: clientKey() }),
   submit: (body) => call("POST", "/api/game/submit", { ...body, client_key: clientKey() }),
   checkName: (name) => call("POST", "/api/leaderboard/name", { name }),
-  leaderboard: (board, date) =>
-    call("GET", `/api/leaderboard?board=${encodeURIComponent(board)}${date ? `&date=${encodeURIComponent(date)}` : ""}`),
+  // extra: { date } for the daily, { seed } for a made puzzle's board, or
+  // { q } to search made puzzles.
+  leaderboard: (board, extra = {}) => {
+    const params = new URLSearchParams({ board });
+    for (const [k, v] of Object.entries(extra)) if (v != null) params.set(k, v);
+    return call("GET", `/api/leaderboard?${params}`);
+  },
 };
 
 // This device's date as YYYY-MM-DD, which is what a daily puzzle is for.

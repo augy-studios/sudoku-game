@@ -7,8 +7,8 @@
 // the same way.
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
-import { newSeed, parseSeed, puzzleFor } from "./seed.js";
-import { play, toWire, fromWire, packLog, unpackLog } from "./record.js";
+import { newSeed, parseSeed, puzzleFor, madeSeed } from "./seed.js";
+import { play, toWire, fromWire, unpackLog, packReplay, unpackReplay } from "./record.js";
 import { tally, liveScore, finalScore, timeBonus, TIME_BONUS_MAX } from "./score.js";
 import { BoardView } from "./board.js";
 import { Replay } from "./replay.js";
@@ -18,13 +18,14 @@ import { openLeaderboard, formatTime } from "./leaderboard.js";
 import { copyText, hydrateIcons, store } from "./ui.js";
 import { confetti } from "./confetti.js";
 import { openSolver } from "./solver.js";
-import { puzzleText } from "./steps.js";
+import { puzzleText, parseGrid, checkClues, rateLevel } from "./steps.js";
 
 const GAME_STORAGE = "uwusudoku.game";
 const SETUP_STORAGE = "uwusudoku.setup";
 // How long to wait for the server to pick a seed before starting offline.
 const START_WAIT_MS = 5000;
 const HINT_PRESETS = [0, 1, 3, 5];
+const SEED_NOTE = "Leave it empty for a new puzzle, or paste a seed or a copied puzzle to play that one.";
 
 const $ = (id) => document.getElementById(id);
 
@@ -50,7 +51,7 @@ const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10 };
 
 function loadSetup() {
   const saved = store.getJSON(SETUP_STORAGE) ?? {};
-  if (["solo", "daily", "network", "solver"].includes(saved.mode)) setup.mode = saved.mode;
+  if (["solo", "daily", "network", "solver", "create"].includes(saved.mode)) setup.mode = saved.mode;
   if (LEVEL_IDS.includes(saved.level)) setup.level = saved.level;
   if (["race", "coop"].includes(saved.kind)) setup.kind = saved.kind;
   if (HINT_PRESETS.includes(saved.hints) || saved.hints === "all" || saved.hints === "custom") setup.hints = saved.hints;
@@ -64,6 +65,7 @@ function saveSetup() {
 function modeNote() {
   if (setup.mode === "solo") return "Scored on the leaderboard when the game starts while you are online.";
   if (setup.mode === "daily") return "The same puzzle for everyone today, with its own leaderboard. Starting it needs a connection.";
+  if (setup.mode === "create") return "Make your own puzzle: put the clues in, check it has exactly one answer, then share it as a seed, copy it, or save it as an image.";
   if (setup.mode === "solver") return "Stuck on a puzzle from a book, a newspaper or another app? Type it in for hints that say why, a check of your digits, or the whole answer. Not scored.";
   return setup.kind === "race"
     ? "Race someone on the same wifi: the same puzzle, each on your own board. Scored when started online."
@@ -93,11 +95,12 @@ function renderSetup() {
   check("#levelPick [data-level]", "level", setup.level);
   check("#kindPick [data-kind]", "kind", setup.kind);
   check("#hintPick [data-hints]", "hints", setup.hints);
-  const solver = setup.mode === "solver";
-  $("levelGroup").classList.toggle("hidden", setup.mode === "daily" || solver);
+  // The solver and the maker open their own screen, and need none of this.
+  const tool = setup.mode === "solver" || setup.mode === "create";
+  $("levelGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
   $("kindGroup").classList.toggle("hidden", setup.mode !== "network");
-  $("hintGroup").classList.toggle("hidden", solver);
-  $("seedGroup").classList.toggle("hidden", setup.mode === "daily" || solver);
+  $("hintGroup").classList.toggle("hidden", tool);
+  $("seedGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
   $("joinForm").classList.toggle("hidden", setup.mode !== "network");
   $("startLabel").textContent = launching
     ? "Starting"
@@ -105,9 +108,11 @@ function renderSetup() {
       ? "Host a game"
       : setup.mode === "daily"
         ? "Start today's puzzle"
-        : solver
+        : setup.mode === "solver"
           ? "Open the solver"
-          : "Start game";
+          : setup.mode === "create"
+            ? "Make a puzzle"
+            : "Start game";
   $("startBtn").disabled = launching;
   $("playModeNote").textContent = modeNote();
   $("customHintsRow").classList.toggle("hidden", setup.hints !== "custom");
@@ -122,8 +127,17 @@ function shake(input) {
   input.focus();
 }
 
+// What the seed box holds: a seed, or a whole puzzle with one answer, as
+// Copy puzzle writes it, which plays as a made puzzle. null if neither.
+function seedFromInput(text) {
+  const seed = parseSeed(text, setup.level);
+  if (seed) return seed;
+  const grid = parseGrid(text);
+  return grid && checkClues(grid).ok ? madeSeed(rateLevel(grid), grid) : null;
+}
+
 function onStart() {
-  if (setup.mode === "solver") return openSolver();
+  if (setup.mode === "solver" || setup.mode === "create") return openSolver(setup.mode);
   const maxHints = maxHintsFromSetup();
   if (maxHints === undefined) {
     $("hintNote").textContent = "Enter a whole number of free hints, 0 to 81.";
@@ -132,9 +146,9 @@ function onStart() {
   if (setup.mode === "daily") return launchDaily(maxHints);
 
   const typed = $("seedInput").value.trim() !== "";
-  const seed = typed ? parseSeed($("seedInput").value, setup.level) : null;
+  const seed = typed ? seedFromInput($("seedInput").value) : null;
   if (typed && !seed) {
-    $("seedNote").textContent = "That is not a seed. Seeds look like H-BXK4-M9TR.";
+    $("seedNote").textContent = "That is not a seed, or a puzzle with one answer. Seeds look like H-BXK4-M9TR.";
     return shake($("seedInput"));
   }
   if (setup.mode === "network") {
@@ -225,7 +239,8 @@ export function startGame(opts) {
     me: opts.mode === "coop" && role === "guest" ? 1 : 0,
     maxHints: opts.maxHints ?? null,
     gameId: opts.gameId ?? null,
-    ticket: opts.ticket ?? (opts.mode === "coop" || role === "guest" ? "none" : "pending"),
+    // A made puzzle scores only solo, on its own board.
+    ticket: opts.seed.made && opts.mode !== "solo" ? "none" : (opts.ticket ?? (opts.mode === "coop" || role === "guest" ? "none" : "pending")),
     serverSeed: opts.serverSeed ?? false,
     date: opts.date ?? null,
     submitted: opts.submitted ?? false,
@@ -259,7 +274,7 @@ export function startGame(opts) {
 // bonuses, but it can go on the leaderboard.
 async function fetchTicket(game) {
   try {
-    const t = await api.start({ mode: game.mode, seed: game.seed.text, maxHints: game.maxHints });
+    const t = await api.start({ mode: game.seed.made ? "made" : game.mode, seed: game.seed.text, maxHints: game.maxHints });
     if (game !== g) return;
     g.gameId = t.game_id;
     g.ticket = "ok";
@@ -276,8 +291,11 @@ export function isOver() {
   return Boolean(g && res && (res.complete || res.solved));
 }
 
+// A made puzzle's own board is the only one it goes on.
+const madeOffBoard = () => g.seed.made && g.mode !== "solo";
+
 function scoring() {
-  return g.mode !== "coop" && !res.solved;
+  return g.mode !== "coop" && !res.solved && !madeOffBoard();
 }
 
 // The leaderboard side: a race's guest is 1, everyone else 0.
@@ -497,7 +515,8 @@ function currentTally() {
 
 function renderChips(over) {
   const level = LEVELS[g.seed.level].name;
-  $("levelChip").textContent = g.mode === "daily" ? `Daily, ${level}` : g.mode === "race" ? `Race, ${level}` : g.mode === "coop" ? `Co-op, ${level}` : level;
+  const kind = { daily: "Daily", race: "Race", coop: "Co-op" }[g.mode] ?? (g.seed.made ? "Made" : "");
+  $("levelChip").textContent = kind ? `${kind}, ${level}` : level;
   renderTimer();
   const t = currentTally();
   const live = liveScore(g.seed.level, t);
@@ -510,7 +529,13 @@ function renderChips(over) {
       : t.hints <= g.maxHints
         ? `Free hints ${t.hints} of ${g.maxHints}`
         : `${hints}, ${t.paidHints} paid`;
-  $("seedChip").textContent = g.seed.text;
+  $("seedChip").textContent = seedChipText(g.seed);
+}
+
+// A made puzzle's seed is too long for a chip, so its chip only offers to
+// copy it.
+function seedChipText(seed) {
+  return seed.made ? "Copy seed" : seed.text;
 }
 
 function renderPad(over) {
@@ -554,6 +579,8 @@ function renderActions(over) {
   if (!over) {
     note = "Undo as often as you like. Mistakes cost points, and undo does not give them back.";
     if (g.mode === "coop") note += " Co-op games are not scored.";
+    else if (madeOffBoard()) note += " Made puzzles only score when played solo.";
+    else if (g.seed.made && g.ticket !== "offline") note += " A made puzzle scores on its own board only.";
     else if (g.ticket === "offline") note += " This game started offline, so it is not scored.";
   }
   $("playNote").textContent = note;
@@ -621,7 +648,11 @@ function renderResultHead() {
 
 function renderScoreLine() {
   if (!scoring()) {
-    $("resultScore").textContent = res.solved ? "Games finished with Solve are not ranked." : "Co-op games are not scored.";
+    $("resultScore").textContent = res.solved
+      ? "Games finished with Solve are not ranked."
+      : madeOffBoard()
+        ? "Made puzzles only score when played solo."
+        : "Co-op games are not scored.";
     return;
   }
   const t = currentTally();
@@ -630,7 +661,9 @@ function renderScoreLine() {
   const parts = [`${score} ${score === 1 ? "point" : "points"}`];
   if (bonus) parts.push(`+${bonus}% for time`);
   let line = `${parts.join(", ")}.`;
-  if (!g.serverSeed && g.gameId) {
+  if (g.seed.made) {
+    line += " On this puzzle's own board, without time bonuses.";
+  } else if (!g.serverSeed && g.gameId) {
     line += " No time bonuses: the seed was chosen, not picked by the server.";
   } else if (g.serverSeed && !bonus) {
     line += ` Up to +${TIME_BONUS_MAX}% for finishing within ${LEVELS[g.seed.level].window} minutes.`;
@@ -700,7 +733,8 @@ function renderSubmit() {
   const canSubmit = Boolean(scoring() && g.gameId && !g.submitted && res.complete);
   $("submitForm").classList.toggle("hidden", !canSubmit || g.submitRefused);
   let why = "";
-  if (g.mode === "coop") why = "Co-op games are not scored.";
+  if (madeOffBoard()) why = "Made puzzles only score when played solo.";
+  else if (g.mode === "coop") why = "Co-op games are not scored.";
   else if (res.solved) why = "Games finished with Solve are not ranked.";
   else if (!g.gameId) {
     why =
@@ -752,9 +786,10 @@ async function submitAs(name, auto = false) {
     const games = r.games === 1 ? "1 game" : `${r.games} games`;
     const bonus = r.time_bonus ? `, with +${r.time_bonus}% for time` : "";
     const daily = r.daily_rank ? ` Ranked ${r.daily_rank} on today's puzzle.` : "";
-    g.submittedText =
-      `Added as ${r.name} for ${r.score} points${bonus}. Best ${r.best_score}, ranked ${r.rank}. ` +
-      `Total ${r.total} over ${games}, ranked ${r.total_rank}.${daily}`;
+    g.submittedText = game.seed.made
+      ? `Added as ${r.name} for ${r.score} points. Ranked ${r.seed_rank} on this puzzle's board.`
+      : `Added as ${r.name} for ${r.score} points${bonus}. Best ${r.best_score}, ranked ${r.rank}. ` +
+        `Total ${r.total} over ${games}, ranked ${r.total_rank}.${daily}`;
     persist();
     renderResultHead();
     $("submittedText").textContent = g.submittedText;
@@ -786,10 +821,12 @@ function onSubmit(event) {
 }
 
 /* ---- sharing a replay ----
-   A replay link holds the whole game: the seed and every action, packed two
-   bytes each (record.js). Nothing is stored anywhere, so a link works for as
-   long as the site does, offline too. It carries no score: anyone can edit
-   a link, and only the leaderboard's scores are checked. */
+   A replay link holds the whole game in one parameter, r: the kind of game,
+   the seed without its dashes, a dot, and every action packed small
+   (record.js), as in /?r=sHBXK4M9TR.Ab3x... Nothing is stored anywhere, so a
+   link works for as long as the site does, offline too. It carries no
+   score: anyone can edit a link, and only the leaderboard's scores are
+   checked. Links from before, /?watch=...&seed=...&game=..., still play. */
 
 const META = { solo: "s", daily: "d", race: "r", coop: "c" };
 const META_TEXT = {
@@ -800,7 +837,9 @@ const META_TEXT = {
 };
 
 function replayLink(seed, log, meta) {
-  return `${location.origin}/?${new URLSearchParams({ watch: packLog(log), seed: seed.text, game: meta })}`;
+  const { solution } = puzzleFor(seed);
+  const packed = packReplay(log, solution, meta === "c" ? 2 : 1);
+  return `${location.origin}/?r=${meta}${seed.text.replace(/-/g, "")}.${packed}`;
 }
 
 async function onShare() {
@@ -824,6 +863,14 @@ async function onShare() {
 // Reads a replay link's parameters. Returns what to watch, { damaged: true }
 // if the link is broken, or null if this is not a replay link.
 export function readReplayLink(params) {
+  if (params.has("r")) {
+    const m = /^([a-z])([A-Za-z0-9]+)\.([A-Za-z0-9_-]+)$/.exec(params.get("r"));
+    const seed = m && parseSeed(m[2]);
+    if (!seed || !META_TEXT[m[1]]) return { damaged: true };
+    const { puzzle, solution } = puzzleFor(seed);
+    const log = unpackReplay(m[3], puzzle, solution, m[1] === "c" ? 2 : 1);
+    return log ? { seed, log, meta: m[1] } : { damaged: true };
+  }
   if (!params.has("watch")) return null;
   const seed = parseSeed(params.get("seed"));
   if (!seed) return { damaged: true };
@@ -848,7 +895,7 @@ function watch(link) {
   $("playNote").textContent = "";
   $("status").textContent = "A shared replay.";
   $("levelChip").textContent = `Replay, ${LEVELS[link.seed.level].name}`;
-  $("seedChip").textContent = link.seed.text;
+  $("seedChip").textContent = seedChipText(link.seed);
 
   const t = tally(result, link.log);
   $("resultTitle").textContent = result.solved ? "Solved with Solve" : result.complete ? "Solved" : "Unfinished game";
@@ -878,7 +925,7 @@ function closeWatch({ show = true } = {}) {
   watching = null;
   replayer.stop();
   const params = new URLSearchParams(location.search);
-  for (const key of ["watch", "seed", "game"]) params.delete(key);
+  for (const key of ["r", "watch", "seed", "game"]) params.delete(key);
   const rest = params.toString();
   history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + location.hash);
   if (show && !resume()) {
@@ -1038,6 +1085,15 @@ export function loadSnapshot(snap) {
 
 export { showPanel, renderSetup };
 
+// Plays a seed from elsewhere, such as a made puzzle's board, solo. Never
+// over a game in progress, which would be lost: false if there is one.
+export function playSeed(seed) {
+  if (g && !isOver() && (g.log.length || g.role)) return false;
+  if (watching) closeWatch({ show: false });
+  launch({ mode: "solo", seed, maxHints: maxHintsFromSetup() ?? null });
+  return true;
+}
+
 /* ---- wiring ---- */
 
 // A radio group in the setup: clicking a button sets `key` from its data.
@@ -1089,11 +1145,12 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   $("customHints").addEventListener("blur", renderSetup);
 
   $("seedInput").addEventListener("input", () => {
-    $("seedNote").textContent = "Leave it empty for a new puzzle, or paste a seed to play that one again.";
-    // A pasted seed says its own level.
+    $("seedNote").textContent = SEED_NOTE;
+    // A pasted seed says its own level, a made puzzle's included.
     const raw = $("seedInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    if (raw.length === 9 && LEVEL_IDS.includes(raw[0]) && raw[0] !== setup.level) {
-      setup.level = raw[0];
+    const level = raw.length === 9 ? raw[0] : raw.length > 9 ? parseSeed(raw)?.level : null;
+    if (LEVEL_IDS.includes(level) && level !== setup.level) {
+      setup.level = level;
       renderSetup();
     }
   });
@@ -1121,7 +1178,11 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   $("submitForm").addEventListener("submit", onSubmit);
   $("againBtn").addEventListener("click", onAgain);
   $("newGameBtn").addEventListener("click", () => (watching ? closeWatch() : endGame()));
-  $("resultBoardBtn").addEventListener("click", () => openLeaderboard(g?.mode === "daily" ? "daily" : undefined));
+  $("resultBoardBtn").addEventListener("click", () => {
+    const seed = (watching ?? g)?.seed;
+    if (seed?.made) openLeaderboard("made", seed.text);
+    else openLeaderboard(g?.mode === "daily" ? "daily" : undefined);
+  });
   $("shareBtn").addEventListener("click", onShare);
   const shownSeed = () => (watching ?? g)?.seed;
   $("copySeedBtn").addEventListener("click", async () => {
@@ -1144,8 +1205,8 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
     if (!seed) return;
     const chip = $("seedChip");
     const ok = await copyText(seed.text);
-    chip.textContent = ok ? "Seed copied" : seed.text;
-    setTimeout(() => shownSeed() && (chip.textContent = shownSeed().text), 1200);
+    chip.textContent = ok ? "Seed copied" : "Copy failed";
+    setTimeout(() => shownSeed() && (chip.textContent = seedChipText(shownSeed())), 1200);
   });
 
   onSettingsChange(() => {

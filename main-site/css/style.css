@@ -205,6 +205,7 @@ body {
 .field-note:empty { display: none; }
 .mode-toggle.thirds { grid-template-columns: repeat(3, 1fr); }
 .mode-toggle.quarters { grid-template-columns: repeat(4, 1fr); }
+.mode-toggle.fifths { grid-template-columns: repeat(5, 1fr); }
 .mode-btn { color: var(--muted-strong); }
 .mode-btn[aria-checked="true"],
 .mode-btn[aria-selected="true"] {
@@ -507,6 +508,19 @@ body {
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
 }
+/* A made puzzle's seed: long, so it breaks anywhere, and selectable. */
+.made-seed {
+  max-width: 460px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface-strong);
+  border: 1px solid var(--surface-border);
+  color: var(--ink);
+  letter-spacing: 0.06em;
+  text-align: center;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
 #solverCands[aria-pressed="true"] {
   background: var(--brand-fill);
   color: var(--on-brand);
@@ -644,6 +658,9 @@ body {
   letter-spacing: 0.06em;
   color: var(--ink);
   user-select: text;
+  /* A made puzzle's seed is long. */
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .submit {
   display: flex;
@@ -771,6 +788,39 @@ body {
   transition: opacity 0.15s ease;
 }
 .board-body[aria-busy="true"] { opacity: 0.6; }
+
+/* Made puzzles: a search, a list of them, and each one's board. */
+.made-search { margin: 10px 0 2px; }
+.made-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.made-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-strong);
+  border: 1px solid var(--surface-border);
+  color: var(--ink);
+  text-align: left;
+  transition: background 0.15s ease;
+}
+.made-row:hover { background: var(--surface); }
+.made-row-seed { letter-spacing: 0.06em; }
+.made-row-info { font-size: 0.8rem; color: var(--muted); }
+.made-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
 .board-table {
   width: 100%;
   border-collapse: collapse;
@@ -851,9 +901,11 @@ body {
   .pad-btn { border-radius: 9px; }
   .hint-pick { grid-template-columns: repeat(3, 1fr); }
   .mode-toggle.thirds .mode-btn,
-  .mode-toggle.quarters .mode-btn { font-size: 0.78rem; padding: 8px 4px; }
+  .mode-toggle.quarters .mode-btn,
+  .mode-toggle.fifths .mode-btn { font-size: 0.78rem; padding: 8px 4px; }
   .mode-toggle.thirds .mode-btn svg,
-  .mode-toggle.quarters .mode-btn svg { display: none; }
+  .mode-toggle.quarters .mode-btn svg,
+  .mode-toggle.fifths .mode-btn svg { display: none; }
   .level-pick .mode-btn { font-size: 0.78rem; padding: 8px 2px; }
   .result-title { font-size: 1.45rem; }
   .code-big { font-size: 2rem; }

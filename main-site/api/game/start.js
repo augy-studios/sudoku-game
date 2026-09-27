@@ -5,8 +5,10 @@
 // which is what gives it a start time no browser can move. Games started
 // offline play the same; they just have no ticket.
 //
-// mode is "solo", "daily" or "race" (a network race's host; the guest plays
-// the other side of the same ticket). With no seed, the server picks one at
+// mode is "solo", "daily", "race" (a network race's host; the guest plays
+// the other side of the same ticket), or "made": a solo game of a made
+// puzzle, whose seed carries the puzzle and which goes only on that
+// puzzle's own board. With no seed, the server picks one at
 // `level`, and only those games earn the time bonuses: a seed the player
 // chose could have been solved beforehand. A daily's seed is the day's, from
 // a secret. max_hints is how many hints are free, 0 to 81, or null for all
@@ -21,7 +23,7 @@ import { newSeed, parseSeed } from "../../js/seed.js";
 export default endpoint("POST", async ({ req, body }) => {
   const key = clientKey(body.client_key);
   const mode = body.mode;
-  if (!["solo", "daily", "race"].includes(mode)) throw new HttpError(400, "bad_mode");
+  if (!["solo", "daily", "race", "made"].includes(mode)) throw new HttpError(400, "bad_mode");
 
   const maxHints = body.max_hints ?? null;
   if (maxHints !== null && !(Number.isInteger(maxHints) && maxHints >= 0 && maxHints <= 81)) {
@@ -43,7 +45,7 @@ export default endpoint("POST", async ({ req, body }) => {
       `sudoku_games?select=id&mode=eq.daily&daily_date=eq.${date}&host_key=eq.${encodeURIComponent(key)}&limit=1`
     );
     serverSeed = !seen?.length;
-  } else if (body.seed == null) {
+  } else if (body.seed == null && mode !== "made") {
     const level = body.level ?? "M";
     if (!LEVEL_IDS.includes(level)) throw new HttpError(400, "bad_level");
     seed = newSeed(level);
@@ -51,6 +53,8 @@ export default endpoint("POST", async ({ req, body }) => {
   } else {
     seed = parseSeed(body.seed);
     if (!seed) throw new HttpError(400, "bad_seed");
+    // Its maker knows the answer, so a made puzzle keeps to its own board.
+    if (Boolean(seed.made) !== (mode === "made")) throw new HttpError(400, "made_seed", "Made puzzles play solo, on their own board.");
     serverSeed = false;
   }
 
