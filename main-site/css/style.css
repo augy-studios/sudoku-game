@@ -204,6 +204,7 @@ body {
 }
 .field-note:empty { display: none; }
 .mode-toggle.thirds { grid-template-columns: repeat(3, 1fr); }
+.mode-toggle.quarters { grid-template-columns: repeat(4, 1fr); }
 .mode-btn { color: var(--muted-strong); }
 .mode-btn[aria-checked="true"],
 .mode-btn[aria-selected="true"] {
@@ -488,11 +489,28 @@ body {
   gap: 8px;
 }
 .game-actions .btn { padding: 9px 15px; }
-#leaveBtn.armed {
+#leaveBtn.armed,
+#solverEdit.armed {
   color: var(--error);
   border-color: var(--error);
 }
 .play-note { max-width: 460px; }
+
+/* The solver. Its tools change with the stage, so the row fits what shows. */
+.solver { gap: 10px; }
+.card .solver-status {
+  max-width: 460px;
+  line-height: 1.4;
+}
+.solver-tools {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+#solverCands[aria-pressed="true"] {
+  background: var(--brand-fill);
+  color: var(--on-brand);
+}
 
 /* Network. */
 .net-bar {
@@ -832,8 +850,10 @@ body {
   .pad { gap: 3px; }
   .pad-btn { border-radius: 9px; }
   .hint-pick { grid-template-columns: repeat(3, 1fr); }
-  .mode-toggle.thirds .mode-btn { font-size: 0.78rem; padding: 8px 4px; }
-  .mode-toggle.thirds .mode-btn svg { display: none; }
+  .mode-toggle.thirds .mode-btn,
+  .mode-toggle.quarters .mode-btn { font-size: 0.78rem; padding: 8px 4px; }
+  .mode-toggle.thirds .mode-btn svg,
+  .mode-toggle.quarters .mode-btn svg { display: none; }
   .level-pick .mode-btn { font-size: 0.78rem; padding: 8px 2px; }
   .result-title { font-size: 1.45rem; }
   .code-big { font-size: 2rem; }

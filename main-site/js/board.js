@@ -64,8 +64,9 @@ export class BoardView {
   }
 
   // view: { puzzle, solution, values, notes, selected, interactive,
-  // highlightSame, highlightPeers, mark: { c, kind } | null }. kind is ok,
-  // wrong, hint, erase, note or undo, for the replay's last action.
+  // highlightSame, highlightPeers, mark: { c, kind } | null, wrong? }. kind
+  // is ok, wrong, hint, erase, note or undo, for the replay's last action.
+  // wrong, a Set of cells, overrides telling wrong digits by the solution.
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -78,7 +79,7 @@ export class BoardView {
       const cell = this.cells[c];
       const v = values[c];
       const given = puzzle[c] !== 0;
-      const wrong = !given && v !== 0 && v !== solution[c];
+      const wrong = view.wrong ? view.wrong.has(c) : !given && v !== 0 && v !== solution[c];
       const peer = view.highlightPeers && sel != null && c !== sel && (ROW[c] === ROW[sel] || COL[c] === COL[sel] || BOX[c] === BOX[sel]);
       // Notes holding the digit light up on their own, below.
       const same = view.highlightSame && focusDigit && v === focusDigit;
@@ -113,7 +114,7 @@ export class BoardView {
       }
 
       let label = `${cellName(c).replace("r", "Row ").replace("c", ", column ")}, `;
-      if (v) label += `${v}${given ? ", given" : wrong ? ", wrong" : ""}`;
+      if (v) label += `${v}${wrong ? ", wrong" : given ? ", given" : ""}`;
       else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => notes[c] & (1 << d)).join(" ")}`;
       else label += "empty";
       if (cell.getAttribute("aria-label") !== label) cell.setAttribute("aria-label", label);

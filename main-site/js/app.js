@@ -3,6 +3,7 @@ import { hydrateIcons, openModal, closeModal, closeTopModal } from "./ui.js";
 import { initUpdateBar } from "./update-bar.js";
 import { initGame, readReplayLink } from "./game.js";
 import { initMultiplayer } from "./multiplayer.js";
+import { initSolver } from "./solver.js";
 import { initLeaderboard } from "./leaderboard.js";
 import { initSettings } from "./settings.js";
 
@@ -111,6 +112,9 @@ function boot() {
   // in the address while it is watched, so a reload shows it again.
   const replayLink = readReplayLink(new URLSearchParams(location.search));
   initGame({ joinCode, replayLink });
+  // After the game, which has already put up a saved game or a replay if
+  // there is one; a join link is for the network game, not the solver.
+  initSolver({ reopen: !joinCode });
   initMultiplayer({ joinCode });
   hydrateIcons();
   initUpdateBar();

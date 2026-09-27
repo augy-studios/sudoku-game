@@ -34,6 +34,8 @@ the browser and the server always agree on a game.
 | `net.js` | Pairing over PeerJS, STUN only, from `STUN-p2p-spec.md`. |
 | `multiplayer.js` | Network games on top of `net.js`: hosting, joining, race and co-op. |
 | `qr.js` | QR encoder for the join link, from uwuPromptr, so it works offline. |
+| `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
+| `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -44,6 +46,17 @@ devices on one network, one hosting with a six character code, a link or a
 QR code, and the other joining. A network game is a **race** (the same
 puzzle, each on your own board, with the other player's progress shown
 above yours) or **co-op** (one board, both of you on it).
+
+**Solver.** The fourth tab is for a puzzle from somewhere else. Type or
+paste it in (81 cells, 0 or . for blanks), and Help me solve it checks it
+with the engine's own solver: clashing digits, too few clues, no answer or
+more than one are each said plainly. Then it is solved on the board here.
+Hint takes two taps, where to look and then the digit and why, from a
+single (one digit fits the cell) or a hidden single (one place left for a
+digit in a row, column or box), or from the answer when neither is left.
+Hints refuse to build on a wrong digit and mark it instead. Check marks
+wrong digits, the candidates can be shown, and Solve fills the rest. Kept
+in this browser, never scored, and nothing is sent.
 
 **Levels.** Easy, Medium, Hard and Expert take out 40, 48, 52 and up to 64
 clues. The generator only takes a clue out if the puzzle keeps exactly one

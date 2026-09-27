@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // The pure game modules the page and the API share: the same seed always
 // makes the same puzzle, every puzzle has one solution, the log replays and
-// undoes as it should, replay links round-trip, and scores add up.
+// undoes as it should, replay links round-trip, and scores add up. Also the
+// solver's steps: pasted grids read right, and every hint is the answer's.
 //
 // Run: node scripts/test-engine.mjs
 
@@ -10,6 +11,7 @@ import { LEVEL_IDS } from "../main-site/js/levels.js";
 import { newSeed, parseSeed, puzzleFor } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, fromWire, toWire, logText } from "../main-site/js/record.js";
+import { parseGrid, clashes, candidates, nextStep, bitCount } from "../main-site/js/steps.js";
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
 
 let passed = 0;
@@ -160,6 +162,53 @@ test("scores scale with level, pace and time", () => {
 
   const hinted = [a("h", blanks[0], 0, 1000)];
   assert.equal(tally(play(puzzle, solution, hinted), hinted).points, -HINT);
+});
+
+test("the solver reads pasted grids", () => {
+  const text = PINNED["H-BXK4-M9TR"];
+  assert.deepEqual(parseGrid(text), [...text].map(Number));
+  const dotted = text.replace(/0/g, ".").replace(/(.{9})/g, "$1\n").replace(/(.{3})(?=.)/g, "$1 | ");
+  assert.deepEqual(parseGrid(dotted), [...text].map(Number), "dots, spaces, bars and line breaks");
+  assert.equal(parseGrid(text.slice(1)), null, "80 cells");
+  assert.equal(parseGrid(""), null);
+});
+
+test("the solver finds clashes and candidates", () => {
+  const grid = new Array(81).fill(0);
+  grid[0] = 5;
+  grid[8] = 5; // same row
+  grid[80] = 3;
+  assert.deepEqual([...clashes(grid)].sort((x, y) => x - y), [0, 8]);
+  grid[8] = 0;
+  assert.equal(clashes(grid).size, 0);
+  const cand = candidates(grid);
+  assert.equal(cand[0], 0, "a filled cell has none");
+  assert.equal(cand[1] & (1 << 5), 0, "5 is in its row");
+  assert.equal(bitCount(cand[1]), 8);
+  assert.equal(bitCount(cand[40]), 9);
+});
+
+// Takes steps until none is left, checking each against the answer.
+function stepThrough(puzzle, solution) {
+  const grid = puzzle.slice();
+  for (;;) {
+    const step = nextStep(grid, grid.findIndex((d) => !d));
+    if (!step) return grid;
+    assert.equal(grid[step.c], 0);
+    assert.equal(step.d, solution[step.c], `${step.kind} at ${step.c}`);
+    grid[step.c] = step.d;
+  }
+}
+
+test("every solver step is the answer's digit", () => {
+  for (const level of LEVEL_IDS) {
+    for (let i = 0; i < 25; i++) {
+      const { puzzle, solution } = puzzleFor(newSeed(level));
+      stepThrough(puzzle, solution);
+    }
+  }
+  const pinned = puzzleFor(parseSeed("E-2345-6789"));
+  assert.deepEqual(stepThrough(pinned.puzzle, pinned.solution), pinned.solution, "an Easy puzzle falls to singles");
 });
 
 console.log(`engine ok: ${passed} tests.`);

@@ -109,10 +109,11 @@
 
                 <div class="field-group">
                     <p class="field-label" id="modeLabel">Play</p>
-                    <div class="mode-toggle thirds" id="modePick" role="radiogroup" aria-labelledby="modeLabel">
+                    <div class="mode-toggle quarters" id="modePick" role="radiogroup" aria-labelledby="modeLabel">
                         <button class="mode-btn" type="button" role="radio" aria-checked="true" data-pick="solo"><span data-icon="grid"></span>Solo</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="daily"><span data-icon="calendar"></span>Daily</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="network"><span data-icon="wifi"></span>Network</button>
+                        <button class="mode-btn" type="button" role="radio" aria-checked="false" data-pick="solver"><span data-icon="wand"></span>Solver</button>
                     </div>
                     <p class="field-note" id="playModeNote"></p>
                 </div>
@@ -135,7 +136,7 @@
                     </div>
                 </div>
 
-                <div class="field-group">
+                <div class="field-group" id="hintGroup">
                     <p class="field-label" id="hintLabelSetup">Hints allowed</p>
                     <div class="hint-pick" id="hintPick" role="radiogroup" aria-labelledby="hintLabelSetup">
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="0">None</button>
@@ -197,6 +198,45 @@
                     <button id="netRetryBtn" class="btn btn-primary pill hidden" type="button"><span data-icon="refresh"></span>Try again</button>
                     <button id="netCancelBtn" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Cancel</button>
                 </div>
+            </section>
+
+            <!-- The solver: a puzzle from elsewhere, typed in, and help with it. -->
+            <section id="solver" class="panel solver hidden" aria-labelledby="solverTitle">
+                <h3 id="solverTitle" class="panel-title">Type in a puzzle</h3>
+
+                <div class="board-wrap"><div id="solverBoard"></div></div>
+
+                <p id="solverStatus" class="status solver-status" role="status" aria-live="polite"></p>
+
+                <div id="solverPad" class="pad" aria-label="Numbers">
+                    <button class="pad-btn" type="button" data-digit="1">1<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="2">2<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="3">3<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="4">4<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="5">5<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="6">6<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="7">7<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="8">8<span class="count"></span></button>
+                    <button class="pad-btn" type="button" data-digit="9">9<span class="count"></span></button>
+                </div>
+
+                <div id="solverTools" class="tools solver-tools">
+                    <button id="solverUndo" class="tool-btn" type="button"><span data-icon="undo"></span><span>Undo</span></button>
+                    <button id="solverErase" class="tool-btn" type="button"><span data-icon="erase"></span><span>Erase</span></button>
+                    <button id="solverPaste" class="tool-btn" type="button"><span data-icon="clipboard"></span><span>Paste</span></button>
+                    <button id="solverClear" class="tool-btn" type="button"><span data-icon="trash"></span><span>Clear</span></button>
+                    <button id="solverCheck" class="tool-btn" type="button"><span data-icon="check"></span><span>Check</span></button>
+                    <button id="solverHint" class="tool-btn" type="button"><span data-icon="bulb"></span><span id="solverHintLabel">Hint</span></button>
+                    <button id="solverSolve" class="tool-btn" type="button"><span data-icon="wand"></span><span>Solve</span></button>
+                </div>
+
+                <div class="game-actions">
+                    <button id="solverGo" class="btn btn-primary pill" type="button"><span data-icon="bulb"></span>Help me solve it</button>
+                    <button id="solverCands" class="btn btn-quiet pill" type="button" aria-pressed="false"><span data-icon="dots"></span><span id="solverCandsLabel">Show candidates</span></button>
+                    <button id="solverEdit" class="btn btn-quiet pill" type="button"><span data-icon="pencil"></span><span id="solverEditLabel">Edit puzzle</span></button>
+                    <button id="solverBack" class="btn btn-quiet pill" type="button"><span data-icon="exit"></span>Back</button>
+                </div>
+                <p class="field-note play-note">Not scored, and nothing leaves this browser. Paste takes 81 cells in reading order, with 0 or . for blanks.</p>
             </section>
 
             <!-- The game, live and then as a replay. -->

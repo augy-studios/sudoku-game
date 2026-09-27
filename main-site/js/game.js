@@ -17,6 +17,7 @@ import { getSettings, onSettingsChange, saveSettings } from "./settings.js";
 import { openLeaderboard, formatTime } from "./leaderboard.js";
 import { copyText, hydrateIcons, store } from "./ui.js";
 import { confetti } from "./confetti.js";
+import { openSolver } from "./solver.js";
 
 const GAME_STORAGE = "uwusudoku.game";
 const SETUP_STORAGE = "uwusudoku.setup";
@@ -47,7 +48,7 @@ const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10 };
 
 function loadSetup() {
   const saved = store.getJSON(SETUP_STORAGE) ?? {};
-  if (["solo", "daily", "network"].includes(saved.mode)) setup.mode = saved.mode;
+  if (["solo", "daily", "network", "solver"].includes(saved.mode)) setup.mode = saved.mode;
   if (LEVEL_IDS.includes(saved.level)) setup.level = saved.level;
   if (["race", "coop"].includes(saved.kind)) setup.kind = saved.kind;
   if (HINT_PRESETS.includes(saved.hints) || saved.hints === "all" || saved.hints === "custom") setup.hints = saved.hints;
@@ -61,6 +62,7 @@ function saveSetup() {
 function modeNote() {
   if (setup.mode === "solo") return "Scored on the leaderboard when the game starts while you are online.";
   if (setup.mode === "daily") return "The same puzzle for everyone today, with its own leaderboard. Starting it needs a connection.";
+  if (setup.mode === "solver") return "Stuck on a puzzle from a book, a newspaper or another app? Type it in for hints that say why, a check of your digits, or the whole answer. Not scored.";
   return setup.kind === "race"
     ? "Race someone on the same wifi: the same puzzle, each on your own board. Scored when started online."
     : "Solve one board together on the same wifi. Co-op games are not scored.";
@@ -89,9 +91,11 @@ function renderSetup() {
   check("#levelPick [data-level]", "level", setup.level);
   check("#kindPick [data-kind]", "kind", setup.kind);
   check("#hintPick [data-hints]", "hints", setup.hints);
-  $("levelGroup").classList.toggle("hidden", setup.mode === "daily");
+  const solver = setup.mode === "solver";
+  $("levelGroup").classList.toggle("hidden", setup.mode === "daily" || solver);
   $("kindGroup").classList.toggle("hidden", setup.mode !== "network");
-  $("seedGroup").classList.toggle("hidden", setup.mode === "daily");
+  $("hintGroup").classList.toggle("hidden", solver);
+  $("seedGroup").classList.toggle("hidden", setup.mode === "daily" || solver);
   $("joinForm").classList.toggle("hidden", setup.mode !== "network");
   $("startLabel").textContent = launching
     ? "Starting"
@@ -99,7 +103,9 @@ function renderSetup() {
       ? "Host a game"
       : setup.mode === "daily"
         ? "Start today's puzzle"
-        : "Start game";
+        : solver
+          ? "Open the solver"
+          : "Start game";
   $("startBtn").disabled = launching;
   $("playModeNote").textContent = modeNote();
   $("customHintsRow").classList.toggle("hidden", setup.hints !== "custom");
@@ -115,6 +121,7 @@ function shake(input) {
 }
 
 function onStart() {
+  if (setup.mode === "solver") return openSolver();
   const maxHints = maxHintsFromSetup();
   if (maxHints === undefined) {
     $("hintNote").textContent = "Enter a whole number of hints, 0 to 81.";
@@ -572,7 +579,7 @@ function renderOpponent() {
 }
 
 function showPanel(name) {
-  for (const id of ["setup", "net", "play"]) $(id).classList.toggle("hidden", id !== name);
+  for (const id of ["setup", "net", "solver", "play"]) $(id).classList.toggle("hidden", id !== name);
 }
 
 /* ---- the end ---- */
