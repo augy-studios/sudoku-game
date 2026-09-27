@@ -1,7 +1,7 @@
 {
     "name": "uwuSudoku by UwU Apps",
     "short_name": "uwuSudoku",
-    "description": "Sudoku that plays offline. Race or team up on the same wifi, climb the daily leaderboard, or get hints on any puzzle you type in. No ads.",
+    "description": "Sudoku that plays offline. Race or team up on the same wifi, climb the daily leaderboard, or get hints on any puzzle you type in.",
     "icons": [{
             "src": "XSD-192.png",
             "type": "image/png",
