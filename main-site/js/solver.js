@@ -6,12 +6,13 @@
 // nothing leaves the browser.
 
 import { solve, countSolutions, ROW, COL } from "./sudoku.js";
-import { clashes, candidates, nextStep, bitCount, parseGrid } from "./steps.js";
+import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText } from "./steps.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
 import { showPanel, renderSetup } from "./game.js";
-import { store } from "./ui.js";
+import { store, copyText } from "./ui.js";
 import { confetti } from "./confetti.js";
+import { savePuzzleImage } from "./image.js";
 
 const STORAGE = "uwusudoku.solver";
 // Fewer clues than this never has one answer.
@@ -124,6 +125,27 @@ function selectCell(c, { focus = false } = {}) {
   if (focus) board.focusSelected();
 }
 
+// After a digit goes in, the selection moves on, so a puzzle can be typed
+// straight through: to the next cell while the clues go in, blanks and all,
+// and to the next empty one while solving, round to the top if need be. The
+// keyboard's focus follows it when it was on the board.
+function advance() {
+  const g = grid();
+  let to = null;
+  if (s.stage === "enter") to = selected < 80 ? selected + 1 : null;
+  else {
+    for (let i = 1; i < 81 && to == null; i++) {
+      const c = (selected + i) % 81;
+      if (!g[c]) to = c;
+    }
+  }
+  if (to == null) return;
+  const focused = board.root.contains(document.activeElement);
+  selected = to;
+  render();
+  if (focused) board.focusSelected();
+}
+
 function inputDigit(d) {
   if (!canEdit()) return;
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
@@ -134,14 +156,29 @@ function inputDigit(d) {
     return;
   }
   const next = grid().slice();
-  // The same digit again takes it out.
-  next[selected] = next[selected] === d ? 0 : d;
+  // The same digit again takes it out, and stays put.
+  const placed = next[selected] !== d;
+  next[selected] = placed ? d : 0;
   change(next);
   if (isSolved()) {
     note = "Solved. Every digit is right.";
     confetti();
   }
   render();
+  if (placed && !isSolved()) advance();
+}
+
+// A blank while the clues go in: 0 or ., as in a pasted puzzle. Clears the
+// cell and moves on, so blanks need no tapping past.
+function blank() {
+  if (s.stage !== "enter" || selected == null) return;
+  if (s.clues[selected]) {
+    const next = s.clues.slice();
+    next[selected] = 0;
+    change(next);
+    render();
+  }
+  advance();
 }
 
 function erase() {
@@ -178,6 +215,27 @@ function pasteText(text) {
   change(next);
   selected = null;
   say(`Pasted ${plural(next.filter(Boolean).length, "clue")}. Check them against the original, then tap Help me solve it.`);
+}
+
+// The clues, in the same form Paste takes.
+async function onCopy() {
+  if (!s.clues.some(Boolean)) return;
+  const ok = await copyText(puzzleText(s.clues));
+  $("solverCopyLabel").textContent = ok ? "Copied" : "Copy failed";
+  setTimeout(() => ($("solverCopyLabel").textContent = "Copy puzzle"), 1500);
+}
+
+// The clues as a PNG, to print or send.
+async function onImage() {
+  if (!s.clues.some(Boolean)) return;
+  let ok = false;
+  try {
+    ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png");
+  } catch {
+    ok = false;
+  }
+  $("solverImageLabel").textContent = ok ? "Saved" : "Save failed";
+  setTimeout(() => ($("solverImageLabel").textContent = "Save image"), 1500);
 }
 
 async function onPasteBtn() {
@@ -305,7 +363,7 @@ function defaultStatus() {
   if (s.stage === "enter") {
     const n = s.clues.filter(Boolean).length;
     if (clashes(s.clues).size) return "The red digits clash: the same digit twice in a row, column or box.";
-    if (!n) return "Pick a cell and type the puzzle's digits, or paste in a whole puzzle.";
+    if (!n) return "Pick the first cell and type the puzzle row by row, 0 or . for a blank. Or paste in the whole puzzle.";
     return `${plural(n, "clue")} so far. Tap Help me solve it when they are all in.`;
   }
   if (isSolved()) return "Solved. Every digit is right.";
@@ -358,6 +416,8 @@ function render() {
   $("solverUndo").disabled = !history.length;
   $("solverErase").disabled = !canEdit();
   $("solverClear").disabled = !s.clues.some(Boolean);
+  $("solverCopy").disabled = !s.clues.some(Boolean);
+  $("solverImage").disabled = !s.clues.some(Boolean);
   for (const id of ["solverCheck", "solverHint", "solverSolve"]) $(id).disabled = solved;
   $("solverHintLabel").textContent = pending ? "Show it" : "Hint";
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
@@ -395,6 +455,7 @@ function onKey(e) {
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
+  else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
   else if (e.key.startsWith("Arrow") && selected == null && canEdit()) selectCell(40, { focus: true });
   else return;
@@ -419,6 +480,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverSolve").addEventListener("click", onSolveAll);
   $("solverGo").addEventListener("click", onGo);
   $("solverCands").addEventListener("click", toggleCandidates);
+  $("solverCopy").addEventListener("click", onCopy);
+  $("solverImage").addEventListener("click", onImage);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
   document.addEventListener("keydown", onKey);

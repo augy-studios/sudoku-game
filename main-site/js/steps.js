@@ -27,6 +27,12 @@ export function parseGrid(text) {
   return [...cells].map((ch) => (ch === "." ? 0 : Number(ch)));
 }
 
+// The other way: a grid as 81 characters, . for a blank, which parseGrid
+// and most sudoku apps read.
+export function puzzleText(grid) {
+  return grid.map((d) => (d ? String(d) : ".")).join("");
+}
+
 export function bitCount(mask) {
   let n = 0;
   for (let m = mask; m; m &= m - 1) n++;

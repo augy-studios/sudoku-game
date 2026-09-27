@@ -11,7 +11,7 @@ import { LEVEL_IDS } from "../main-site/js/levels.js";
 import { newSeed, parseSeed, puzzleFor } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, fromWire, toWire, logText } from "../main-site/js/record.js";
-import { parseGrid, clashes, candidates, nextStep, bitCount } from "../main-site/js/steps.js";
+import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount } from "../main-site/js/steps.js";
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
 
 let passed = 0;
@@ -178,6 +178,9 @@ test("the solver reads pasted grids", () => {
   assert.deepEqual(parseGrid(dotted), [...text].map(Number), "dots, spaces, bars and line breaks");
   assert.equal(parseGrid(text.slice(1)), null, "80 cells");
   assert.equal(parseGrid(""), null);
+  const grid = parseGrid(text);
+  assert.equal(puzzleText(grid), text.replace(/0/g, "."), "a copied puzzle uses . for blanks");
+  assert.deepEqual(parseGrid(puzzleText(grid)), grid, "and pastes back the same");
 });
 
 test("the solver finds clashes and candidates", () => {

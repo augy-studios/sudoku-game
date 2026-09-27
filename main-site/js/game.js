@@ -18,6 +18,7 @@ import { openLeaderboard, formatTime } from "./leaderboard.js";
 import { copyText, hydrateIcons, store } from "./ui.js";
 import { confetti } from "./confetti.js";
 import { openSolver } from "./solver.js";
+import { puzzleText } from "./steps.js";
 
 const GAME_STORAGE = "uwusudoku.game";
 const SETUP_STORAGE = "uwusudoku.setup";
@@ -544,6 +545,8 @@ function renderActions(over) {
   // Once it is over the result has its own buttons; a network game keeps
   // its way out of the session here.
   $("leaveRow").classList.toggle("hidden", over && !g.role);
+  // Once it is over, the result has its own.
+  $("copyPuzzleBtn").classList.toggle("hidden", over);
   if (!leaveTimer) $("leaveLabel").textContent = g.role ? (g.role === "host" ? "Stop hosting" : "Leave") : "New game";
 
   // A finished game's result says all of this itself.
@@ -1126,6 +1129,16 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
     if (!seed) return;
     $("copySeedLabel").textContent = (await copyText(seed.text)) ? "Copied" : "Copy failed";
   });
+  // The puzzle as it started, for the solver or another app.
+  const copyPuzzle = (labelId) => async () => {
+    const seed = shownSeed();
+    if (!seed) return;
+    const ok = await copyText(puzzleText(puzzleFor(seed).puzzle));
+    $(labelId).textContent = ok ? "Copied" : "Copy failed";
+    setTimeout(() => ($(labelId).textContent = "Copy puzzle"), 1500);
+  };
+  $("copyPuzzleBtn").addEventListener("click", copyPuzzle("copyPuzzleLabel"));
+  $("resultPuzzleBtn").addEventListener("click", copyPuzzle("resultPuzzleLabel"));
   $("seedChip").addEventListener("click", async () => {
     const seed = shownSeed();
     if (!seed) return;
