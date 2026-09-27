@@ -55,11 +55,14 @@ test("Solve, unfinished boards and impossible moves are refused", () => {
   refused("illegal", () => settle(row(), readLog([["p", given, 1, 1000]]), 60000));
 });
 
-test("the hint limit holds", () => {
+test("hints past the free ones cost points, and none is refused", () => {
   const log = readLog([["h", blanks[0], 0, 2000], ...wire().slice(1)]);
   const elapsed = log.at(-1).t + 1000;
-  refused("too_many_hints", () => settle(row({ max_hints: 0 }), log, elapsed));
-  assert.equal(verify(row({ max_hints: 1 }), log, elapsed).hints, 1);
+  const paid = verify(row({ max_hints: 0 }), log, elapsed);
+  const free = verify(row({ max_hints: 1 }), log, elapsed);
+  assert.equal(paid.hints, 1);
+  assert.equal(free.score, verify(row({ max_hints: null }), log, elapsed).score, "null makes every hint free");
+  assert.ok(free.score > paid.score);
 });
 
 test("times have to fit the server's clock and a human pace", () => {

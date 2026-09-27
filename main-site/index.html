@@ -137,20 +137,20 @@
                 </div>
 
                 <div class="field-group" id="hintGroup">
-                    <p class="field-label" id="hintLabelSetup">Hints allowed</p>
+                    <p class="field-label" id="hintLabelSetup">Free hints</p>
                     <div class="hint-pick" id="hintPick" role="radiogroup" aria-labelledby="hintLabelSetup">
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="0">None</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="1">1</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="true" data-hints="3">3</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="5">5</button>
-                        <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="all">No limit</button>
+                        <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="all">All</button>
                         <button class="mode-btn" type="button" role="radio" aria-checked="false" data-hints="custom">Custom</button>
                     </div>
                     <div class="custom-row hidden" id="customHintsRow">
-                        <label for="customHints" class="visually-hidden">Hints</label>
+                        <label for="customHints" class="visually-hidden">Free hints</label>
                         <input id="customHints" class="field" type="number" min="0" max="81" step="1" inputmode="numeric"
                             placeholder="Hints" enterkeyhint="done">
-                        <span class="field-suffix">hints, 0 to 81</span>
+                        <span class="field-suffix">free hints, 0 to 81</span>
                     </div>
                     <p class="field-note" id="hintNote"></p>
                 </div>

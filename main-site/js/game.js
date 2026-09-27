@@ -43,7 +43,8 @@ let watching = null; // a shared replay being watched
 
 /* ---- setup ---- */
 
-// hints: a preset number, "all" for no limit, or "custom" for `custom`.
+// hints, how many are free: a preset number, "all" for every one, or
+// "custom" for `custom`. Hints past the free ones cost points.
 const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10 };
 
 function loadSetup() {
@@ -68,8 +69,8 @@ function modeNote() {
     : "Solve one board together on the same wifi. Co-op games are not scored.";
 }
 
-// The chosen hint limit, null for none, or undefined if the custom number is
-// not one.
+// The chosen number of free hints, null for all of them, or undefined if
+// the custom number is not one.
 function maxHintsFromSetup() {
   if (setup.hints === "all") return null;
   if (setup.hints !== "custom") return setup.hints;
@@ -79,9 +80,9 @@ function maxHintsFromSetup() {
 
 function hintNote() {
   const n = setup.hints === "custom" ? setup.custom : setup.hints;
-  if (n === "all") return "As many hints as you like. Each one costs points.";
-  if (n === 0) return "No hints this game.";
-  return `Up to ${n} ${n === 1 ? "hint" : "hints"}, each costing points.`;
+  if (n === "all") return "Every hint is free, though a hinted cell earns nothing.";
+  if (n === 0) return "Every hint costs points.";
+  return `The first ${n === 1 ? "hint is" : `${n} hints are`} free, and each one after that costs points.`;
 }
 
 function renderSetup() {
@@ -124,7 +125,7 @@ function onStart() {
   if (setup.mode === "solver") return openSolver();
   const maxHints = maxHintsFromSetup();
   if (maxHints === undefined) {
-    $("hintNote").textContent = "Enter a whole number of hints, 0 to 81.";
+    $("hintNote").textContent = "Enter a whole number of free hints, 0 to 81.";
     return shake($("customHints"));
   }
   if (setup.mode === "daily") return launchDaily(maxHints);
@@ -287,7 +288,8 @@ function hintsUsed() {
   return g.log.filter((a) => a.k === "h").length;
 }
 
-function hintsLeft() {
+// Free hints still to use. The rest cost points, and are never refused.
+function freeHintsLeft() {
   return g.maxHints == null ? Infinity : Math.max(0, g.maxHints - hintsUsed());
 }
 
@@ -363,7 +365,7 @@ function erase() {
 // Fills the selected cell if it needs it, or else the first empty cell,
 // or else the first wrong one.
 function hint() {
-  if (!canPlay() || hintsLeft() <= 0) return;
+  if (!canPlay()) return;
   const needs = (c) => !g.puzzle[c] && res.values[c] !== g.solution[c];
   let target = selected != null && needs(selected) ? selected : -1;
   if (target < 0) target = res.values.findIndex((v, c) => !g.puzzle[c] && !v);
@@ -489,7 +491,7 @@ function renderTimer() {
 }
 
 function currentTally() {
-  return tally(res, g.log, { speed: g.serverSeed });
+  return tally(res, g.log, { speed: g.serverSeed, freeHints: g.maxHints });
 }
 
 function renderChips(over) {
@@ -500,7 +502,13 @@ function renderChips(over) {
   const live = liveScore(g.seed.level, t);
   $("scoreChip").textContent = scoring() && !over ? `${live} ${live === 1 ? "point" : "points"}` : "";
   $("mistakeChip").textContent = `${t.mistakes} ${t.mistakes === 1 ? "mistake" : "mistakes"}`;
-  $("hintChip").textContent = g.maxHints == null ? `${t.hints} ${t.hints === 1 ? "hint" : "hints"}` : `Hints ${t.hints} of ${g.maxHints}`;
+  const hints = `${t.hints} ${t.hints === 1 ? "hint" : "hints"}`;
+  $("hintChip").textContent =
+    g.maxHints == null || g.maxHints === 0
+      ? hints
+      : t.hints <= g.maxHints
+        ? `Free hints ${t.hints} of ${g.maxHints}`
+        : `${hints}, ${t.paidHints} paid`;
   $("seedChip").textContent = g.seed.text;
 }
 
@@ -529,9 +537,9 @@ function renderActions(over) {
   $("notesBtn").disabled = !playable;
   $("notesBtn").setAttribute("aria-pressed", String(notesMode));
   $("notesLabel").textContent = notesMode ? "Notes on" : "Notes";
-  const left = hintsLeft();
-  $("hintBtn").disabled = !playable || left <= 0;
-  $("hintLabel").textContent = left === Infinity ? "Hint" : `Hint, ${left} left`;
+  const free = freeHintsLeft();
+  $("hintBtn").disabled = !playable;
+  $("hintLabel").textContent = free === Infinity ? "Hint, free" : free > 0 ? `Hint, ${free} free` : "Hint";
   $("solveBtn").disabled = !playable;
   // Once it is over the result has its own buttons; a network game keeps
   // its way out of the session here.
@@ -724,7 +732,6 @@ const FINAL = [
   "illegal",
   "auto_solved",
   "unfinished",
-  "too_many_hints",
   "clock",
 ];
 

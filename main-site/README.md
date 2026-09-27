@@ -79,10 +79,11 @@ stands, including a hint. In co-op it only ever takes back your own moves.
 A mistake still costs its points after it is undone, and undoing a correct
 digit and placing it again does not earn it twice.
 
-**Hints.** Chosen before the game: none, 1, 3, 5, no limit, or any number
-from 0 to 81. A hint fills the selected cell if it needs it, or else the
-first empty one. The limit is part of the start ticket, and the API refuses a
-game that went over it. **Solve** fills the board and ends the game; a game
+**Hints.** As many as you like, and how many are free is chosen before the
+game: none, 1, 3, 5, all, or any number from 0 to 81. Each hint past the free
+ones costs points, and a hinted cell never earns its own. A hint fills the
+selected cell if it needs it, or else the first empty one. The number of free
+hints is part of the start ticket, and the API scores with it. **Solve** fills the board and ends the game; a game
 finished with Solve is never ranked.
 
 **Replay.** When a game ends it plays back on the board by itself (a setting
@@ -109,7 +110,7 @@ board shows it live.
 | Each correct digit, the first time that cell is filled | 100 |
 | Placed within 3 s of your previous digit | up to +50% of that, shrinking evenly to nothing at 30 s |
 | Each wrong digit | minus 60 |
-| Each hint | minus 150 |
+| Each hint past the game's free ones | minus 150 |
 | Finishing the board | 1000 |
 
 The total is then scaled by the level: Easy 60%, Medium 100%, Hard 150%,
@@ -131,13 +132,12 @@ server. Games started offline play the same, and say they are not scored.
 
 On submit the API trusts nothing but the name. It builds the puzzle from the
 seed, replays every move and refuses an impossible one, requires a
-complete, correct board, counts the hints against the ticket's limit, and
-computes the score itself. It refuses:
+complete, correct board, and computes the score itself, with the ticket's
+number of free hints. It refuses:
 
 | Code | When |
 | --- | --- |
 | `auto_solved` | the game used Solve |
-| `too_many_hints` | more hints than the ticket allowed |
 | `clock` | the moves' times run past the server's own clock for the game |
 | `too_fast` | under 0.8 s per blank cell or 20 s in all by the server's clock, or more than five turns under 150 ms apart |
 

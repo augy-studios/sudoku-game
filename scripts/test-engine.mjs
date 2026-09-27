@@ -162,6 +162,13 @@ test("scores scale with level, pace and time", () => {
 
   const hinted = [a("h", blanks[0], 0, 1000)];
   assert.equal(tally(play(puzzle, solution, hinted), hinted).points, -HINT);
+  assert.equal(tally(play(puzzle, solution, hinted), hinted, { freeHints: 1 }).points, 0, "a free hint costs nothing");
+  assert.equal(tally(play(puzzle, solution, hinted), hinted, { freeHints: null }).points, 0, "null makes every hint free");
+  const twice = [...hinted, a("h", blanks[1], 0, 2000)];
+  const t = tally(play(puzzle, solution, twice), twice, { freeHints: 1 });
+  assert.equal(t.points, -HINT, "only the hint past the free one costs");
+  assert.equal(t.paidHints, 1);
+  assert.equal(t.hints, 2);
 });
 
 test("the solver reads pasted grids", () => {

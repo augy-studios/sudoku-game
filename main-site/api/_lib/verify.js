@@ -1,8 +1,9 @@
 // Replays a submitted game with the same modules the browser plays with,
 // and works out what it is worth. Nothing a browser says about a game is
 // taken on trust: the log is replayed from the seed, the board has to end
-// complete and correct, the hint limit and the times are checked against the
-// ticket and the server's own clock, and the score is computed here.
+// complete and correct, the times are checked against the ticket and the
+// server's own clock, and the score is computed here, with the ticket's free
+// hints.
 //
 // What this cannot check is how long each turn really took: those times come
 // from the browser. They are held to never running backwards, to fitting
@@ -49,11 +50,6 @@ export function settle(game, log, elapsedMs) {
   if (result.solved) throw new HttpError(409, "auto_solved", "Games finished with Solve are not ranked.");
   if (!result.complete) throw new HttpError(409, "unfinished", "Only a finished board can go on the leaderboard.");
 
-  const hints = log.filter((a) => a.k === "h").length;
-  if (game.max_hints != null && hints > game.max_hints) {
-    throw new HttpError(409, "too_many_hints", "That game used more hints than it allowed.");
-  }
-
   if (log.at(-1).t > elapsedMs + CLAIM_SLACK_MS) {
     throw new HttpError(409, "clock", "That game's times run past the time it really took.");
   }
@@ -74,7 +70,7 @@ export function settle(game, log, elapsedMs) {
 export function verify(game, log, elapsedMs) {
   const { seed, result } = settle(game, log, elapsedMs);
   const speed = game.server_seed === true;
-  const t = tally(result, log, { speed });
+  const t = tally(result, log, { speed, freeHints: game.max_hints ?? null });
   const bonus = timeBonus(seed.level, elapsedMs, speed);
   return {
     score: finalScore(seed.level, t, bonus),

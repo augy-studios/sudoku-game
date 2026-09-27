@@ -33,9 +33,11 @@ export function turnBonus(gapMs) {
 // What the log so far is worth, before the level's percentage. `result` is
 // play()'s. `speed` is whether the time bonuses count: only on a seed the
 // server picked, since a seed the player chose could have been solved
-// beforehand. A turn is a digit placed or a hint; its time runs from the
-// same player's previous turn, or from the start.
-export function tally(result, log, { speed = false } = {}) {
+// beforehand. `freeHints` is how many hints cost nothing, the game's first
+// ones, or null for all of them; each hint after those costs HINT. A hinted
+// cell never earns its own points either way. A turn is a digit placed or a
+// hint; its time runs from the same player's previous turn, or from the start.
+export function tally(result, log, { speed = false, freeHints = 0 } = {}) {
   let points = 0;
   let placed = 0;
   let mistakes = 0;
@@ -57,7 +59,8 @@ export function tally(result, log, { speed = false } = {}) {
       points += Math.floor((CELL * (100 + (speed ? turnBonus(gap) : 0))) / 100);
     }
   });
-  return { points: points - MISTAKE * mistakes - HINT * hints, placed, mistakes, hints };
+  const paidHints = freeHints === null ? 0 : Math.max(0, hints - freeHints);
+  return { points: points - MISTAKE * mistakes - HINT * paidHints, placed, mistakes, hints, paidHints };
 }
 
 const scaled = (level, raw) => Math.max(0, Math.floor((raw * LEVELS[level].percent) / 100));
