@@ -5,13 +5,6 @@ The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Int
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
-**Built so far (31):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
-Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular · Kropki,
-XV, Greater Than, Quad · Sandwich,
-Little Killer, Skyscrapers, X-Sums, Hidden Skyscraper, Numbered Room ·
-Diagonal, Anti-knight, Anti-king,
-Windoku, Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV.
-
 ## Every new variant needs an explanation
 
 Each one gets an entry in `main-site/js/rule-help.js`: its name as
@@ -22,14 +15,13 @@ is there, in the same order as the buttons.
 
 ## Seed letters
 
-Each variant has a letter at the front of a made puzzle's seed (`seed.js`,
+Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 `PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
-ran out with Zipper, Between and Lockout (Z, C, F), so from Disjoint Groups
-on a variant's letter is **Q and two more**: QDG, QAC, QSK, QSX. Q is only
-read with the two after it, so every seed made before still reads as it
-did. Pick two that name the variant and no other's, and put its entry in
-`PARTS` or `RULES` where its letters should go. I is still free, but is
-easily misread; best left.
+are all taken but I, which is easily misread, so a new variant's letters are
+**Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
+QQD, QHS, QNR, QDG, QAC, QSK and QSX. Q is only read with the two after it,
+so every seed made before still reads as it did. Put the entry in `PARTS` or
+`RULES` where its letters should go.
 
 ## Cages and regions
 
@@ -95,8 +87,18 @@ easily misread; best left.
 
 ## Suggested order
 
-1. ~~Zipper, Between and Lockout~~: built. Lockout's gap is fixed at 4.
-2. ~~Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV~~: built, the rules about sides as barred sides (`barredSides`).
-3. ~~Entropic and Modular lines~~: built, as QEN and QMO, three cells at least.
-4. ~~Greater Than and Quad~~: built, as QGT and QQD, on the Marks tool (a quad on a tap near a corner).
-5. ~~Hidden Skyscraper and Numbered Room~~: built, as QHS and QNR, on the Outside tool.
+1. Global Entropy and Global Mod: whole-grid switches, each 2×2 square
+   sorted into the kinds the Entropic and Modular lines already use.
+2. Anti-taxicab and Dutch Flatmates: whole-grid switches, each a new check
+   between cells, as the barred sides were.
+3. Double Arrow and Pill Arrow: both build on Arrow's circle and sum.
+4. Rellik Cage, Lunchbox, Look and Say and Equality Cage: cages with a
+   different clue. The Cages tool needs a kind per cage first, so one tool
+   can draw them all.
+5. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
+   a total.
+6. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
+   cells on the Cages tool, once it has kinds.
+7. Counting Circles, Full Rank and Row/Column Indexing: each needs
+   something new, marks in cells, a ranking of whole rows, or indexing.
+8. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
