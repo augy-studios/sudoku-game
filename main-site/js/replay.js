@@ -68,7 +68,8 @@ export class Replay {
     });
   }
 
-  // game: { puzzle, solution, log, players, cages?, thermos?, arrows?, rules? }.
+  // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
+  // whispers?, renbans?, rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
   load(game, view, { autoplay = false } = {}) {
@@ -119,6 +120,8 @@ export class Replay {
       rules: this.game.rules ?? 0,
       thermos: this.game.thermos ?? null,
       arrows: this.game.arrows ?? null,
+      whispers: this.game.whispers ?? null,
+      renbans: this.game.renbans ?? null,
     });
     $("rpScrub").value = String(i);
     const total = this.frames.length - 1;

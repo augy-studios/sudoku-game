@@ -443,6 +443,22 @@ body {
   stroke: var(--warn);
   opacity: 0.8;
 }
+/* German Whispers green and renban purple, the colours these lines have
+   in most apps, and as faint as a thermometer. */
+.whisper,
+.renban {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.4;
+}
+.whisper { stroke: var(--ok); }
+.renban { stroke: #9a5bd8; }
+.whisper-pending,
+.renban-pending {
+  stroke: var(--warn);
+  opacity: 0.45;
+}
 /* Diagonal and Windoku. */
 .diagonal-line {
   fill: none;

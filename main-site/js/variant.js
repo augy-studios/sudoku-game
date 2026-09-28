@@ -1,7 +1,7 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, thermos, arrows, rules }:
+// A variant is { cages, thermos, arrows, whispers, renbans, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -13,6 +13,12 @@
 //            digits along the arrow, past the circle, add up to the
 //            circle's digit, and may repeat where the rules allow. Arrows
 //            may share cells, and circles.
+//   whispers German Whispers lines, paths like a thermometer's: digits next
+//            to each other on one differ by at least 5, so no 5 is ever on
+//            one. They may share cells.
+//   renbans  renban lines, paths like a thermometer's: a line's digits are
+//            a run of consecutive digits in any order, with no repeats.
+//            They may share cells.
 //   rules    switches, as bits (RULES below): Diagonal, both long
 //            diagonals hold 1 to 9; Anti-knight, cells a knight's move apart
 //            differ; Anti-king, cells touching at a corner differ; Windoku,
@@ -38,8 +44,10 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
+  if (renbans?.length) names.unshift("Renban");
+  if (whispers?.length) names.unshift("German Whispers");
   if (arrows?.length) names.unshift("Arrow");
   if (thermos?.length) names.unshift("Thermo");
   if (cages?.length) names.unshift("Killer");
@@ -171,12 +179,12 @@ export function cageOf(cages) {
   return out;
 }
 
-/* ---- thermometers and arrows ---- */
+/* ---- thermometers, arrows and the other lines ---- */
 
 // Whether two cells touch, along an edge or at a corner.
 export const touching = (a, b) => a !== b && Math.abs(ROW[a] - ROW[b]) <= 1 && Math.abs(COL[a] - COL[b]) <= 1;
 
-// Whether lines, thermometers or arrows, are well formed: forty at most,
+// Whether lines, thermometers, arrows or the others, are well formed: forty at most,
 // each two to nine cells on the board, each touching the one before, none
 // twice. null if so, or what is wrong: { why, line }.
 function lineProblem(lines) {
@@ -199,6 +207,8 @@ function lineProblem(lines) {
 
 export const thermoProblem = lineProblem;
 export const arrowProblem = lineProblem;
+export const whisperProblem = lineProblem;
+export const renbanProblem = lineProblem;
 
 // ABOVE[k]: the digits over k, for k 0 to 9. BELOW[k]: those under it, for
 // k 1 to 10. LOW and HIGH: a mask's least and greatest digit.
@@ -278,15 +288,95 @@ function arrowBounds(arrows, g, free) {
   return true;
 }
 
+// FAR[m]: the digits at least 5 away from some digit in m. Never 5, which
+// has nothing that far.
+const FAR = new Int32Array(1024);
+for (let m = 2; m < 1024; m += 2) {
+  for (let d = 1; d <= 9; d++) if (m & (1 << d)) FAR[m] |= between(1, d - 5) | between(d + 5, 9);
+}
+
+// Narrows candidates along each German Whispers line, forwards and then
+// backwards: every cell to the digits far enough from some digit the cell
+// before it can be. Placed digits count as masks of one, and `free` is
+// narrowed in place, as in thermoBounds; false if a line cannot be filled,
+// or two placed digits next to each other are too close.
+function whisperBounds(whispers, g, free) {
+  for (const t of whispers) {
+    for (const back of [false, true]) {
+      let before = 0;
+      for (let j = 0; j < t.length; j++) {
+        const c = t[back ? t.length - 1 - j : j];
+        let m = g[c] ? 1 << g[c] : free[c];
+        if (j) m &= FAR[before];
+        if (!m) return false;
+        if (!g[c]) free[c] = m;
+        before = m;
+      }
+    }
+  }
+  return true;
+}
+
+// Narrows candidates on each renban line to the runs it could still be: a
+// run of as many digits as the line has cells, holding its placed digits,
+// with each of the run's other digits in reach of some empty cell and every
+// empty cell able to take one of them. Placed digits count as masks of one,
+// and `free` is narrowed in place, as in thermoBounds; false if no run
+// fits, or a placed digit repeats.
+function renbanBounds(renbans, g, free) {
+  for (const t of renbans) {
+    let placed = 0;
+    for (const c of t) {
+      if (!g[c]) continue;
+      const bit = 1 << g[c];
+      if (placed & bit) return false;
+      placed |= bit;
+    }
+    let fits = false;
+    let allow = 0;
+    for (let lo = 1; lo + t.length - 1 <= 9; lo++) {
+      const run = between(lo, lo + t.length - 1);
+      if (placed & ~run) continue;
+      const need = run & ~placed;
+      let reach = 0;
+      let ok = true;
+      for (const c of t) {
+        if (g[c]) continue;
+        const m = free[c] & need;
+        if (!m) {
+          ok = false;
+          break;
+        }
+        reach |= m;
+      }
+      if (ok && reach === need) {
+        fits = true;
+        allow |= need;
+      }
+    }
+    if (!fits) return false;
+    for (const c of t) if (!g[c]) free[c] &= allow;
+  }
+  return true;
+}
+
 /* ---- candidates and solving ---- */
 
-const norm = (v) => ({ cages: v?.cages ?? [], thermos: v?.thermos ?? [], arrows: v?.arrows ?? [], rules: v?.rules ?? 0 });
+const norm = (v) => ({
+  cages: v?.cages ?? [],
+  thermos: v?.thermos ?? [],
+  arrows: v?.arrows ?? [],
+  whispers: v?.whispers ?? [],
+  renbans: v?.renbans ?? [],
+  rules: v?.rules ?? 0,
+});
 
 // What can go in each empty cell, by every cell it must differ from, its
-// cage, its thermometers and its arrows; 0 for a filled cell. A cage allows
-// digits not already in it that some way of filling the rest of it can use.
+// cage, and its thermometers, arrows and other lines; 0 for a filled cell. A
+// cage allows digits not already in it that some way of filling the rest of
+// it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, rules } = norm(variant);
   const { peers } = layout(rules);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -311,12 +401,14 @@ export function variantCandidates(grid, variant) {
   }
   thermoBounds(thermos, grid, out);
   arrowBounds(arrows, grid, out);
+  whisperBounds(whispers, grid, out);
+  renbanBounds(renbans, grid, out);
   return out;
 }
 
 // Depth first search. At each step every empty cell's candidates are worked
-// out from its houses, the cells it must differ from, its thermometers and
-// arrows, and its cage, where a
+// out from its houses, the cells it must differ from, its thermometers,
+// arrows and other lines, and its cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
 // cage cannot do without and only one of its cells can take, goes there;
@@ -330,7 +422,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules);
   let steps = 0;
   const hm = new Int32Array(houses.length);
@@ -380,6 +472,8 @@ function search(grid, variant, found) {
     }
     if (thermos.length && !thermoBounds(thermos, g, free)) return null;
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
+    if (whispers.length && !whisperBounds(whispers, g, free)) return null;
+    if (renbans.length && !renbanBounds(renbans, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

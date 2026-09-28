@@ -50,6 +50,10 @@ export const icons = {
   share: svg(`<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M8 11H6.5A2.5 2.5 0 0 0 4 13.5v5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-5a2.5 2.5 0 0 0-2.5-2.5H16"/>`),
   thermo: svg(`<circle cx="7.5" cy="16.5" r="3.5"/><path d="M10 14 18.5 5.5"/>`),
   arrow: svg(`<circle cx="7.5" cy="16.5" r="3.5"/><path d="M10 14 19 5M13.5 5H19v5.5"/>`),
+  // A line zigzagging high and low, as whispers' digits do.
+  whisper: svg(`<path d="M4 17 8.5 7l4 10 4-10L20 15" stroke-width="2.6"/>`),
+  // A thick line over a run of three dots.
+  renban: svg(`<path d="M5 12h14" stroke-width="3.2"/><circle cx="6" cy="18.5" r="1" fill="currentColor"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/><circle cx="18" cy="18.5" r="1" fill="currentColor"/>`),
   cage: svg(`<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M7.5 9.5h3" stroke-width="1.6"/>`),
   image: svg(`<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.5" r="1.8"/><path d="m20.5 16-5-5-8.5 8.5"/>`),
   clipboard: svg(`<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v.5M9 4.5V6h6V4.5"/>`),

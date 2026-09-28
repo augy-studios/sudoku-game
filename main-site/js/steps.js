@@ -4,16 +4,18 @@
 // in sudoku.js. A set of candidates is a mask with digits as bits 1 to 9,
 // the same as a cell's notes, so the board can draw one as the other.
 //
-// Each takes a variant, { cages, thermos, arrows, rules } (variant.js), as
-// an optional last argument; without one the rules are the classic ones.
+// Each takes a variant, { cages, thermos, arrows, whispers, renbans, rules }
+// (variant.js), as an optional last argument; without one the rules are the
+// classic ones.
 
 import { PEERS, countSolutions, findSolutions } from "./sudoku.js";
-import { layout, variantCandidates, variantSolutions, cageProblem, thermoProblem, arrowProblem } from "./variant.js";
+import { layout, variantCandidates, variantSolutions, cageProblem, thermoProblem, arrowProblem, whisperProblem, renbanProblem } from "./variant.js";
 
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const isVariant = (v) => Boolean(v?.cages?.length || v?.thermos?.length || v?.arrows?.length || v?.rules);
+const isVariant = (v) =>
+  Boolean(v?.cages?.length || v?.thermos?.length || v?.arrows?.length || v?.whispers?.length || v?.renbans?.length || v?.rules);
 
 // 81 cells in reading order: digits for clues, 0 or . for blanks. Anything
 // else, such as spaces and grid lines, is skipped.
@@ -40,9 +42,11 @@ export function bitCount(mask) {
 // move or a king's diagonal step away, or its cage; the digits of a cage
 // that go past its sum, or that fill it to some other sum; the digits of
 // a thermometer that do not rise fast enough from the bulb: two cells three
-// steps apart need digits at least three apart; and an arrow's digits, with
+// steps apart need digits at least three apart; an arrow's digits, with
 // its circle's, once they go past the circle (or past 9 with the circle
-// empty), or fill the arrow to some other sum.
+// empty), or fill the arrow to some other sum; digits next to each other on
+// a German Whispers line less than 5 apart; and a renban line's digits that
+// repeat, or all of them once they spread wider than the line is long.
 export function clashes(grid, variant = null) {
   const peers = variant?.rules ? layout(variant.rules).peers : PEERS;
   const out = new Set();
@@ -74,6 +78,21 @@ export function clashes(grid, variant = null) {
       filled.forEach((c) => out.add(c));
       if (grid[circle]) out.add(circle);
     }
+  }
+  for (const t of variant?.whispers ?? []) {
+    for (let i = 1; i < t.length; i++) {
+      const [a, b] = [t[i - 1], t[i]];
+      if (grid[a] && grid[b] && Math.abs(grid[a] - grid[b]) < 5) {
+        out.add(a);
+        out.add(b);
+      }
+    }
+  }
+  for (const t of variant?.renbans ?? []) {
+    const filled = t.filter((c) => grid[c]);
+    const digits = filled.map((c) => grid[c]);
+    if (Math.max(...digits) - Math.min(...digits) >= t.length) filled.forEach((c) => out.add(c));
+    filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
   }
   return out;
 }
@@ -139,8 +158,8 @@ export const MIN_CLUES = 17;
 
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
-// "cages", "thermos" or "arrows" (and problem, from cageProblem,
-// thermoProblem or arrowProblem),
+// "cages", "thermos", "arrows", "whispers" or "renbans" (and problem, from
+// cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
 // of the answers disagree on, and the two digits they put there). A
@@ -162,6 +181,14 @@ export function checkClues(clues, variant = null) {
   if (variant?.arrows?.length) {
     const problem = arrowProblem(variant.arrows);
     if (problem) return { ok: false, why: "arrows", problem };
+  }
+  if (variant?.whispers?.length) {
+    const problem = whisperProblem(variant.whispers);
+    if (problem) return { ok: false, why: "whispers", problem };
+  }
+  if (variant?.renbans?.length) {
+    const problem = renbanProblem(variant.renbans);
+    if (problem) return { ok: false, why: "renbans", problem };
   }
   const found = isVariant(variant) ? variantSolutions(clues, variant, 2) : countSolutions(clues, 2) ? findSolutions(clues, 2) : [];
   if (!found) return { ok: false, why: "hard" };

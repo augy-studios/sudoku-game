@@ -1,7 +1,7 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a variant puzzle's cages, thermometers, arrows, diagonals and windows
-// as on screen.
+// and a variant puzzle's cages, thermometers, arrows, German Whispers and
+// renban lines, diagonals and windows as on screen.
 
 import { variantName } from "./variant.js";
 
@@ -22,15 +22,20 @@ const CAPTION = "#5b6b60";
 const WINDOW_TINT = "rgba(232, 168, 56, 0.28)";
 const THERMO_GREY = "#cdd3ce";
 const ARROW_GREY = "#8f9a92";
+// Pale, so digits read through them.
+const WHISPER_GREEN = "#a8dcb2";
+const RENBAN_PURPLE = "#dac6ee";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, rules } (variant.js), or nothing for a
-// classic puzzle.
+// variant: { cages, thermos, arrows, whispers, renbans, rules }
+// (variant.js), or nothing for a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
   const thermos = variant?.thermos ?? [];
   const arrows = variant?.arrows ?? [];
+  const whispers = variant?.whispers ?? [];
+  const renbans = variant?.renbans ?? [];
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -85,7 +90,23 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.stroke();
   }
   const at = (c) => [PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.5) * CELL];
-  // Under everything drawn after: grey, solid, with a round bulb.
+  // German Whispers and renban lines, under everything else: solid, through
+  // the cells' middles.
+  for (const [lines, colour] of [
+    [whispers, WHISPER_GREEN],
+    [renbans, RENBAN_PURPLE],
+  ]) {
+    for (const t of lines) {
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = CELL * 0.26;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      t.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
+      ctx.stroke();
+    }
+  }
+  // Grey, solid, with a round bulb.
   for (const t of thermos) {
     ctx.strokeStyle = THERMO_GREY;
     ctx.fillStyle = THERMO_GREY;
@@ -137,7 +158,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, rules });
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20);
   return canvas;
 }

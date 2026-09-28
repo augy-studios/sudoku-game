@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -80,7 +80,8 @@ its own (mode `made`, from migration 002), without time bonuses, and in a
 network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
-board, on or off in any mix: Killer, Thermo, Arrow, Diagonal (both long diagonals hold 1
+board, on or off in any mix: Killer, Thermo, Arrow, Whispers (German
+Whispers), Renban, Diagonal (both long diagonals hold 1
 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
@@ -90,11 +91,11 @@ variant.js, diagonals and windows are extra houses and the knight's and
 king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
-clues. Its seed starts with its rules' letters, K, T, A, D, N, G and W,
-always in that order, as in `KD-H-...`; a seed with K, T or A carries its
-cages, thermometers or arrows in its body too (a thermometer or an arrow as
-its length, its first cell and each step's direction), and the others'
-carry the clues only.
+clues. Its seed starts with its rules' letters, K, T, A, S, R, D, N, G and
+W, always in that order, as in `KD-H-...`; a seed with K, T, A, S or R
+carries its cages, thermometers, arrows, whisper lines or renban lines in
+its body too (a line as its length, its first cell and each step's
+direction), and the others' carry the clues only.
 
 **Thermo.** Digits rise strictly along each thermometer, from its round
 bulb. The Thermos tool draws one: tap the bulb, then each next cell, which
@@ -120,6 +121,20 @@ with the others at their most and at their least. An arrow past its circle
 (or past 9 with the circle empty), or full and adding up to something else,
 shows as a clash. On the board and in a saved image, an arrow is a thin
 line from a ring round the circle's digit to a head.
+
+**German Whispers and Renban.** On a whisper line, digits next to each
+other differ by at least 5, so no 5 is ever on one. On a renban line, the
+digits are a run with no gaps or repeats, in any order: a line of three
+might hold 5 3 4. The Whispers and Renbans tools draw them as Thermos draws
+a thermometer, from either end, and they may share cells, up to forty of
+each, two to nine cells long. The solver keeps each whisper cell to digits
+far enough from some digit its neighbours can still be, both ways along the
+line, and each renban cell to the runs its line could still be: runs that
+hold its placed digits, and whose other digits its empty cells can all
+reach. Neighbours on a whisper line less than 5 apart show as a clash, as
+do a repeat on a renban line, and a renban line's digits once they spread
+wider than it is long. They are drawn as a thick line with no bulb, green
+for whispers and purple for renban, on the board and in a saved image.
 
 **Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
 sum from the pad, the keyboard or the sum box, and adds the cage; tapping a

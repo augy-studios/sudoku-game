@@ -15,9 +15,10 @@
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
 // cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
-// way with the Arrows tool, from the circle; and Diagonal, Anti-knight,
-// Anti-king and Windoku add their rules (variant.js). Every check, hint and
-// candidate then follows them too.
+// way with the Arrows tool, from the circle; Whispers and Renban add German
+// Whispers and renban lines, drawn the same way again with their own tools;
+// and Diagonal, Anti-knight, Anti-king and Windoku add their rules
+// (variant.js). Every check, hint and candidate then follows them too.
 //
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
@@ -25,7 +26,7 @@
 import { ROW, COL } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
 import { madeSeed, parseSeed } from "./seed.js";
-import { cageProblem, cageOf, thermoProblem, arrowProblem, touching, RULES, ALL_RULES, variantName } from "./variant.js";
+import { cageProblem, cageOf, thermoProblem, arrowProblem, whisperProblem, renbanProblem, touching, RULES, ALL_RULES, variantName } from "./variant.js";
 import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
@@ -45,9 +46,9 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow and rules are the variant's switches; cages are
-// kept while Killer is off, for when it comes back on, and thermometers and
-// arrows likewise.
+// killer, thermo, arrow, whisper, renban and rules are the variant's
+// switches; cages are kept while Killer is off, for when it comes back on,
+// and each kind of line likewise.
 const fresh = () => ({
   open: false,
   stage: "enter",
@@ -57,10 +58,14 @@ const fresh = () => ({
   killer: false,
   thermo: false,
   arrow: false,
+  whisper: false,
+  renban: false,
   rules: 0,
   cages: [],
   thermos: [],
   arrows: [],
+  whispers: [],
+  renbans: [],
 });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
@@ -74,8 +79,8 @@ let history = []; // earlier states of this stage, for undo
 let cageMode = false;
 let picked = new Set();
 let editing = -1;
-// The Thermos or Arrows tool, likewise: which is on, "thermo" or "arrow"
-// (LINES below), the path so far from the bulb or circle, and the line
+// The Thermos, Arrows, Whispers or Renbans tool, likewise: which is on, a
+// key of LINES below, the path so far from its first cell, and the line
 // being changed.
 let lineKind = null;
 let path = [];
@@ -97,9 +102,14 @@ const killer = () => s.killer;
 const cages = () => (killer() && s.cages.length ? s.cages : null);
 const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
-const drawn = () => Boolean(cages() || thermos() || arrows());
+const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
+const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
+const drawn = () => Boolean(cages() || thermos() || arrows() || whispers() || renbans());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
-const variant = () => (drawn() || s.rules ? { cages: cages() ?? [], thermos: thermos() ?? [], arrows: arrows() ?? [], rules: s.rules } : null);
+const variant = () =>
+  drawn() || s.rules
+    ? { cages: cages() ?? [], thermos: thermos() ?? [], arrows: arrows() ?? [], whispers: whispers() ?? [], renbans: renbans() ?? [], rules: s.rules }
+    : null;
 
 /* ---- keeping it ---- */
 
@@ -134,12 +144,11 @@ function load(which) {
   // Before the switch rules, a killer puzzle was saved as variant "killer".
   st.killer = saved.killer === true || saved.variant === "killer";
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
-  st.thermo = saved.thermo === true;
-  const lines = Array.isArray(saved.thermos) ? saved.thermos : [];
-  st.thermos = !thermoProblem(lines) ? lines : [];
-  st.arrow = saved.arrow === true;
-  const shafts = Array.isArray(saved.arrows) ? saved.arrows : [];
-  st.arrows = !arrowProblem(shafts) ? shafts : [];
+  for (const [kind, L] of Object.entries(LINES)) {
+    st[kind] = saved[kind] === true;
+    const lines = Array.isArray(saved[L.list]) ? saved[L.list] : [];
+    st[L.list] = !L.problem(lines) ? lines : [];
+  }
   const kept = Array.isArray(saved.cages) ? saved.cages : [];
   st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
   if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
@@ -170,7 +179,16 @@ function hintText(step, reveal) {
   }
   if (kind === "single") {
     if (!variant()) return `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
-    const parts = ["row", "column", "box", ...(cages() ? ["cage"] : []), ...(thermos() ? ["thermometers"] : []), ...(arrows() ? ["arrows"] : [])];
+    const parts = [
+      "row",
+      "column",
+      "box",
+      ...(cages() ? ["cage"] : []),
+      ...(thermos() ? ["thermometers"] : []),
+      ...(arrows() ? ["arrows"] : []),
+      ...(whispers() ? ["whisper lines"] : []),
+      ...(renbans() ? ["renban lines"] : []),
+    ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
   }
@@ -188,6 +206,8 @@ function problemText(check) {
   if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
   if (why === "thermos") return THERMO_PROBLEMS[check.problem.why];
   if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
+  if (why === "whispers") return WHISPER_PROBLEMS[check.problem.why];
+  if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
@@ -211,6 +231,8 @@ function clashText() {
   if (cages()) extra.push("twice in a cage, or past a cage's sum");
   if (thermos()) extra.push("not rising along a thermometer");
   if (arrows()) extra.push("not adding up to an arrow's circle");
+  if (whispers()) extra.push("less than 5 apart next to each other on a whisper line");
+  if (renbans()) extra.push("repeating or leaving a gap on a renban line");
   return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -228,6 +250,22 @@ const ARROW_PROBLEMS = {
   cell: "An arrow has a cell off the board.",
   loop: "An arrow cannot cross itself.",
   apart: "Each cell of an arrow must touch the one before it.",
+};
+
+const WHISPER_PROBLEMS = {
+  count: "There is room for forty whisper lines.",
+  length: "A whisper line needs two to nine cells.",
+  cell: "A whisper line has a cell off the board.",
+  loop: "A whisper line cannot cross itself.",
+  apart: "Each cell of a whisper line must touch the one before it.",
+};
+
+const RENBAN_PROBLEMS = {
+  count: "There is room for forty renban lines.",
+  length: "A renban line needs two to nine cells.",
+  cell: "A renban line has a cell off the board.",
+  loop: "A renban line cannot cross itself.",
+  apart: "Each cell of a renban line must touch the one before it.",
 };
 
 const CAGE_PROBLEMS = {
@@ -256,17 +294,22 @@ function wrongCells() {
   return out;
 }
 
-const snapshot = () => ({ clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice(), thermos: s.thermos.slice(), arrows: s.arrows.slice() });
+// The lists of lines, by LINES's list names: "thermos", "arrows", and so on.
+const lineLists = () => Object.values(LINES).map((L) => L.list);
 
-// Puts a new grid in this stage, and any of new { cages, thermos, arrows },
-// undoably.
-function change(next, { cages = s.cages, thermos = s.thermos, arrows = s.arrows } = {}) {
+const snapshot = () => {
+  const out = { clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice() };
+  for (const list of lineLists()) out[list] = s[list].slice();
+  return out;
+};
+
+// Puts a new grid in this stage, and any of new { cages, thermos, arrows,
+// whispers, renbans }, undoably.
+function change(next, parts = {}) {
   history.push(snapshot());
   if (s.stage === "solve") s.values = next;
   else s.clues = next;
-  s.cages = cages;
-  s.thermos = thermos;
-  s.arrows = arrows;
+  for (const list of ["cages", ...lineLists()]) if (parts[list]) s[list] = parts[list];
   checked = false;
   pending = null;
   mark = null;
@@ -378,9 +421,7 @@ function undo() {
   const back = history.pop();
   s.clues = back.clues;
   s.values = back.values;
-  s.cages = back.cages;
-  s.thermos = back.thermos;
-  s.arrows = back.arrows;
+  for (const list of ["cages", ...lineLists()]) s[list] = back[list];
   clearPicked();
   path = [];
   editingLine = -1;
@@ -396,7 +437,9 @@ function clearAll() {
   if (s.stage !== "enter" || (!s.clues.some(Boolean) && !drawn())) return;
   endCage();
   // Only what the rules on use: the rest is kept for when they come back.
-  change(empty(), { cages: killer() ? [] : s.cages, thermos: s.thermo ? [] : s.thermos, arrows: s.arrow ? [] : s.arrows });
+  const parts = { cages: killer() ? [] : s.cages };
+  for (const [kind, L] of Object.entries(LINES)) parts[L.list] = s[kind] ? [] : s[L.list];
+  change(empty(), parts);
   selected = null;
   say("Cleared. Undo brings it back.");
 }
@@ -408,14 +451,13 @@ function pasteText(text) {
   if (seed?.made) {
     endCage();
     s.killer = Boolean(seed.cages);
-    s.thermo = Boolean(seed.thermos);
-    s.arrow = Boolean(seed.arrows);
     s.rules = seed.rules ?? 0;
-    change(seed.grid.slice(), {
-      cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages,
-      thermos: seed.thermos ? seed.thermos.map((t) => t.slice()) : s.thermos,
-      arrows: seed.arrows ? seed.arrows.map((a) => a.slice()) : s.arrows,
-    });
+    const parts = { cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages };
+    for (const [kind, L] of Object.entries(LINES)) {
+      s[kind] = Boolean(seed[L.list]);
+      parts[L.list] = seed[L.list] ? seed[L.list].map((t) => t.slice()) : s[L.list];
+    }
+    change(seed.grid.slice(), parts);
     selected = null;
     const name = variantName(seed);
     return say(`Pasted a made ${name ? `${name} ` : ""}puzzle. Tap ${goLabel()} when ready.`);
@@ -471,6 +513,8 @@ function onGo() {
   if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
   if (s.thermo && !s.thermos.length) return say("Draw a thermometer first: tap Thermos, then the bulb and each next cell.");
   if (s.arrow && !s.arrows.length) return say("Draw an arrow first: tap Arrows, then the circle and each cell along it.");
+  if (s.whisper && !s.whispers.length) return say("Draw a whisper line first: tap Whispers, then each cell along it.");
+  if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
@@ -597,13 +641,11 @@ function toggleCandidates() {
 
 /* ---- cages ---- */
 
-// A rule button: killer, thermo, arrow, or one of RULES by key.
+// A rule button: killer, a key of LINES, or one of RULES by key.
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
-  if (key === "killer") s.killer = !s.killer;
-  else if (key === "thermo") s.thermo = !s.thermo;
-  else if (key === "arrow") s.arrow = !s.arrow;
+  if (key === "killer" || key in LINES) s[key] = !s[key];
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -627,8 +669,8 @@ function clearPicked() {
   $("cageSum").value = "";
 }
 
-// Leaves the Cages tool, and the Thermos or Arrows tool with it; `draw` to
-// show it at once.
+// Leaves the Cages tool, and any line tool with it; `draw` to show it at
+// once.
 function endCage(draw = false) {
   cageMode = false;
   clearPicked();
@@ -689,10 +731,11 @@ function onCageRemove() {
   say("Cage removed. Undo brings it back.");
 }
 
-/* ---- thermometers and arrows ---- */
+/* ---- thermometers, arrows and the other lines ---- */
 
-// The Thermos and Arrows tools draw alike, a path from its first cell; they
-// differ in words, and in where their lines are kept.
+// The line tools all draw alike, a path from its first cell; they differ in
+// words, and in where their lines are kept. Each key is also the name of the
+// rule's switch in a stage's state.
 const LINES = {
   thermo: {
     list: "thermos",
@@ -716,11 +759,33 @@ const LINES = {
     problem: arrowProblem,
     problems: ARROW_PROBLEMS,
   },
+  whisper: {
+    list: "whispers",
+    short: "whisper",
+    name: "whisper line",
+    title: "Whisper line",
+    a: "A whisper line",
+    start: "end",
+    started: "One end placed. Tap the next cell: digits next to each other on the line differ by at least 5.",
+    problem: whisperProblem,
+    problems: WHISPER_PROBLEMS,
+  },
+  renban: {
+    list: "renbans",
+    short: "renban",
+    name: "renban line",
+    title: "Renban line",
+    a: "A renban line",
+    start: "end",
+    started: "One end placed. Tap the next cell: the line's digits are a run, like 3 4 5, in any order.",
+    problem: renbanProblem,
+    problems: RENBAN_PROBLEMS,
+  },
 };
 
 const addLabel = () => `${editingLine >= 0 ? "Change" : "Add"} ${LINES[lineKind].short}`;
 
-// kind: "thermo" or "arrow".
+// kind: a key of LINES.
 function toggleLineMode(kind) {
   if (lineKind === kind) return endCage(true);
   endCage();
@@ -731,16 +796,16 @@ function toggleLineMode(kind) {
   render();
 }
 
-// Leaves the Thermos or Arrows tool, dropping any path not added.
+// Leaves the line tool, dropping any path not added.
 function endLine() {
   lineKind = null;
   path = [];
   editingLine = -1;
 }
 
-// A tap in the Thermos or Arrows tool: with no path, a cell of a line picks
-// it up, and then its first cell starts another line there, for lines that
-// share a bulb or a circle; the path's last cell takes that step back;
+// A tap in a line tool: with no path, a cell of a line picks it up, and
+// then its first cell starts another line there, for lines that share a
+// bulb, a circle or an end; the path's last cell takes that step back;
 // otherwise the cell is the next step, if it touches the last.
 function pickLineCell(c) {
   const L = LINES[lineKind];
@@ -793,7 +858,7 @@ function onLineAdd() {
   change(s.clues, { [L.list]: next });
   path = [];
   editingLine = -1;
-  say(`${L.title} of ${plural(n, "cell")} added. Tap the next ${L.start}, or Done.`);
+  say(`${L.title} of ${plural(n, "cell")} added. Tap the ${L.start} of the next one, or Done.`);
 }
 
 function onLineRemove() {
@@ -814,6 +879,8 @@ function defaultStatus() {
     if (lineKind) return lineStatus();
     if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
     if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
+    if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
+    if (s.renban && !s.renbans.length) return "A renban puzzle: tap Renbans, then each cell along a line. Its digits are a run, like 3 4 5, in any order.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
@@ -844,6 +911,10 @@ const FOOTS = {
   made: "The seed carries the whole puzzle: paste it into the Seed box on the new-game screen to play it. Played solo, it scores on its own board, never the main ones.",
 };
 
+// A kind of line to draw, with its rule on: all but the one being changed,
+// which is drawn as the path, not twice. null with the rule off.
+const shownLines = (kind) => (s[kind] ? s[LINES[kind].list].filter((_, i) => lineKind !== kind || i !== editingLine) : null);
+
 function render() {
   if (!board) return;
   const { stage } = s;
@@ -870,9 +941,10 @@ function render() {
     wrong,
     // In the classic switch, cages kept for later are not shown.
     cages: killer() ? s.cages : null,
-    // The line being changed is drawn as the path, not twice.
-    thermos: s.thermo ? s.thermos.filter((_, i) => lineKind !== "thermo" || i !== editingLine) : null,
-    arrows: s.arrow ? s.arrows.filter((_, i) => lineKind !== "arrow" || i !== editingLine) : null,
+    thermos: shownLines("thermo"),
+    arrows: shownLines("arrow"),
+    whispers: shownLines("whisper"),
+    renbans: shownLines("renban"),
     path: lineKind ? path : [],
     pathKind: lineKind ?? "thermo",
     rules: s.rules,
@@ -917,9 +989,11 @@ function render() {
     cageBar: cageMode,
     solverThermos: enter && s.thermo,
     solverArrows: enter && s.arrow,
+    solverWhispers: enter && s.whisper,
+    solverRenbans: enter && s.renban,
     lineBar: Boolean(lineKind),
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && !s.thermo && !s.arrow && !s.rules,
+    solverCopy: !killer() && !Object.keys(LINES).some((kind) => s[kind]) && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -942,14 +1016,15 @@ function render() {
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
     const { rule } = b.dataset;
-    const switches = { killer: s.killer, thermo: s.thermo, arrow: s.arrow };
-    const on = switches[rule] ?? Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
+    const on = rule === "killer" || rule in LINES ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
     b.setAttribute("aria-pressed", String(on));
   });
   $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
   $("solverThermos").setAttribute("aria-pressed", String(lineKind === "thermo"));
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
+  $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
+  $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
   if (lineKind) {
     $("lineAddLabel").textContent = addLabel();
     $("lineRemoveLabel").textContent = `Remove ${LINES[lineKind].short}`;
@@ -1047,6 +1122,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverCages").addEventListener("click", toggleCageMode);
   $("solverThermos").addEventListener("click", () => toggleLineMode("thermo"));
   $("solverArrows").addEventListener("click", () => toggleLineMode("arrow"));
+  $("solverWhispers").addEventListener("click", () => toggleLineMode("whisper"));
+  $("solverRenbans").addEventListener("click", () => toggleLineMode("renban"));
   $("lineAdd").addEventListener("click", onLineAdd);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));

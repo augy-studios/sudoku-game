@@ -8,8 +8,9 @@
 // puzzle has a faint line along each long diagonal, and a Windoku puzzle
 // tints its four windows. Thermometers are a thick grey line from a round
 // bulb, faint enough to read digits through, and arrows a thin one from a
-// ring round the circle's digit to a head. Anti-knight and anti-king have
-// nothing to draw.
+// ring round the circle's digit to a head. German Whispers lines are a
+// green line as thick as a thermometer's, with no bulb, and renban lines a
+// purple one. Anti-knight and anti-king have nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
@@ -88,10 +89,10 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages, thermos and arrows are a variant
-  // puzzle's, and rules its switches (variant.js); picked, a Set of cells,
-  // are those being gathered into a new cage, and path a thermometer or an
-  // arrow being drawn, as pathKind says: "thermo" or "arrow".
+  // digits by the solution. cages, thermos, arrows, whispers and renbans
+  // are a variant puzzle's, and rules its switches (variant.js); picked, a
+  // Set of cells, are those being gathered into a new cage, and path a line
+  // being drawn, as pathKind says: "thermo", "arrow", "whisper" or "renban".
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -103,6 +104,8 @@ export class BoardView {
     this.rules = view.rules ?? 0;
     this.thermos = view.thermos ?? [];
     this.arrows = view.arrows ?? [];
+    this.whispers = view.whispers ?? [];
+    this.renbans = view.renbans ?? [];
     this.path = view.path ?? [];
     this.pathKind = view.pathKind ?? "thermo";
     const windows = new Set(
@@ -165,19 +168,22 @@ export class BoardView {
     }
   }
 
-  // The dashed outlines and sums, the diagonals, the thermometers and the
-  // arrows. Only redrawn when they change, or when `resized`.
+  // The dashed outlines and sums, the diagonals, the thermometers, the
+  // arrows and the other lines. Only redrawn when they change, or when
+  // `resized`.
   drawCages(resized = false) {
     const cages = this.cages ?? [];
     const thermos = this.thermos ?? [];
     const arrows = this.arrows ?? [];
+    const whispers = this.whispers ?? [];
+    const renbans = this.renbans ?? [];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, path, this.pathKind]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    if (!cages.length && !diagonal && !thermos.length && !arrows.length && !path.length) {
+    if (!cages.length && !diagonal && !thermos.length && !arrows.length && !whispers.length && !renbans.length && !path.length) {
       layer.innerHTML = "";
       return;
     }
@@ -269,8 +275,23 @@ export class BoardView {
         `<path d="${line}"/></g>`
       );
     };
-    const pending = this.pathKind === "arrow" ? arrow(path, "arrow arrow-pending") : thermo(path, "thermo thermo-pending");
-    const marks = thermos.map((t) => thermo(t, "thermo")).join("") + arrows.map((a) => arrow(a, "arrow")).join("") + pending;
+    // German Whispers and renban lines: through the cells' middles, no more.
+    // A line of one cell, while it is drawn, is a dot.
+    const line = (t, cls) => {
+      if (!t.length) return "";
+      const points = t.map(centre);
+      const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("") + (t.length === 1 ? "h0" : "");
+      return `<path class="${cls}" d="${d}" stroke-width="${f(points[0].w * 0.26)}"/>`;
+    };
+    const draw = { thermo, arrow, whisper: line, renban: line };
+    const kind = this.pathKind;
+    const pending = draw[kind](path, `${kind} ${kind}-pending`);
+    const marks =
+      whispers.map((t) => line(t, "whisper")).join("") +
+      renbans.map((t) => line(t, "renban")).join("") +
+      thermos.map((t) => thermo(t, "thermo")).join("") +
+      arrows.map((a) => arrow(a, "arrow")).join("") +
+      pending;
     layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}`;
   }
 }

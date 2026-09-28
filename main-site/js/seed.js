@@ -10,12 +10,13 @@
 // puzzle itself rather than what to generate: see madeSeed below. It has
 // `made: true`, and scores only on its own board. A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
-// T for thermometers and A for arrows, which the seed then carries too, and
-// D, N, G and W for the switch rules (variant.js).
+// T for thermometers, A for arrows, S for German Whispers lines and R for
+// renban lines, which the seed then carries too, and D, N, G and W for the
+// switch rules (variant.js).
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
 import { generate, solve, countSolutions, COL } from "./sudoku.js";
-import { variantSolve, variantSolutions, cageProblem, thermoProblem, arrowProblem, RULES } from "./variant.js";
+import { variantSolve, variantSolutions, cageProblem, thermoProblem, arrowProblem, whisperProblem, renbanProblem, RULES } from "./variant.js";
 
 // No vowels, and no 0 O 1 I, as for pairing codes: a seed read aloud cannot
 // be misheard and cannot spell a word.
@@ -134,7 +135,8 @@ function decodeGrid(body) {
    order of their first cell. Cages are joined edge to edge, so the shared
    edges give back the cages exactly. Then thermometers: how many, and for
    each its length, its bulb, and which way each step goes. Then arrows, the
-   same way, from the circle. Each part is there only when the seed's
+   same way, from the circle, and German Whispers lines and renban lines the
+   same way again. Each part is there only when the seed's
    letters say so, so a seed from before a part came reads as it did. */
 
 function packDigits(digits) {
@@ -167,7 +169,7 @@ function* neighbourPairs() {
   }
 }
 
-// The eight ways a thermometer or an arrow can step, corners included.
+// The eight ways a line can step, corners included.
 const STEPS = [
   [-1, -1],
   [-1, 0],
@@ -180,9 +182,9 @@ const STEPS = [
 ];
 const MAX_LINES = 40;
 
-// cages, thermos and arrows: null when the puzzle has none, so the reader
+// cages and each kind of line: null when the puzzle has none, so the reader
 // knows from the seed's letters what to read.
-function encodeParts(grid, cages, thermos, arrows) {
+function encodeParts(grid, cages, thermos, arrows, whispers, renbans) {
   const digits = [];
   for (let c = 0; c < 81; c++) digits.push([grid[c] ? 1 : 0, 2]);
   for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, 9]);
@@ -195,10 +197,12 @@ function encodeParts(grid, cages, thermos, arrows) {
   }
   if (thermos) writeLines(digits, thermos);
   if (arrows) writeLines(digits, arrows);
+  if (whispers) writeLines(digits, whispers);
+  if (renbans) writeLines(digits, renbans);
   return toBody(packDigits(digits));
 }
 
-// Thermometers or arrows: how many, then each one's length, first cell and
+// Lines of one kind: how many, then each one's length, first cell and
 // steps.
 function writeLines(digits, lines) {
   digits.push([lines.length, MAX_LINES + 1]);
@@ -232,7 +236,9 @@ function readLines(take) {
   return lines;
 }
 
-function decodeParts(body, withCages, withThermos, withArrows) {
+// withs: which parts the seed's letters say it has, { cages, thermos,
+// arrows, whispers, renbans }.
+function decodeParts(body, withs) {
   let n = fromBody(body);
   if (n == null) return null;
   const take = (radix) => {
@@ -245,12 +251,12 @@ function decodeParts(body, withCages, withThermos, withArrows) {
   const clued = [];
   for (let c = 0; c < 81; c++) if (take(2)) clued.push(c);
   for (const c of clued) grid[c] = take(9) + 1;
-  const cages = withCages ? readCages(take) : [];
-  const thermos = withThermos ? readLines(take) : [];
-  if (!thermos) return null;
-  const arrows = withArrows ? readLines(take) : [];
-  if (!arrows) return null;
-  return n === 0n ? { grid, cages, thermos, arrows } : null;
+  const out = { grid, cages: withs.cages ? readCages(take) : [] };
+  for (const list of LINE_LISTS) {
+    out[list] = withs[list] ? readLines(take) : [];
+    if (!out[list]) return null;
+  }
+  return n === 0n ? out : null;
 }
 
 // A killer seed's cages, from `take`, which reads the next digit.
@@ -276,37 +282,45 @@ function sortCages(cages) {
   return cages.map((cage) => ({ sum: cage.sum, cells: cage.cells.slice().sort((a, b) => a - b) })).sort((a, b) => a.cells[0] - b.cells[0]);
 }
 
-// The letters that start a variant seed, in this order.
-const PREFIX = ["K", "T", "A", ...RULES.map((r) => r.letter)];
+// The drawn parts, with their letters and names, in the order their letters
+// start a seed and their parts go in its body.
+const PARTS = [
+  { list: "cages", letter: "K", name: "Killer", problem: cageProblem },
+  { list: "thermos", letter: "T", name: "Thermo", problem: thermoProblem },
+  { list: "arrows", letter: "A", name: "Arrow", problem: arrowProblem },
+  { list: "whispers", letter: "S", name: "German Whispers", problem: whisperProblem },
+  { list: "renbans", letter: "R", name: "Renban", problem: renbanProblem },
+];
+const LINE_LISTS = PARTS.slice(1).map((p) => p.list);
 
-function prefixFor(cages, thermos, arrows, rules) {
+// The letters that start a variant seed, in this order.
+const PREFIX = [...PARTS.map((p) => p.letter), ...RULES.map((r) => r.letter)];
+
+// parts: { cages, thermos, ... }, each a list, empty for none.
+function prefixFor(parts, rules) {
   return (
-    (cages.length ? "K" : "") +
-    (thermos.length ? "T" : "") +
-    (arrows.length ? "A" : "") +
+    PARTS.filter((p) => parts[p.list].length).map((p) => p.letter).join("") +
     RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("")
   );
 }
 
-// The seed of a made puzzle. variant: { cages, thermos, arrows, rules } for
-// a variant puzzle (variant.js), or nothing for a classic one. `level` is
+// The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
+// renbans, rules } for a variant puzzle (variant.js), or nothing for a
+// classic one. `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.
 export function madeSeed(level, grid, variant = null) {
   const groups = (body) => body.match(/.{1,4}/g).join("-");
-  const cages = variant?.cages?.length ? sortCages(variant.cages) : [];
-  const thermos = variant?.thermos?.length ? variant.thermos.map((t) => t.slice()) : [];
-  const arrows = variant?.arrows?.length ? variant.arrows.map((a) => a.slice()) : [];
+  const parts = { cages: variant?.cages?.length ? sortCages(variant.cages) : [] };
+  for (const list of LINE_LISTS) parts[list] = variant?.[list]?.length ? variant[list].map((t) => t.slice()) : [];
   const rules = variant?.rules ?? 0;
-  const prefix = prefixFor(cages, thermos, arrows, rules);
-  const drawn = cages.length || thermos.length || arrows.length;
-  const or = (list) => (list.length ? list : null);
-  const body = drawn ? encodeParts(grid, or(cages), or(thermos), or(arrows)) : encodeGrid(grid);
+  const prefix = prefixFor(parts, rules);
+  const drawn = PARTS.some((p) => parts[p.list].length);
+  const or = (list) => (parts[list].length ? parts[list] : null);
+  const body = drawn ? encodeParts(grid, ...PARTS.map((p) => or(p.list))) : encodeGrid(grid);
   const text = prefix ? `${prefix}-${level}-${groups(body)}` : `${level}-${groups(body)}`;
   const seed = { level, body, text, made: true, grid: grid.slice(), rules };
-  if (cages.length) seed.cages = cages;
-  if (thermos.length) seed.thermos = thermos;
-  if (arrows.length) seed.arrows = arrows;
+  for (const { list } of PARTS) if (parts[list].length) seed[list] = parts[list];
   return seed;
 }
 
@@ -315,8 +329,7 @@ export function madeSeed(level, grid, variant = null) {
 export function seedVariantName(text) {
   const head = String(text).split("-")[0];
   if (LEVEL_IDS.includes(head)) return "";
-  const names = { K: "Killer", T: "Thermo", A: "Arrow" };
-  return [...head].map((ch) => names[ch] ?? RULES.find((r) => r.letter === ch)?.name).filter(Boolean).join(", ");
+  return [...head].map((ch) => (PARTS.find((p) => p.letter === ch) ?? RULES.find((r) => r.letter === ch))?.name).filter(Boolean).join(", ");
 }
 
 // Parsing one means checking it has one answer, so the last few are kept.
@@ -328,17 +341,14 @@ function parseMade(prefix, level, body) {
   if (madeParsed.has(key)) return madeParsed.get(key);
   let seed = null;
   const rules = RULES.filter((r) => prefix.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
-  const killer = prefix.includes("K");
-  const thermo = prefix.includes("T");
-  const arrow = prefix.includes("A");
-  if (killer || thermo || arrow) {
-    const got = decodeParts(body, killer, thermo, arrow);
-    const variant = got && { cages: got.cages, thermos: got.thermos, arrows: got.arrows, rules };
+  const withs = Object.fromEntries(PARTS.map((p) => [p.list, prefix.includes(p.letter)]));
+  if (PARTS.some((p) => withs[p.list])) {
+    const got = decodeParts(body, withs);
+    const variant = got && { ...got, rules };
+    // Each part the letters name is there, and well formed.
     const ok =
       variant &&
-      (!killer || (variant.cages.length && !cageProblem(variant.cages))) &&
-      (!thermo || (variant.thermos.length && !thermoProblem(variant.thermos))) &&
-      (!arrow || (variant.arrows.length && !arrowProblem(variant.arrows))) &&
+      PARTS.every((p) => !withs[p.list] || (variant[p.list].length && !p.problem(variant[p.list]))) &&
       variantSolutions(got.grid, variant, 2)?.length === 1;
     seed = ok ? madeSeed(level, got.grid, variant) : null;
   } else if (rules) {
@@ -384,7 +394,7 @@ export function puzzleFor(seed) {
   const hit = made.get(seed.text);
   if (hit) return hit;
   const { puzzle, solution } = seed.made
-    ? { puzzle: seed.grid.slice(), solution: seed.cages || seed.thermos || seed.arrows || seed.rules ? variantSolve(seed.grid, seed) : solve(seed.grid) }
+    ? { puzzle: seed.grid.slice(), solution: PARTS.some((p) => seed[p.list]) || seed.rules ? variantSolve(seed.grid, seed) : solve(seed.grid) }
     : generate(randomSource(hashString(`puzzle|${seed.text}`)), LEVELS[seed.level].blanks);
   const out = { puzzle, solution, blanks: puzzle.filter((d) => d === 0).length };
   made.set(seed.text, out);

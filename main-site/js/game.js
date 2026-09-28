@@ -493,6 +493,8 @@ function update({ fresh = false } = {}) {
       rules: g.seed.rules ?? 0,
       thermos: g.seed.thermos ?? null,
       arrows: g.seed.arrows ?? null,
+      whispers: g.seed.whispers ?? null,
+      renbans: g.seed.renbans ?? null,
     });
   }
   renderChips(over);
@@ -703,7 +705,18 @@ function finish(fresh) {
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
   replayer.load(
-    { puzzle: g.puzzle, solution: g.solution, log: g.log, players: g.mode === "coop" ? 2 : 1, cages: g.seed.cages, thermos: g.seed.thermos, arrows: g.seed.arrows, rules: g.seed.rules },
+    {
+      puzzle: g.puzzle,
+      solution: g.solution,
+      log: g.log,
+      players: g.mode === "coop" ? 2 : 1,
+      cages: g.seed.cages,
+      thermos: g.seed.thermos,
+      arrows: g.seed.arrows,
+      whispers: g.seed.whispers,
+      renbans: g.seed.renbans,
+      rules: g.seed.rules,
+    },
     { highlightSame: s.highlight_same },
     { autoplay: !fresh && s.auto_replay }
   );
@@ -922,7 +935,18 @@ function watch(link) {
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
   replayer.load(
-    { puzzle, solution, log: link.log, players: link.meta === "c" ? 2 : 1, cages: link.seed.cages, thermos: link.seed.thermos, arrows: link.seed.arrows, rules: link.seed.rules },
+    {
+      puzzle,
+      solution,
+      log: link.log,
+      players: link.meta === "c" ? 2 : 1,
+      cages: link.seed.cages,
+      thermos: link.seed.thermos,
+      arrows: link.seed.arrows,
+      whispers: link.seed.whispers,
+      renbans: link.seed.renbans,
+      rules: link.seed.rules,
+    },
     { highlightSame: getSettings().highlight_same },
     { autoplay: true }
   );

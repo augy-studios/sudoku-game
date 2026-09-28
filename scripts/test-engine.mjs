@@ -8,11 +8,24 @@
 
 import assert from "node:assert/strict";
 import { LEVEL_IDS } from "../main-site/js/levels.js";
-import { newSeed, parseSeed, puzzleFor, madeSeed } from "../main-site/js/seed.js";
+import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
-import { variantSolutions, variantSolve, variantCandidates, cageProblem, thermoProblem, arrowProblem, touching, layout, RULES } from "../main-site/js/variant.js";
+import {
+  variantSolutions,
+  variantSolve,
+  variantCandidates,
+  variantName,
+  cageProblem,
+  thermoProblem,
+  arrowProblem,
+  whisperProblem,
+  renbanProblem,
+  touching,
+  layout,
+  RULES,
+} from "../main-site/js/variant.js";
 
 const killerSolutions = (grid, cages, limit) => variantSolutions(grid, { cages }, limit);
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
@@ -550,6 +563,161 @@ test("arrows are checked, solved and carried in seeds", () => {
   assert.match(mixed.text, /^TA-H-/);
   assert.deepEqual([mixed.thermos, mixed.arrows], [thermos, arrows]);
   assert.match(madeSeed("H", new Array(81).fill(0), { cages: killerPuzzle().cages, thermos, arrows, rules: 1 }).text, /^KTAD-H-/);
+});
+
+// Lines laid through a solved grid, each walked from a random cell while
+// `fits` takes the line so far and the next cell, then clues taken out, in
+// a seeded order, while the answer stays the only one. As many as `count`
+// lines of `min` to `max` cells.
+function linePuzzle(key, x, fits, { count = 8, min = 3, max = 6 } = {}) {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = () => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32);
+  const lines = [];
+  const used = new Set();
+  for (let tries = 0; lines.length < count && tries < 5000; tries++) {
+    const start = Math.floor(rand() * 81);
+    if (used.has(start)) continue;
+    const line = [start];
+    while (line.length < max) {
+      const next = [...Array(81).keys()].filter((o) => touching(line.at(-1), o) && !line.includes(o) && !used.has(o) && fits(line, o, solution));
+      if (!next.length) break;
+      line.push(next[Math.floor(rand() * next.length)]);
+    }
+    if (line.length < min) continue;
+    line.forEach((c) => used.add(c));
+    lines.push(line);
+  }
+  const puzzle = solution.slice();
+  for (const c of [...Array(81).keys()].sort(() => rand() - 0.5)) {
+    const d = puzzle[c];
+    puzzle[c] = 0;
+    if (variantSolutions(puzzle, { [key]: lines }, 2)?.length !== 1) puzzle[c] = d;
+  }
+  return { puzzle, solution, [key]: lines };
+}
+
+const whisperPuzzle = () => linePuzzle("whispers", 11, (line, o, sol) => Math.abs(sol[o] - sol[line.at(-1)]) >= 5);
+// The line's digits with the next cell's still a run: all different, and
+// spread no wider than there are of them.
+const renbanPuzzle = () =>
+  linePuzzle("renbans", 13, (line, o, sol) => {
+    const digits = [...line, o].map((c) => sol[c]);
+    return new Set(digits).size === digits.length && Math.max(...digits) - Math.min(...digits) === digits.length - 1;
+  });
+
+// Solves by steps alone, checking each against the answer.
+function stepsAgree(puzzle, solution, variant) {
+  const grid = puzzle.slice();
+  for (let step = nextStep(grid, null, variant); step; step = nextStep(grid, null, variant)) {
+    assert.equal(step.d, solution[step.c]);
+    grid[step.c] = step.d;
+  }
+}
+
+test("German Whispers lines are checked, solved and carried in seeds", () => {
+  assert.equal(whisperProblem([[0, 10, 20]]), null);
+  assert.equal(whisperProblem([[0]]).why, "length");
+  assert.equal(whisperProblem([[0, 2]]).why, "apart");
+
+  const { puzzle, solution, whispers } = whisperPuzzle();
+  assert.equal(whispers.length, 8);
+  for (const t of whispers) for (let i = 1; i < t.length; i++) assert.ok(Math.abs(solution[t[i]] - solution[t[i - 1]]) >= 5);
+  assert.equal(checkClues(puzzle, { whispers }).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the lines");
+
+  // Candidates keep the answer, and a line never takes a 5.
+  const cand = variantCandidates(puzzle, { whispers });
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]));
+  for (const t of whispers) for (const c of t) assert.equal(cand[c] & (1 << 5), 0);
+  // Next to a 4, only a 9 is far enough.
+  const four = new Array(81).fill(0);
+  four[0] = 4;
+  assert.equal(variantCandidates(four, { whispers: [[0, 1]] })[1], 1 << 9);
+  stepsAgree(puzzle, solution, { whispers });
+
+  // Neighbours too close clash.
+  const [a, b] = whispers[0];
+  const close = new Array(81).fill(0);
+  close[a] = 2;
+  close[b] = 6;
+  assert.deepEqual([...clashes(close, { whispers })].sort((p, q) => p - q), [a, b].sort((p, q) => p - q));
+  close[b] = 7;
+  assert.equal(clashes(close, { whispers }).size, 0);
+
+  const seed = madeSeed(rateLevel(puzzle, { whispers }), puzzle, { whispers });
+  assert.match(seed.text, /^S-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.whispers, whispers);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  assert.equal(parseSeed(madeSeed("M", puzzle, { whispers: whispers.slice(1, 2) }).text), null, "one line is not enough");
+});
+
+test("renban lines are checked, solved and carried in seeds", () => {
+  assert.equal(renbanProblem([[0, 1, 2]]), null);
+  assert.equal(renbanProblem([[0, 1, 0]]).why, "loop");
+
+  const { puzzle, solution, renbans } = renbanPuzzle();
+  assert.equal(renbans.length, 8);
+  for (const t of renbans) {
+    const digits = t.map((c) => solution[c]);
+    assert.equal(new Set(digits).size, t.length);
+    assert.equal(Math.max(...digits) - Math.min(...digits), t.length - 1);
+  }
+  assert.equal(checkClues(puzzle, { renbans }).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the lines");
+
+  const cand = variantCandidates(puzzle, { renbans });
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]));
+  // A line of three through a 5 holds 3 to 7; one of nine, everything.
+  const five = new Array(81).fill(0);
+  five[1] = 5;
+  const run = variantCandidates(five, { renbans: [[0, 1, 2]] });
+  assert.equal(run[0], 0b11111000 & ~(1 << 5));
+  assert.equal(run[2], run[0]);
+  // A line of four with a 2 and a 5 on it is 2 3 4 5.
+  const ends = new Array(81).fill(0);
+  ends[0] = 2;
+  ends[3] = 5;
+  assert.equal(variantCandidates(ends, { renbans: [[0, 1, 2, 3]] })[1], (1 << 3) | (1 << 4));
+  stepsAgree(puzzle, solution, { renbans });
+
+  // A repeat clashes, as do digits spread wider than the line is long.
+  const t = [0, 10, 20];
+  const wide = new Array(81).fill(0);
+  wide[0] = 1;
+  wide[20] = 4;
+  assert.deepEqual([...clashes(wide, { renbans: [t] })].sort((p, q) => p - q), [0, 20]);
+  wide[20] = 3;
+  assert.equal(clashes(wide, { renbans: [t] }).size, 0);
+  // Row 3, column 3 and row 4, column 4 share no house, so only the line
+  // stops a repeat there.
+  const apart = [20, 30];
+  const twice = new Array(81).fill(0);
+  twice[20] = 1;
+  twice[30] = 1;
+  assert.equal(clashes(twice).size, 0);
+  assert.deepEqual([...clashes(twice, { renbans: [apart] })], [20, 30]);
+  assert.equal(variantSolutions(twice, { renbans: [apart] }, 1)?.length, 0, "a repeat has no answer");
+
+  const seed = madeSeed(rateLevel(puzzle, { renbans }), puzzle, { renbans });
+  assert.match(seed.text, /^R-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.renbans, renbans);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+
+  // All the same grid, so every kind of line fits it at once; together they
+  // read back apart. The letters go K, T, A, S, R, then the rules.
+  const { thermos } = thermoPuzzle();
+  const { arrows } = arrowPuzzle();
+  const { whispers } = whisperPuzzle();
+  const mixed = parseSeed(madeSeed("H", puzzle, { thermos, arrows, whispers, renbans }).text);
+  assert.match(mixed.text, /^TASR-H-/);
+  assert.deepEqual([mixed.thermos, mixed.arrows, mixed.whispers, mixed.renbans], [thermos, arrows, whispers, renbans]);
+  assert.match(madeSeed("H", new Array(81).fill(0), { cages: killerPuzzle().cages, whispers, renbans, rules: 1 }).text, /^KSRD-H-/);
+  assert.equal(seedVariantName("KSRD-H-BBBB"), "Killer, German Whispers, Renban, Diagonal");
+  assert.equal(variantName({ whispers, renbans }), "German Whispers, Renban");
 });
 
 test("the solver finds clashes and candidates", () => {
