@@ -13,7 +13,9 @@
 //
 // Either can be a variant puzzle, with the rule buttons over the board:
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
-// cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
+// cage); Rellik, Lunchbox, Look and Say and Equality add their own kinds of
+// cage with the same tool, its kind button picking which a new one is;
+// Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
 // way with the Arrows tool, from the circle; Double Arrow adds double
 // arrows, from one circle to the other; Pill Arrow adds pill arrows, a pill
@@ -43,7 +45,12 @@ import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkCl
 import { madeSeed, parseSeed, puzzleFor } from "./seed.js";
 import {
   cageProblem,
-  cageOf,
+  rellikProblem,
+  lunchboxProblem,
+  lookSayProblem,
+  equalityProblem,
+  LUNCHBOX_MAX,
+  sayWords,
   thermoProblem,
   arrowProblem,
   doubleProblem,
@@ -101,12 +108,12 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, doublearrow, pillarrow, whisper, renban,
-// palindrome, zipper, between,
+// killer, rellik, lunchbox, looksay, equality, thermo, arrow, doublearrow,
+// pillarrow, whisper, renban, palindrome, zipper, between,
 // lockout, entropic, modular, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
-// when it comes back on, and each kind of line, dot, mark and outside clue
-// likewise.
+// when it comes back on, and each other kind of cage, line, dot, mark and
+// outside clue likewise.
 const fresh = () => ({
   open: false,
   stage: "enter",
@@ -114,6 +121,10 @@ const fresh = () => ({
   values: empty(),
   candidates: false,
   killer: false,
+  rellik: false,
+  lunchbox: false,
+  looksay: false,
+  equality: false,
   thermo: false,
   arrow: false,
   doublearrow: false,
@@ -139,6 +150,10 @@ const fresh = () => ({
   jigsaw: false,
   rules: 0,
   cages: [],
+  relliks: [],
+  lunchboxes: [],
+  looksays: [],
+  equalities: [],
   thermos: [],
   arrows: [],
   doubles: [],
@@ -171,11 +186,13 @@ let s = states.solver;
 let solution = null; // the answer, from the solve or made stage on
 let made = null; // the made puzzle's seed, in the made stage
 let history = []; // earlier states of this stage, for undo
-// The Cages tool: on, the cells being gathered, the sum typed so far, and
-// the cage being changed, if one was picked up.
+// The Cages tool: on, the kind of cage it draws (a key of CAGES below), the
+// cells being gathered, the clue typed so far, and the cage being changed,
+// if one was picked up: { kind, index }.
 let cageMode = false;
+let cageKind = "killer";
 let picked = new Set();
-let editing = -1;
+let editing = null;
 // The Thermos, Arrows or another line tool, likewise: which is on, a key of
 // LINES below, the path so far from its first cell, and the line
 // being changed.
@@ -215,6 +232,10 @@ const goLabel = () => (creating() ? "Check it" : "Help me solve it");
 const killer = () => s.killer;
 // The cages the rules use: none with Killer off, even if some are kept.
 const cages = () => (killer() && s.cages.length ? s.cages : null);
+const relliks = () => (s.rellik && s.relliks.length ? s.relliks : null);
+const lunchboxes = () => (s.lunchbox && s.lunchboxes.length ? s.lunchboxes : null);
+const looksays = () => (s.looksay && s.looksays.length ? s.looksays : null);
+const equalities = () => (s.equality && s.equalities.length ? s.equalities : null);
 const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
 const doubles = () => (s.doublearrow && s.doubles.length ? s.doubles : null);
@@ -239,12 +260,16 @@ const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
 const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
+  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
     ? {
         cages: cages() ?? [],
+        relliks: relliks() ?? [],
+        lunchboxes: lunchboxes() ?? [],
+        looksays: looksays() ?? [],
+        equalities: equalities() ?? [],
         thermos: thermos() ?? [],
         arrows: arrows() ?? [],
         doubles: doubles() ?? [],
@@ -302,16 +327,14 @@ function load(which) {
   st.clues = saved.clues;
   st.open = saved.open === true;
   st.candidates = saved.candidates === true;
-  // Before the switch rules, a killer puzzle was saved as variant "killer".
-  st.killer = saved.killer === true || saved.variant === "killer";
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
-  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) {
+  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) {
     st[kind] = saved[kind] === true;
     const kept = Array.isArray(saved[P.list]) ? saved[P.list] : [];
     st[P.list] = !P.problem(kept) ? kept : [];
   }
-  const kept = Array.isArray(saved.cages) ? saved.cages : [];
-  st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
+  // Before the switch rules, a killer puzzle was saved as variant "killer".
+  if (saved.variant === "killer") st.killer = true;
   // Regions part way through cutting may be uneven, so only their shape is
   // checked.
   st.jigsaw = saved.jigsaw === true;
@@ -352,6 +375,10 @@ function hintText(step, reveal) {
       "column",
       regions() ? "region" : "box",
       ...(cages() ? ["cage"] : []),
+      ...(relliks() ? ["Rellik cage"] : []),
+      ...(lunchboxes() ? ["lunchbox"] : []),
+      ...(looksays() ? ["Look and Say cage"] : []),
+      ...(equalities() ? ["Equality cage"] : []),
       ...(thermos() ? ["thermometers"] : []),
       ...(arrows() ? ["arrows"] : []),
       ...(doubles() ? ["double arrows"] : []),
@@ -390,6 +417,8 @@ function problemText(check) {
   if (why === "empty") return creating() ? "Put some clues in first." : "Type in the puzzle's digits first.";
   if (why === "clash") return `${clashText()} Fix them first.`;
   if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
+  const K = Object.values(CAGES).find((k) => k.list === why);
+  if (K) return K.problems[check.problem.why];
   if (why === "thermos") return THERMO_PROBLEMS[check.problem.why];
   if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
   if (why === "doubles") return DOUBLE_PROBLEMS[check.problem.why];
@@ -434,6 +463,10 @@ function clashText() {
   const extra = [];
   if (s.rules) extra.push(`against the ${ruleNames()} rules`);
   if (cages()) extra.push("twice in a cage, or past a cage's sum");
+  if (relliks()) extra.push("adding up to a Rellik cage's number");
+  if (lunchboxes()) extra.push("twice in a lunchbox, or not making its sum between its smallest and largest");
+  if (looksays()) extra.push("more or fewer of a digit than a Look and Say clue counts");
+  if (equalities()) extra.push("a 5, a repeat, or too many odd, even, low or high digits in an Equality cage");
   if (thermos()) extra.push("not rising along a thermometer");
   if (arrows()) extra.push("not adding up to an arrow's circle");
   if (doubles()) extra.push("not adding up to a double arrow's two circles");
@@ -639,6 +672,33 @@ const CAGE_PROBLEMS = {
   apart: "A cage's cells must join up edge to edge.",
 };
 
+const RELLIK_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "A Rellik cage needs one to nine cells.",
+  sum: "A Rellik cage's number is 1 to 45.",
+  apart: "A Rellik cage's cells must join up edge to edge.",
+};
+
+const LUNCHBOX_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "A lunchbox needs two to nine cells.",
+  sum: `A lunchbox's sum is 0 to ${LUNCHBOX_MAX}, and one the digits between its smallest and largest can make: 0 or 2 to 8 with three cells, and so on.`,
+  line: "A lunchbox's cells sit side by side in a straight line, along a row or down a column.",
+};
+
+const LOOKSAY_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "A Look and Say cage needs one to nine cells.",
+  clue: "A Look and Say clue is pairs of a count and a digit 1 to 9, like 2314 for two 3s and one 4: each digit once, and no more counted than the cage has cells.",
+  apart: "A Look and Say cage's cells must join up edge to edge.",
+};
+
+const EQUALITY_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "An Equality cage needs two, four, six or eight cells: as many odd digits as even, and none a 5.",
+  apart: "An Equality cage's cells must join up edge to edge.",
+};
+
 /* ---- state ---- */
 
 function isSolved() {
@@ -657,8 +717,8 @@ function wrongCells() {
   return out;
 }
 
-// The lists of drawn parts: "cages", then LINES's lists and EDGES's.
-const partLists = () => ["cages", "regions", ...[LINES, EDGES, QUADS, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
+// The lists of drawn parts: CAGES's, "regions", then LINES's and the others'.
+const partLists = () => [...Object.values(CAGES).map((K) => K.list), "regions", ...[LINES, EDGES, QUADS, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
 
 const snapshot = () => {
   const out = { clues: s.clues.slice(), values: s.values.slice() };
@@ -814,8 +874,8 @@ function clearAll() {
   if (s.stage !== "enter" || (!s.clues.some(Boolean) && !drawn())) return;
   endCage();
   // Only what the rules on use: the rest is kept for when they come back.
-  const parts = { cages: killer() ? [] : s.cages };
-  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
+  const parts = {};
+  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
   parts.regions = s.jigsaw ? Array.from(BOX) : s.regions;
   change(empty(), parts);
   selected = null;
@@ -830,9 +890,12 @@ function clearAll() {
 function openSeed(found, how) {
   endCage();
   const seed = found.made ? found : madeSeed(found.level, puzzleFor(found).puzzle);
-  s.killer = Boolean(seed.cages);
   s.rules = seed.rules ?? 0;
-  const parts = { cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages };
+  const parts = {};
+  for (const [kind, K] of Object.entries(CAGES)) {
+    s[kind] = Boolean(seed[K.list]);
+    parts[K.list] = seed[K.list] ? seed[K.list].map((k) => ({ ...k, cells: k.cells.slice() })) : s[K.list];
+  }
   for (const [kind, L] of Object.entries(LINES)) {
     s[kind] = Boolean(seed[L.list]);
     parts[L.list] = seed[L.list] ? seed[L.list].map(copyLine) : s[L.list];
@@ -934,7 +997,7 @@ async function onPasteBtn() {
 // to sharing, in the maker.
 function onGo() {
   endCage();
-  if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
+  for (const [kind, K] of Object.entries(CAGES)) if (s[kind] && !s[K.list].length) return say(K.first);
   if (s.thermo && !s.thermos.length) return say("Draw a thermometer first: tap Thermos, then the bulb and each next cell.");
   if (s.arrow && !s.arrows.length) return say("Draw an arrow first: tap Arrows, then the circle and each cell along it.");
   if (s.doublearrow && !s.doubles.length) return say("Draw a double arrow first: tap Doubles, then a circle, each cell along it, and the other circle.");
@@ -981,7 +1044,8 @@ function onGo() {
 function madeSummary() {
   const clues = plural(s.clues.filter(Boolean).length, "clue");
   const name = variantName(made);
-  const what = name ? `${/^[AEIOU]/.test(name) ? "an" : "a"} ${name} puzzle with ${made.cages ? `${plural(made.cages.length, "cage")} and ` : ""}${clues}` : `with ${clues}`;
+  const caged = Object.values(CAGES).reduce((n, K) => n + (made[K.list]?.length ?? 0), 0);
+  const what = name ? `${/^[AEIOU]/.test(name) ? "an" : "a"} ${name} puzzle with ${caged ? `${plural(caged, "cage")} and ` : ""}${clues}` : `with ${clues}`;
   return `Rated ${LEVELS[made.level].name}, ${what}. Share the seed, ${name ? "" : "copy the puzzle "}or save it as an image.`;
 }
 
@@ -1084,9 +1148,99 @@ function toggleCandidates() {
 
 /* ---- cages ---- */
 
-// A rule button's key: killer, jigsaw, a key of LINES, EDGES or OUTSIDE, all
-// switches in a stage's state, or one of RULES by key, a bit of s.rules.
-const isSwitch = (key) => key === "killer" || key === "jigsaw" || key in LINES || key in EDGES || key in QUADS || key in OUTSIDE;
+// The kinds of cage, all drawn with the one Cages tool; they differ in
+// their clue, their words and where they are kept. Each key is also the
+// name of the rule's switch in a stage's state. clue: what is typed for
+// one, "sum" for a number, "clue" for a Look and Say clue, or none; most,
+// how many digits of it at most; typed, what the words call it.
+const CAGES = {
+  killer: {
+    list: "cages",
+    title: "Killer cage",
+    clue: "sum",
+    most: 2,
+    typed: "sum",
+    label: "Cage sum",
+    problem: cageProblem,
+    problems: CAGE_PROBLEMS,
+    tap: "Tap the cells of a cage, then type its sum.",
+    first: "Draw some cages first: tap Cages, then the cells of a cage, then type its sum.",
+    intro: "A killer puzzle: tap Cages, then the cells of a cage, then type its sum. Clues are optional.",
+    added: ({ sum }) => `adding to ${sum}`,
+  },
+  rellik: {
+    list: "relliks",
+    title: "Rellik cage",
+    clue: "sum",
+    most: 2,
+    typed: "number",
+    label: "Rellik cage's number",
+    problem: rellikProblem,
+    problems: RELLIK_PROBLEMS,
+    tap: "Tap the cells of a Rellik cage, then type its number: no digits in it add up to that.",
+    first: "Draw a Rellik cage first: tap Cages, then the cells of a cage, then type its number.",
+    intro: "A Rellik puzzle: tap Cages, then the cells of a cage, then type its number. No digits in the cage add up to it, together or alone.",
+    added: ({ sum }) => `with no digits adding to ${sum}`,
+  },
+  lunchbox: {
+    list: "lunchboxes",
+    title: "Lunchbox",
+    clue: "sum",
+    most: 2,
+    typed: "sum",
+    label: "Lunchbox sum",
+    problem: lunchboxProblem,
+    problems: LUNCHBOX_PROBLEMS,
+    tap: "Tap cells side by side along a row or down a column, then type the sum of the digits between the smallest and largest.",
+    first: "Draw a lunchbox first: tap Cages, then cells side by side along a row or down a column, then type its sum.",
+    intro: "A lunchbox puzzle: tap Cages, then cells side by side along a row or down a column, then type the sum of the digits between its smallest and largest.",
+    added: ({ sum }) => `with ${sum} between its smallest and largest`,
+  },
+  looksay: {
+    list: "looksays",
+    title: "Look and Say cage",
+    clue: "clue",
+    most: 18,
+    typed: "clue",
+    label: "Look and Say clue",
+    problem: lookSayProblem,
+    problems: LOOKSAY_PROBLEMS,
+    tap: "Tap the cells of a Look and Say cage, then type its clue as pairs of a count and a digit, like 2314 for two 3s and one 4.",
+    first: "Draw a Look and Say cage first: tap Cages, then the cells of a cage, then type its clue.",
+    intro: "A Look and Say puzzle: tap Cages, then the cells of a cage, then type its clue as pairs of a count and a digit, like 2314 for two 3s and one 4.",
+    added: ({ clue }) => `holding ${sayWords(clue)}`,
+  },
+  equality: {
+    list: "equalities",
+    title: "Equality cage",
+    clue: null,
+    problem: equalityProblem,
+    problems: EQUALITY_PROBLEMS,
+    tap: "Tap two, four, six or eight cells of an Equality cage: it holds as many odd digits as even, and low as high.",
+    first: "Draw an Equality cage first: tap Cages, then two, four, six or eight cells.",
+    intro: "An Equality puzzle: tap Cages, then two, four, six or eight cells. Each cage holds as many odd digits as even, and as many low as high.",
+    added: () => "with as many odd digits as even, and low as high",
+  },
+};
+
+// The kinds of cage with their rules on, in CAGES's order.
+const cageKinds = () => Object.keys(CAGES).filter((kind) => s[kind]);
+
+// The cage of a kind on that holds cell c: { kind, index }, or null.
+function cageAt(c) {
+  for (const kind of cageKinds()) {
+    const index = s[CAGES[kind].list].findIndex((k) => k.cells.includes(c));
+    if (index >= 0) return { kind, index };
+  }
+  return null;
+}
+
+// A cage's clue as it is typed.
+const clueText = (kind, cage) => (CAGES[kind].clue === "sum" ? String(cage.sum) : CAGES[kind].clue === "clue" ? cage.clue : "");
+
+// A rule button's key: a key of CAGES, LINES, EDGES or OUTSIDE, or jigsaw,
+// all switches in a stage's state, or one of RULES by key, a bit of s.rules.
+const isSwitch = (key) => key in CAGES || key === "jigsaw" || key in LINES || key in EDGES || key in QUADS || key in OUTSIDE;
 const ruleOn = (key) => (isSwitch(key) ? s[key] : Boolean(s.rules & RULES.find((r) => r.key === key).bit));
 
 function toggleRule(key) {
@@ -1106,6 +1260,7 @@ function toggleCageMode() {
   endOutside();
   endRegions();
   cageMode = true;
+  if (!s[cageKind]) cageKind = cageKinds()[0] ?? "killer";
   selected = null;
   padDigit = 0;
   note = "";
@@ -1115,7 +1270,7 @@ function toggleCageMode() {
 // Drops the cells gathered but not added, and any cage picked up.
 function clearPicked() {
   picked = new Set();
-  editing = -1;
+  editing = null;
   $("cageSum").value = "";
 }
 
@@ -1134,15 +1289,19 @@ function endCage(draw = false) {
   }
 }
 
-// A tap in the Cages tool: a cell of another cage, with nothing gathered,
-// picks that cage up; otherwise the cell goes in or out of the gathering.
+// A tap in the Cages tool: a cell of another cage, of any kind on, with
+// nothing gathered, picks that cage up, and its kind with it; otherwise the
+// cell goes in or out of the gathering.
 function pickCell(c) {
-  const of = cageOf(s.cages);
-  if (!picked.size && of[c] >= 0) {
-    editing = of[c];
-    picked = new Set(s.cages[editing].cells);
-    $("cageSum").value = String(s.cages[editing].sum);
-  } else if (of[c] >= 0 && of[c] !== editing) {
+  const held = cageAt(c);
+  const same = held && editing && held.kind === editing.kind && held.index === editing.index;
+  if (!picked.size && held) {
+    editing = held;
+    cageKind = held.kind;
+    const cage = s[CAGES[held.kind].list][held.index];
+    picked = new Set(cage.cells);
+    $("cageSum").value = clueText(held.kind, cage);
+  } else if (held && !same) {
     return say("That cell is in another cage. Add or clear this one first, then tap it to change that cage.");
   } else if (picked.has(c)) picked.delete(c);
   else picked.add(c);
@@ -1150,36 +1309,57 @@ function pickCell(c) {
   render();
 }
 
-// Digits typed while gathering go to the sum; "back" takes one off.
+// Digits typed while gathering go to the clue; "back" takes one off.
 function typeSum(key) {
+  const K = CAGES[cageKind];
+  if (!K.clue) return say("An Equality cage has no clue: tap its cells, then Add cage.");
   const box = $("cageSum");
-  box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-2);
+  box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-K.most);
+  note = "";
+  render();
+}
+
+// The kind button: the next kind of cage with its rule on. A cage picked
+// up turns into that kind when it is changed.
+function turnCageKind() {
+  const kinds = cageKinds();
+  cageKind = kinds[(kinds.indexOf(cageKind) + 1) % kinds.length];
   note = "";
   render();
 }
 
 function cageStatus() {
+  const K = CAGES[cageKind];
   const n = picked.size;
-  if (!n) return "Tap the cells of a cage, then type its sum. Tap a cage already drawn to change it.";
-  return `${plural(n, "cell")} picked. Type the sum, then ${editing >= 0 ? "Change cage" : "Add cage"}.`;
+  const kinds = cageKinds().length > 1 ? ` The kind button says which kind: now ${K.title}.` : "";
+  if (!n) return `${K.tap} Tap a cage already drawn to change it.${kinds}`;
+  const then = editing ? "Change cage" : "Add cage";
+  return `${plural(n, "cell")} picked. ${K.clue ? `Type the ${K.typed}, then ${then}` : `Tap ${then}`}.${kinds}`;
 }
 
 function onCageAdd() {
-  const sum = Number($("cageSum").value);
+  const K = CAGES[cageKind];
   const cells = [...picked].sort((a, b) => a - b);
   if (!cells.length) return;
-  if (!Number.isInteger(sum) || sum < 1) return say("Type the cage's sum first.");
-  const next = s.cages.filter((_, i) => i !== editing).concat([{ sum, cells }]);
-  const problem = cageProblem(next);
-  if (problem) return say(CAGE_PROBLEMS[problem.why]);
-  change(s.clues, { cages: next.sort((a, b) => a.cells[0] - b.cells[0]) });
+  const text = $("cageSum").value.trim();
+  if (K.clue && !/^\d+$/.test(text)) return say(`Type the ${K.typed} first.`);
+  const cage = K.clue === "sum" ? { sum: Number(text), cells } : K.clue === "clue" ? { clue: text, cells } : { cells };
+  // The cage picked up goes from its own kind's list, whichever that is.
+  const parts = {};
+  if (editing) parts[CAGES[editing.kind].list] = s[CAGES[editing.kind].list].filter((_, i) => i !== editing.index);
+  const next = (parts[K.list] ?? s[K.list]).concat([cage]).sort((a, b) => a.cells[0] - b.cells[0]);
+  const problem = K.problem(next);
+  if (problem) return say(K.problems[problem.why]);
+  parts[K.list] = next;
+  change(s.clues, parts);
   clearPicked();
-  say(`Cage of ${plural(cells.length, "cell")} adding to ${sum}. Tap the cells of the next one.`);
+  say(`${K.title} of ${plural(cells.length, "cell")} ${K.added(cage)}. Tap the cells of the next one.`);
 }
 
 function onCageRemove() {
-  if (editing < 0) return;
-  change(s.clues, { cages: s.cages.filter((_, i) => i !== editing) });
+  if (!editing) return;
+  const { list } = CAGES[editing.kind];
+  change(s.clues, { [list]: s[list].filter((_, i) => i !== editing.index) });
   clearPicked();
   say("Cage removed. Undo brings it back.");
 }
@@ -1965,9 +2145,12 @@ function defaultStatus() {
     }
     if (s.jigsaw && boxesStill()) return "A Jigsaw puzzle: tap Regions to cut the grid into nine regions of nine cells, in place of the boxes.";
     if (clashes(s.clues, variant()).size) return clashText();
-    if (killer()) {
-      const k = s.cages.length;
-      if (!k) return "A killer puzzle: tap Cages, then the cells of a cage, then type its sum. Clues are optional.";
+    const kinds = cageKinds();
+    if (kinds.length) {
+      // A kind switched on with none drawn yet says how, first.
+      const none = kinds.find((kind) => !s[CAGES[kind].list].length);
+      if (none) return CAGES[none].intro;
+      const k = kinds.reduce((t, kind) => t + s[CAGES[kind].list].length, 0);
       return `${plural(k, "cage")} and ${plural(n, "clue")} so far. Tap Cages for more, or ${goLabel()} when it is done.`;
     }
     if (creating()) {
@@ -2025,8 +2208,12 @@ function render() {
     focusDigit: padDigit,
     mark,
     wrong,
-    // In the classic switch, cages kept for later are not shown.
+    // With a kind's rule off, its cages kept for later are not shown.
     cages: killer() ? s.cages : null,
+    relliks: s.rellik ? s.relliks : null,
+    lunchboxes: s.lunchbox ? s.lunchboxes : null,
+    looksays: s.looksay ? s.looksays : null,
+    equalities: s.equality ? s.equalities : null,
     thermos: shownLines("thermo"),
     arrows: shownLines("arrow"),
     doubles: shownLines("doublearrow"),
@@ -2105,7 +2292,7 @@ function render() {
     solverRules: enter,
     solverSeedGroup: enter,
     solverRuleHelp: Boolean(helpKeys.length),
-    solverCages: enter && killer(),
+    solverCages: enter && cageKinds().length > 0,
     cageBar: cageMode,
     solverThermos: enter && s.thermo,
     solverArrows: enter && s.arrow,
@@ -2127,7 +2314,7 @@ function render() {
     solverRegions: enter && s.jigsaw,
     regionBar: regionMode,
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && !s.jigsaw && ![LINES, EDGES, QUADS, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
+    solverCopy: !cageKinds().length && !s.jigsaw && ![LINES, EDGES, QUADS, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -2190,9 +2377,18 @@ function render() {
     $("linePillLabel").textContent = `Pill of ${pillSize}`;
   }
   if (cageMode) {
-    $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
-    $("cageRemove").classList.toggle("hidden", editing < 0);
+    const K = CAGES[cageKind];
+    $("cageAddLabel").textContent = editing ? "Change cage" : "Add cage";
+    $("cageRemove").classList.toggle("hidden", !editing);
     $("cageAdd").disabled = !picked.size;
+    $("cageKind").classList.toggle("hidden", cageKinds().length < 2);
+    $("cageKindLabel").textContent = K.title;
+    // An Equality cage has no clue to type.
+    for (const id of ["cageSum", "cageSumLabel"]) $(id).classList.toggle("hidden", !K.clue);
+    if (K.clue) {
+      $("cageSumLabel").textContent = K.label;
+      $("cageSum").placeholder = K.clue === "clue" ? "Clue" : "Sum";
+    }
   }
 }
 
@@ -2325,6 +2521,7 @@ export function initSolver({ reopen = true } = {}) {
   $("linePill").addEventListener("click", turnPill);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));
+  $("cageKind").addEventListener("click", turnCageKind);
   $("cageAdd").addEventListener("click", onCageAdd);
   $("cageRemove").addEventListener("click", onCageRemove);
   $("cageDone").addEventListener("click", () => endCage(true));

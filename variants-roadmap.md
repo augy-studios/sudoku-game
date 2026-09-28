@@ -1,7 +1,7 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 17 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 13 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
@@ -19,18 +19,18 @@ Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 `PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
 are all taken but I, which is easily misread, so a new variant's letters are
 **Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
-QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA and QPA. Q is only read with the two after it,
+QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA, QPA, QRC, QLB, QLS and QEC. Q is only read with the two after it,
 so every seed made before still reads as it did. Put the entry in `PARTS` or
 `RULES` where its letters should go.
 
 ## Cages and regions
 
+The Cages tool has a kind per cage now (Killer, Rellik, Lunchbox, Look and
+Say, Equality): a new kind of group is one more entry in `CAGES` in
+`solver.js` and `CAGE_LISTS` in `variant.js`.
+
 | Variant | Rule | Builds on |
 |---|---|---|
-| Rellik Cage | No set of one or more digits in the cage adds up to its clue. | Cages tool |
-| Equality Cage | As many odd digits as even, and as many low (1–4) as high (6–9); no 5, no repeats. | Cages tool, no sum |
-| Lunchbox | The digits between the cage's smallest and largest add up to the clue; no repeats. | Cages tool |
-| Look and Say | The clue reads as (count, digit) pairs: 23 means exactly two 3s in the cells. | Cages tool |
 | Equal Sum | Each segment of the group adds up to the same total. | Cages tool |
 | Same Values | The cells split into sets of equal size, each holding the same digits. | Cages tool |
 | Connected Values | The group's cells holding any of the given digits join up edge to edge. | Cages tool |
@@ -76,13 +76,10 @@ so every seed made before still reads as it did. Put the entry in `PARTS` or
 
 ## Suggested order
 
-1. Rellik Cage, Lunchbox, Look and Say and Equality Cage: cages with a
-   different clue. The Cages tool needs a kind per cage first, so one tool
-   can draw them all.
-2. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
+1. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
    a total.
-3. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
-   cells on the Cages tool, once it has kinds.
-4. Counting Circles, Full Rank and Row/Column Indexing: each needs
+2. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
+   cells on the Cages tool, which has kinds now.
+3. Counting Circles, Full Rank and Row/Column Indexing: each needs
    something new, marks in cells, a ranking of whole rows, or indexing.
-5. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
+4. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.

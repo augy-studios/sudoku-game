@@ -4,7 +4,10 @@
 // keys move the selection. What happens with a digit is game.js's business.
 //
 // A killer puzzle's cages are drawn over the cells: a dashed line just inside
-// each cage's edge, and its sum in the corner of its first cell. A Diagonal
+// each cage's edge, and its sum in the corner of its first cell. The other
+// kinds of cage are drawn the same way with their own clue there: a Rellik
+// cage's number after ≠, a Look and Say cage's pairs as 2×3, an Equality
+// cage's =, and a lunchbox's sum in a solid line, not dashed. A Diagonal
 // puzzle has a faint line along each long diagonal, and a Windoku puzzle
 // tints its four windows. Thermometers are a thick grey line from a round
 // bulb, faint enough to read digits through, and arrows a thin one from a
@@ -32,7 +35,7 @@
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
-import { layout, touching, RULES } from "./variant.js";
+import { layout, touching, cagesOf, RULES } from "./variant.js";
 
 const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
 const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
@@ -142,8 +145,8 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages, thermos, arrows, doubles, pills,
-  // whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+  // digits by the solution. cages, relliks, lunchboxes, looksays,
+  // equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
   // modulars, dots, xvs, signs, quads, sandwiches, hiddens, rooms, littles,
   // skyscrapers, xsums and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
@@ -160,7 +163,8 @@ export class BoardView {
     const selDigit = sel != null ? values[sel] : 0;
     const focusDigit = view.focusDigit || selDigit;
     this.root.classList.toggle("interactive", Boolean(interactive));
-    this.cages = view.cages ?? [];
+    // Every kind of cage together, each with its label and solid or not.
+    this.cages = cagesOf(view);
     this.rules = view.rules ?? 0;
     this.thermos = view.thermos ?? [];
     this.arrows = view.arrows ?? [];
@@ -244,7 +248,7 @@ export class BoardView {
 
       let label = `${cellName(c).replace("r", "Row ").replace("c", ", column ")}, `;
       const cage = this.cages.find((k) => k.cells.includes(c));
-      if (cage) label += `cage of ${cage.cells.length} adding to ${cage.sum}, `;
+      if (cage) label += `${cage.words}, `;
       if (v) label += `${v}${wrong ? ", wrong" : given ? ", given" : ""}`;
       else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => notes[c] & (1 << d)).join(" ")}`;
       else label += "empty";
@@ -294,10 +298,12 @@ export class BoardView {
     };
     const of = new Array(81).fill(-1);
     cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
-    let outline = "";
+    let dashed = "";
+    let solid = "";
     let sums = "";
     const f = (n) => n.toFixed(1);
     for (const [i, cage] of cages.entries()) {
+      let outline = "";
       for (const c of cage.cells) {
         const { x, y, w, h } = rect(c);
         const d = w * 0.1;
@@ -320,8 +326,12 @@ export class BoardView {
         if (!same(0, -1)) outline += `M${f(x + d)} ${f(from(y, !same(-1, 0), same(-1, -1)))}V${f(to(bottom, !same(1, 0), same(1, -1)))}`;
         if (!same(0, 1)) outline += `M${f(right - d)} ${f(from(y, !same(-1, 0), same(-1, 1)))}V${f(to(bottom, !same(1, 0), same(1, 1)))}`;
       }
+      if (cage.solid) solid += outline;
+      else dashed += outline;
       const head = rect(Math.min(...cage.cells));
-      sums += `<text class="cage-sum" x="${f(head.x + head.w * 0.06)}" y="${f(head.y + head.w * 0.27)}" font-size="${f(head.w * 0.24)}">${cage.sum}</text>`;
+      // A long Look and Say clue a little smaller, to stay near its corner.
+      const size = head.w * (cage.label.length > 4 ? 0.2 : 0.24);
+      sums += `<text class="cage-sum" x="${f(head.x + head.w * 0.06)}" y="${f(head.y + head.w * 0.27)}" font-size="${f(size)}">${cage.label}</text>`;
     }
     let diagonals = "";
     if (diagonal) {
@@ -578,6 +588,6 @@ export class BoardView {
         return `<circle class="quad-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.27)}"/>${text}`;
       })
       .join("");
-    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}${onCorners}${outsides}`;
+    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${onSides}${onCorners}${outsides}`;
   }
 }

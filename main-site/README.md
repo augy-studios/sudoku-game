@@ -38,7 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say and Equality cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -109,7 +109,7 @@ while the clues go in, how to draw it), and in a Rules box over the board
 in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
-any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
+any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
 Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
@@ -137,13 +137,13 @@ and a cell with no 1 possible above it and no 9 below cannot be 5. So one solver
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO,
+seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO,
 P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
-with any before D carries that part in its body too: cages, thermometers,
+with any before D carries that part in its body too: cages of each kind, thermometers,
 arrows, double arrows, pill arrows, whisper lines, renban lines, palindrome lines, zipper lines,
 between lines, lockout lines, entropic lines, modular lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
@@ -151,7 +151,8 @@ clues or regions (a line as its length, its first cell and each step's
 direction; a pill arrow as its pill's size, first cell and way, then its
 arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Sandwich
 sums as every row's and column's sum or none; Little Killer sums as each
-one's first cell, way and sum; regions as which neighbours share one). The
+one's first cell, way and sum; regions, and each kind of cage, as which
+neighbours share one, a cage's clue after). The
 others' carry the clues only.
 
 Some mixes of the switch rules have no grid at all, whatever else is on:
@@ -381,6 +382,36 @@ its clues and cages; it plays as a game with the cages drawn, scores on its
 own board like any made puzzle, and saves as an image with them. Copy
 puzzle is hidden for killer puzzles, since cages do not fit in 81
 characters: the seed is how one is shared.
+
+**Rellik, Lunchbox, Look and Say and Equality.** Four more kinds of cage,
+each with its own rule button and all drawn with the one Cages tool. With
+more than one kind on, the cage bar's kind button (Killer cage, Rellik
+cage, Lunchbox, Look and Say cage, Equality cage) says which a new cage is;
+tapping a cage picks up its kind with it, and turning the kind before
+Change cage turns the cage into that kind. A cell is in one cage at most,
+whatever the kinds, and the checker refuses two sharing a cell. The rules
+follow the other solver's (sigh/Interactive-Sudoku-Solver):
+
+- A Rellik cage's number, shown after ≠, is a total no digits in it make,
+  alone or together. Its digits may repeat.
+- A lunchbox is cells side by side along a row or down a column, drawn in
+  a solid line. Its digits never repeat, and those between its smallest
+  and largest add up to its sum, 0 to 35.
+- A Look and Say clue is pairs of a count and a digit, kept as a string
+  and shown as 2×3 1×4: exactly two 3s and one 4. A count of 0 rules a
+  digit out, and digits it does not name are free.
+- An Equality cage, marked =, has two, four, six or eight cells: as many
+  odd digits as even, and low (1 to 4) as high (6 to 9), so no 5, and no
+  repeats.
+
+In variant.js each narrows its cells as a line does. A Rellik cage takes
+out any digit that would make its number with some set of those placed; a
+lunchbox is narrowed as a sandwich is, over each two cells and two digits
+its smallest and largest could be; a Look and Say cage counts each named
+digit placed and the cells that could still take it; an Equality cage
+counts each half (low, high, odd, even) the same way. Their seed letters
+are QRC, QLB, QLS and QEC, after K, and each kind is written as killer
+cages are, with its clue: a sum, a Look and Say clue's pairs, or nothing.
 
 **Copy puzzle.** On every game, its result and the solver: the puzzle's clues
 as 81 characters with . for blanks, which the solver's Paste and most sudoku

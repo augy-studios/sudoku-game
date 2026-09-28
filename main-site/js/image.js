@@ -1,6 +1,6 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a variant puzzle's cages, thermometers, arrows, double and pill
+// and a variant puzzle's cages of every kind, thermometers, arrows, double and pill
 // arrows, German Whispers,
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // Kropki dots, Greater Than signs, quads, XV
@@ -9,7 +9,7 @@
 // in a margin a cell wide the image grows by. A Jigsaw's regions take the
 // boxes' heavy lines and tint.
 
-import { variantName, touching } from "./variant.js";
+import { variantName, touching, cagesOf } from "./variant.js";
 
 const CELL = 112;
 const PAD = 36;
@@ -40,7 +40,8 @@ const BETWEEN_TEAL = "#6cc0cf";
 const LOCKOUT_BROWN = "#c2a07f";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, doubles, pills, whispers, renbans,
+// variant: { cages, relliks, lunchboxes, looksays, equalities, thermos,
+// arrows, doubles, pills, whispers, renbans,
 // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
 // sandwiches,
 // littles, skyscrapers, xsums, hiddens, rooms, regions, rules } (variant.js), or nothing for
@@ -297,7 +298,8 @@ export async function drawPuzzle(grid, variant = null) {
       ctx.stroke();
     }
   }
-  if (cages.length) drawCages(ctx, cages);
+  const boxes = cagesOf(variant);
+  if (boxes.length) drawCages(ctx, boxes);
   // Signs at the middle of their side, as on the board: a chevron pointing
   // at the smaller digit.
   ctx.strokeStyle = INK;
@@ -437,22 +439,25 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
-  ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
+  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
+  const caption = `${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`;
+  // A long list of rules shrinks to fit across the image.
+  const room = canvas.width - PAD * 2;
+  const wide = ctx.measureText(caption).width;
+  if (wide > room) ctx.font = `${Math.floor((30 * room) / wide)}px ${FONT}`;
+  ctx.fillText(caption, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }
 
-// Dashed lines just inside each cage, and its sum in its first cell's
-// corner, with the same corner rules as the board (board.js).
+// Dashed lines just inside each cage, solid for a lunchbox, and its clue in
+// its first cell's corner, with the same corner rules as the board
+// (board.js). cages: of every kind, as cagesOf gives them.
 function drawCages(ctx, cages) {
   const of = new Array(81).fill(-1);
   cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
   const d = CELL * 0.1;
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 2.5;
-  ctx.setLineDash([8, 6]);
-  ctx.beginPath();
-  for (const [i, cage] of cages.entries()) {
+  // The ith cage's edges, added to the path.
+  const outline = (cage, i) => {
     for (const c of cage.cells) {
       const r0 = Math.floor(c / 9);
       const c0 = c % 9;
@@ -476,11 +481,17 @@ function drawCages(ctx, cages) {
       if (!same(0, -1)) line(x + d, from(y, !same(-1, 0), same(-1, -1)), x + d, to(bottom, !same(1, 0), same(1, -1)));
       if (!same(0, 1)) line(right - d, from(y, !same(-1, 0), same(-1, 1)), right - d, to(bottom, !same(1, 0), same(1, 1)));
     }
+  };
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 2.5;
+  for (const solid of [false, true]) {
+    ctx.setLineDash(solid ? [] : [8, 6]);
+    ctx.beginPath();
+    cages.forEach((cage, i) => cage.solid === solid && outline(cage, i));
+    ctx.stroke();
   }
-  ctx.stroke();
   ctx.setLineDash([]);
 
-  ctx.font = `${Math.round(CELL * 0.24)}px ${FONT}`;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.lineJoin = "round";
@@ -488,12 +499,14 @@ function drawCages(ctx, cages) {
     const c = Math.min(...cage.cells);
     const x = PAD + (c % 9) * CELL + CELL * 0.06;
     const y = PAD + Math.floor(c / 9) * CELL + CELL * 0.27;
-    // A white halo, so the dashed line stops short of the sum.
+    // A long Look and Say clue a little smaller, as on the board.
+    ctx.font = `${Math.round(CELL * (cage.label.length > 4 ? 0.2 : 0.24))}px ${FONT}`;
+    // A white halo, so the dashed line stops short of the clue.
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 8;
-    ctx.strokeText(String(cage.sum), x, y);
+    ctx.strokeText(cage.label, x, y);
     ctx.fillStyle = INK;
-    ctx.fillText(String(cage.sum), x, y);
+    ctx.fillText(cage.label, x, y);
   }
 }
 

@@ -69,7 +69,8 @@ export class Replay {
     });
   }
 
-  // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
+  // game: { puzzle, solution, log, players, cages?, relliks?, lunchboxes?,
+  // looksays?, equalities?, thermos?, arrows?,
   // doubles?, pills?, whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
   // entropics?, modulars?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
   // rules? }.
@@ -122,6 +123,10 @@ export class Replay {
       focusDigit: mark?.c != null ? frame.values[mark.c] : 0,
       mark: mark?.c != null ? { c: mark.c, kind: mark.kind } : null,
       cages: this.game.cages ?? null,
+      relliks: this.game.relliks ?? null,
+      lunchboxes: this.game.lunchboxes ?? null,
+      looksays: this.game.looksays ?? null,
+      equalities: this.game.equalities ?? null,
       rules: this.game.rules ?? 0,
       thermos: this.game.thermos ?? null,
       arrows: this.game.arrows ?? null,

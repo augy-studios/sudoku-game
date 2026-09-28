@@ -242,6 +242,10 @@
                         <span id="ruleGroupCages" class="rule-group-label">Cages &amp; regions</span>
                         <div class="rule-group-btns">
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="killer">Killer</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="rellik">Rellik</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="lunchbox">Lunchbox</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="looksay">Look and Say</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="equality">Equality</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="jigsaw">Jigsaw</button>
                         </div>
                     </div>
@@ -309,8 +313,9 @@
                 <p id="solverSeed" class="made-seed hidden"></p>
 
                 <div id="cageBar" class="cage-bar hidden">
-                    <label class="field-label" for="cageSum">Cage sum</label>
-                    <input id="cageSum" class="field cage-sum-field" type="number" inputmode="numeric" min="1" max="45" placeholder="Sum" enterkeyhint="done">
+                    <label id="cageSumLabel" class="field-label" for="cageSum">Cage sum</label>
+                    <button id="cageKind" class="btn btn-quiet pill hidden" type="button"><span id="cageKindLabel">Killer cage</span></button>
+                    <input id="cageSum" class="field cage-sum-field" type="text" inputmode="numeric" autocomplete="off" placeholder="Sum" enterkeyhint="done">
                     <button id="cageAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="cageAddLabel">Add cage</span></button>
                     <button id="cageRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span>Remove cage</button>
                     <button id="cageDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>

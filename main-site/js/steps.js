@@ -4,11 +4,12 @@
 // in sudoku.js. A set of candidates is a mask with digits as bits 1 to 9,
 // the same as a cell's notes, so the board can draw one as the other.
 //
-// Each takes a variant, { cages, thermos, arrows, doubles, pills,
-// whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
-// modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers,
-// xsums, hiddens, rooms, regions, rules } (variant.js), as an optional last
-// argument; without one the rules are the classic ones.
+// Each takes a variant, { cages, relliks, lunchboxes, looksays, equalities,
+// thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers,
+// betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
+// sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules }
+// (variant.js), as an optional last argument; without one the rules are the
+// classic ones.
 
 import { PEERS, countSolutions, findSolutions } from "./sudoku.js";
 import {
@@ -16,6 +17,12 @@ import {
   variantCandidates,
   variantSolutions,
   cageProblem,
+  rellikProblem,
+  lunchboxProblem,
+  lookSayProblem,
+  equalityProblem,
+  sayCounts,
+  CAGE_LISTS,
   thermoProblem,
   arrowProblem,
   doubleProblem,
@@ -59,7 +66,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -91,7 +98,14 @@ export function bitCount(mask) {
 // and box, or a Jigsaw's region, and under the variant's rules its
 // diagonal, window, a knight's
 // move or a king's diagonal step away, or its cage; the digits of a cage
-// that go past its sum, or that fill it to some other sum; the digits of
+// that go past its sum, or that fill it to some other sum; the digits of a
+// Rellik cage that together make its sum; digits twice in a lunchbox, or
+// all of its digits once it is full and those between its smallest and
+// largest make some other sum; a digit in a Look and Say cage more times
+// than its clue says, or all of the cage's digits once the empty cells are
+// too few for what it still owes; a 5 in an Equality cage, a digit twice
+// in one, or the digits of a half (low, high, odd or even) once it holds
+// more than half the cage; the digits of
 // a thermometer that do not rise fast enough from the bulb: two cells three
 // steps apart need digits at least three apart; an arrow's digits, with
 // its circle's, once they go past the circle (or past 9 with the circle
@@ -140,6 +154,43 @@ export function clashes(grid, variant = null) {
     const repeats = filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c]));
     if (total > sum || (filled.length === cells.length && total !== sum)) filled.forEach((c) => out.add(c));
     repeats.forEach((c) => out.add(c));
+  }
+  // Every set of a Rellik cage's digits, by which of them it takes.
+  for (const { sum, cells } of variant?.relliks ?? []) {
+    const filled = cells.filter((c) => grid[c]);
+    for (let set = 1; set < 1 << filled.length; set++) {
+      const taken = filled.filter((_, i) => set & (1 << i));
+      if (taken.reduce((t, c) => t + grid[c], 0) === sum) taken.forEach((c) => out.add(c));
+    }
+  }
+  for (const { sum, cells } of variant?.lunchboxes ?? []) {
+    const filled = cells.filter((c) => grid[c]);
+    filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
+    if (filled.length < cells.length) continue;
+    const digits = cells.map((c) => grid[c]);
+    const [i, j] = [digits.indexOf(Math.min(...digits)), digits.indexOf(Math.max(...digits))].sort((p, q) => p - q);
+    if (digits.slice(i + 1, j).reduce((t, d) => t + d, 0) !== sum) cells.forEach((c) => out.add(c));
+  }
+  for (const { clue, cells } of variant?.looksays ?? []) {
+    const want = sayCounts(clue);
+    if (!want) continue;
+    const filled = cells.filter((c) => grid[c]);
+    let owed = 0;
+    for (let d = 1; d <= 9; d++) {
+      if (want[d] < 0) continue;
+      const have = filled.filter((c) => grid[c] === d);
+      if (have.length > want[d]) have.forEach((c) => out.add(c));
+      owed += Math.max(0, want[d] - have.length);
+    }
+    if (owed > cells.length - filled.length) filled.forEach((c) => out.add(c));
+  }
+  for (const { cells } of variant?.equalities ?? []) {
+    const filled = cells.filter((c) => grid[c]);
+    filled.filter((c) => grid[c] === 5 || filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
+    for (const half of [[1, 2, 3, 4], [6, 7, 8, 9], [1, 3, 7, 9], [2, 4, 6, 8]]) {
+      const some = filled.filter((c) => half.includes(grid[c]));
+      if (some.length > cells.length / 2) some.forEach((c) => out.add(c));
+    }
   }
   for (const t of variant?.thermos ?? []) {
     for (let i = 0; i < t.length; i++) {
@@ -412,8 +463,9 @@ export const MIN_CLUES = 17;
 
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
-// "cages", "thermos", "arrows", "doubles", "pills", "whispers", "renbans",
-// "palindromes",
+// "cages" (also for two cages of different kinds sharing a cell),
+// "relliks", "lunchboxes", "looksays", "equalities", "thermos", "arrows",
+// "doubles", "pills", "whispers", "renbans", "palindromes",
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs",
 // "signs", "quads",
 // "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms" or
@@ -438,6 +490,18 @@ export function checkClues(clues, variant = null) {
     const problem = cageProblem(variant.cages);
     if (problem) return { ok: false, why: "cages", problem };
   } else if (!isVariant(variant) && n < MIN_CLUES) return { ok: false, why: "few", n };
+  for (const [list, partProblem] of [
+    ["relliks", rellikProblem],
+    ["lunchboxes", lunchboxProblem],
+    ["looksays", lookSayProblem],
+    ["equalities", equalityProblem],
+  ]) {
+    const problem = variant?.[list]?.length && partProblem(variant[list]);
+    if (problem) return { ok: false, why: list, problem };
+  }
+  // One cell, one cage, whatever the kinds.
+  const caged = CAGE_LISTS.flatMap(({ list }) => (variant?.[list] ?? []).flatMap((cage) => cage.cells));
+  if (new Set(caged).size < caged.length) return { ok: false, why: "cages", problem: { why: "overlap" } };
   if (variant?.thermos?.length) {
     const problem = thermoProblem(variant.thermos);
     if (problem) return { ok: false, why: "thermos", problem };
@@ -529,10 +593,10 @@ export function rateLevel(clues, variant = null) {
   const grid = clues.slice();
   for (let step = nextStep(grid, null, variant); step; step = nextStep(grid, null, variant)) grid[step.c] = step.d;
   const blanks = clues.filter((d) => !d).length;
-  // A killer puzzle, or one with clues outside the grid, usually has few
-  // clues or none, so blanks say little: what counts is how far singles get
-  // with the cages and the sums.
-  if (["cages", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
+  // A puzzle with cages of any kind, or with clues outside the grid, usually
+  // has few clues or none, so blanks say little: what counts is how far
+  // singles get with the cages and the sums.
+  if ([...CAGE_LISTS.map((k) => k.list), "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
   if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
   return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

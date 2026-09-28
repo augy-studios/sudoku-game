@@ -21,6 +21,30 @@ export const RULE_HELP = {
     rule: "The digits in each dashed cage add up to the number in its corner, and never repeat within the cage.",
     draw: "Tap Cages, then the cells of a cage, type its sum, and tap Add cage.",
   },
+  rellik: {
+    name: "Rellik Cage",
+    list: "relliks",
+    rule: "No digits in a dashed cage marked ≠ add up to its number, together or alone: with ≠7, never a 7, nor a 3 with a 4. Digits may repeat if nothing else stops them.",
+    draw: "Tap Cages, then the cells of a cage, type its number, and tap Add cage. With other kinds of cage on, pick Rellik cage first.",
+  },
+  lunchbox: {
+    name: "Lunchbox",
+    list: "lunchboxes",
+    rule: "The digits in a solid box never repeat, and those sitting between its smallest digit and its largest add up to the number in its corner: 6 1 4 3 9 makes 7.",
+    draw: "Tap Cages, then cells side by side along a row or down a column, type the sum, and tap Add cage. With other kinds of cage on, pick Lunchbox first.",
+  },
+  looksay: {
+    name: "Look and Say",
+    list: "looksays",
+    rule: "A dashed cage's clue counts digits in it: 2×3 means exactly two 3s, and 0×5 no 5 at all. Digits it does not name can be anything.",
+    draw: "Tap Cages, then the cells of a cage, type the clue as pairs of a count and a digit, like 2314 for two 3s and one 4, and tap Add cage. With other kinds of cage on, pick Look and Say cage first.",
+  },
+  equality: {
+    name: "Equality Cage",
+    list: "equalities",
+    rule: "A dashed cage marked = holds as many odd digits as even, and as many low (1 to 4) as high (6 to 9), so never a 5. Its digits never repeat.",
+    draw: "Tap Cages, then two, four, six or eight cells, and tap Add cage. With other kinds of cage on, pick Equality cage first.",
+  },
   jigsaw: {
     name: "Jigsaw",
     list: "regions",

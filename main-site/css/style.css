@@ -492,6 +492,10 @@ body {
   stroke-dasharray: 3 2.5;
   opacity: 0.75;
 }
+/* A lunchbox: a box drawn in a solid line, so it never passes for a cage. */
+.cage-line.cage-solid {
+  stroke-dasharray: none;
+}
 .cage-sum {
   fill: var(--ink);
   font-family: inherit;

@@ -1,14 +1,29 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, thermos, arrows, doubles, pills, whispers, renbans,
-// palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-// signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
-// regions, rules }:
+// A variant is { cages, relliks, lunchboxes, looksays, equalities, thermos,
+// arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens,
+// lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches,
+// littles, skyscrapers, xsums, hiddens, rooms, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
-//            cell is in at most one cage; cells in none are allowed.
+//            cell is in at most one cage, of any kind below; cells in none
+//            are allowed.
+//   relliks  Rellik cages, as killer cages: no set of one or more of a
+//            cage's digits adds up to its sum. They may repeat where the
+//            rules allow.
+//   lunchboxes  lunchboxes, as killer cages, their cells side by side along
+//            a row or down a column: the digits sitting between the smallest
+//            digit and the largest add up to the sum, 0 when those two sit
+//            side by side. They never repeat.
+//   looksays Look and Say cages, [{ clue, cells }], clue a string of digit
+//            pairs, a count 0 to 9 and a digit 1 to 9: the cage holds each
+//            digit named exactly that many times, and any other digits as
+//            the rules allow.
+//   equalities  Equality cages, [{ cells }] of an even number of cells: as
+//            many odd digits as even, and as many low (1 to 4) as high (6
+//            to 9), so never a 5. They never repeat.
 //   thermos  thermometers, each a path of cells from the bulb, every step
 //            to a cell touching the last, corners included. Digits rise
 //            strictly from the bulb. Thermometers may share cells.
@@ -102,8 +117,9 @@
 //
 // Diagonals, windows and disjoint groups are extra houses, like rows,
 // columns and boxes; the knight's and king's moves are extra pairs of cells
-// that must differ. Double arrows and pill arrows are sums that balance
-// (scales below). A Jigsaw's regions are houses in the boxes' place, and
+// that must differ. Killer cages are worked into the search itself, and the
+// other kinds of cage each narrow their cells as lines do. Double arrows and
+// pill arrows are sums that balance (scales below). A Jigsaw's regions are houses in the boxes' place, and
 // disjoint groups still go by the 3x3 boxes. The rules about sides are
 // sides barred from some marks' relations (barredSides below), the rules
 // about 2x2 squares sort each square's digits into kinds as entropic and
@@ -139,7 +155,7 @@ export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key =
 const has = hasRule;
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (rooms?.length) names.unshift("Numbered Room");
@@ -164,6 +180,10 @@ export function variantName({ cages, thermos, arrows, doubles, pills, whispers, 
   if (doubles?.length) names.unshift("Double Arrow");
   if (arrows?.length) names.unshift("Arrow");
   if (thermos?.length) names.unshift("Thermo");
+  if (equalities?.length) names.unshift("Equality Cage");
+  if (looksays?.length) names.unshift("Look and Say");
+  if (lunchboxes?.length) names.unshift("Lunchbox");
+  if (relliks?.length) names.unshift("Rellik Cage");
   if (cages?.length) names.unshift("Killer");
   return names.join(", ");
 }
@@ -282,24 +302,115 @@ export function cageAllows(left, rest, used) {
   return out;
 }
 
-// Whether cages are well formed: cells 0 to 80, none in two cages, each
-// cage one to nine cells joined edge to edge, and a sum nine different
-// digits could make. null if so, or what is wrong: { why, cage }.
-export function cageProblem(cages) {
+// Whether cages of one kind are well formed: cells 0 to 80, none in two
+// cages, each cage `least` to `most` cells (an even number, for `even`)
+// joined edge to edge, or for `straight` side by side along a row or down a
+// column in reading order, and a clue `fits` takes. null if so, or what is
+// wrong: { why, cage }, why "size", "cell", "overlap", "sum" or "clue" (as
+// `clue` names it), "apart" or "line".
+function groupProblem(cages, { least = 1, most = 9, even = false, straight = false, clue = "sum", fits }) {
   const seen = new Set();
   for (let i = 0; i < cages.length; i++) {
-    const { sum, cells } = cages[i];
-    if (!Array.isArray(cells) || !cells.length || cells.length > 9) return { why: "size", cage: i };
+    const cage = cages[i] ?? {};
+    const { cells } = cage;
+    if (!Array.isArray(cells) || cells.length < least || cells.length > most || (even && cells.length % 2)) return { why: "size", cage: i };
     for (const c of cells) {
       if (!Number.isInteger(c) || c < 0 || c > 80) return { why: "cell", cage: i };
       if (seen.has(c)) return { why: "overlap", cage: i };
       seen.add(c);
     }
-    if (!Number.isInteger(sum) || !COMBOS[cells.length][sum]?.length) return { why: "sum", cage: i };
-    if (!joined(cells)) return { why: "apart", cage: i };
+    if (fits && !fits(cage)) return { why: clue, cage: i };
+    if (straight ? !inLine(cells) : !joined(cells)) return { why: straight ? "line" : "apart", cage: i };
   }
   return null;
 }
+
+// Whether killer cages are well formed: one to nine cells, and a sum nine
+// different digits could make.
+export const cageProblem = (cages) => groupProblem(cages, { fits: ({ sum, cells }) => Number.isInteger(sum) && COMBOS[cells.length][sum]?.length > 0 });
+// Rellik cages: a sum some digit could reach.
+export const rellikProblem = (relliks) => groupProblem(relliks, { fits: ({ sum }) => Number.isInteger(sum) && sum >= 1 && sum <= 45 });
+// Lunchboxes: two cells at least, in a line, and a sum the cells between
+// its smallest and largest digit could make.
+export const lunchboxProblem = (lunchboxes) => groupProblem(lunchboxes, { least: 2, straight: true, fits: ({ sum, cells }) => lunchboxFits(cells.length, sum) });
+// Look and Say cages: a clue of digit pairs sayCounts can read, its counts
+// no more than the cells.
+export const lookSayProblem = (looksays) =>
+  groupProblem(looksays, {
+    clue: "clue",
+    fits: ({ clue, cells }) => {
+      const want = sayCounts(clue);
+      return Boolean(want) && want.reduce((t, n) => t + Math.max(n, 0), 0) <= cells.length;
+    },
+  });
+// Equality cages: two, four, six or eight cells, as the eight digits other
+// than 5 have room for.
+export const equalityProblem = (equalities) => groupProblem(equalities, { least: 2, most: 8, even: true });
+
+// The most a lunchbox's sum can be: the digits 2 to 8.
+export const LUNCHBOX_MAX = 35;
+
+// Whether some number of cells between a lunchbox's ends, none up to all
+// but those two, could add up to `sum` with different digits 2 to 8.
+function lunchboxFits(size, sum) {
+  if (!Number.isInteger(sum) || sum < 0 || sum > LUNCHBOX_MAX) return false;
+  if (sum === 0) return true;
+  for (let k = 1; k <= size - 2; k++) if (COMBOS[k][sum].some((m) => !(m & ~INNER))) return true;
+  return false;
+}
+
+// Cells, in reading order, side by side along one row or down one column.
+function inLine(cells) {
+  const step = cells[1] - cells[0];
+  if (step !== 1 && step !== 9) return false;
+  return cells.every((c, i) => !i || (c - cells[i - 1] === step && (step === 9 || ROW[c] === ROW[cells[0]])));
+}
+
+// A Look and Say clue as how many of each digit the cage holds: for d 1 to
+// 9, the count, or -1 for a digit the clue does not name. null if it is not
+// one to nine pairs of a count and a digit 1 to 9, each digit named once.
+export function sayCounts(clue) {
+  if (typeof clue !== "string" || !/^(\d\d){1,9}$/.test(clue)) return null;
+  const want = new Array(10).fill(-1);
+  for (let i = 0; i < clue.length; i += 2) {
+    const d = Number(clue[i + 1]);
+    if (!d || want[d] >= 0) return null;
+    want[d] = Number(clue[i]);
+  }
+  return want;
+}
+
+const COUNT_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+// A Look and Say clue in words: "two 3s and one 4".
+export function sayWords(clue) {
+  const parts = (clue.match(/\d\d/g) ?? []).map(([n, d]) => `${COUNT_WORDS[n]} ${d}${n === "1" ? "" : "s"}`);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts.join("");
+}
+
+// Every kind of cage, as the lists that hold them, in the order their rule
+// buttons go: what each shows in its first cell's corner, what it is
+// called for a screen reader, and whether it is drawn solid, not dashed.
+export const CAGE_LISTS = [
+  { list: "cages", label: ({ sum }) => String(sum), words: ({ sum, cells }) => `cage of ${cells.length} adding to ${sum}` },
+  { list: "relliks", label: ({ sum }) => `≠${sum}`, words: ({ sum, cells }) => `Rellik cage of ${cells.length}, no digits adding to ${sum}` },
+  {
+    list: "lunchboxes",
+    label: ({ sum }) => String(sum),
+    words: ({ sum, cells }) => `lunchbox of ${cells.length}, ${sum} between its smallest and largest`,
+    solid: true,
+  },
+  {
+    list: "looksays",
+    label: ({ clue }) => (clue.match(/\d\d/g) ?? []).map(([n, d]) => `${n}×${d}`).join(" "),
+    words: ({ clue, cells }) => `Look and Say cage of ${cells.length}, ${sayWords(clue)}`,
+  },
+  { list: "equalities", label: () => "=", words: ({ cells }) => `Equality cage of ${cells.length}` },
+];
+
+// Every cage of every kind in `v`, for drawing: [{ cells, label, words,
+// solid }].
+export const cagesOf = (v) =>
+  CAGE_LISTS.flatMap(({ list, label, words, solid = false }) => (v?.[list] ?? []).map((cage) => ({ cells: cage.cells, label: label(cage), words: words(cage), solid })));
 
 // Every cell reachable from the first through edges within the group.
 function joined(cells) {
@@ -1391,10 +1502,216 @@ function littleBounds(littles, g, free) {
   return true;
 }
 
+/* ---- Rellik cages, lunchboxes, Look and Say and Equality cages ---- */
+
+// Whether a cage's placed digits are all different, taking them out of its
+// empty cells if so. `free` is narrowed in place, as in thermoBounds.
+function distinctBounds(cells, g, free) {
+  let placed = 0;
+  for (const c of cells) {
+    if (!g[c]) continue;
+    const bit = 1 << g[c];
+    if (placed & bit) return false;
+    placed |= bit;
+  }
+  for (const c of cells) if (!g[c] && !(free[c] &= ~placed)) return false;
+  return true;
+}
+
+// The totals some set of a Rellik cage's placed digits adds up to, 0 for
+// none of them, up to its sum.
+const REACH = new Uint8Array(46);
+
+// Takes out of each Rellik cage's empty cells every digit that would make
+// its sum with some set of the digits placed, itself included; false if
+// some set of them makes it already. Placed digits count as masks of one,
+// and `free` is narrowed in place, as in thermoBounds.
+function rellikBounds(relliks, g, free) {
+  for (const { sum, cells } of relliks) {
+    REACH.fill(0, 0, sum + 1);
+    REACH[0] = 1;
+    for (const c of cells) {
+      const d = g[c];
+      if (!d) continue;
+      for (let t = sum; t >= d; t--) if (REACH[t - d]) REACH[t] = 1;
+      if (REACH[sum]) return false;
+    }
+    let banned = 0;
+    for (let d = 1; d <= 9 && d <= sum; d++) if (REACH[sum - d]) banned |= 1 << d;
+    for (const c of cells) if (!g[c] && !(free[c] &= ~banned)) return false;
+  }
+  return true;
+}
+
+// Scratch for lunchboxBounds, a mask for each of up to nine cells.
+const lunchMasks = new Int32Array(9);
+const lunchAllow = new Int32Array(9);
+
+// Narrows each lunchbox to the ways it could still go, as sandwichBounds
+// narrows a sandwich: for each two of its cells its smallest and its
+// largest digit could sit in, and each two digits they could be, far enough
+// apart to leave room for the rest, whether every other cell can take a
+// digit between the two, those between the two cells adding up to its sum,
+// with different digits. Placed digits count as masks of one, and `free` is
+// narrowed in place, as in thermoBounds; false if no way is left.
+function lunchboxBounds(lunchboxes, g, free) {
+  const m = lunchMasks;
+  const allow = lunchAllow;
+  for (const { sum, cells } of lunchboxes) {
+    const n = cells.length;
+    if (!distinctBounds(cells, g, free)) return false;
+    let placed = 0;
+    for (let x = 0; x < n; x++) {
+      const c = cells[x];
+      m[x] = g[c] ? 1 << g[c] : free[c];
+      if (g[c]) placed |= m[x];
+    }
+    allow.fill(0);
+    let fits = false;
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        if (i === j) continue;
+        const a = Math.min(i, j);
+        const b = Math.max(i, j);
+        for (let lo = 1; lo + n - 1 <= 9; lo++) {
+          if (!(m[i] & (1 << lo))) continue;
+          for (let hi = lo + n - 1; hi <= 9; hi++) {
+            if (!(m[j] & (1 << hi))) continue;
+            const range = between(lo + 1, hi - 1);
+            // The digits the cells between the two still need, how many
+            // of those cells are empty and what they could take; and how
+            // many cells outside are empty.
+            let rest = sum;
+            let left = 0;
+            let room = 0;
+            let outside = 0;
+            let ok = true;
+            for (let x = 0; x < n && ok; x++) {
+              if (x === i || x === j) continue;
+              const inside = x > a && x < b;
+              const d = g[cells[x]];
+              if (d) {
+                if (!(range & (1 << d))) ok = false;
+                else if (inside) rest -= d;
+              } else if (!(m[x] & range)) ok = false;
+              else if (inside) {
+                left++;
+                room |= m[x];
+              } else outside++;
+            }
+            if (!ok || rest < 0) continue;
+            // The digits left for the empty cells, and the sets of them the
+            // cells between could hold, leaving enough for those outside.
+            const spare = range & ~placed;
+            let inner = 0;
+            if (!left) {
+              if (rest || POP[spare] < outside) continue;
+            } else {
+              for (const set of COMBOS[left][rest] ?? []) if (!(set & ~spare) && !(set & ~room) && POP[spare & ~set] >= outside) inner |= set;
+              if (!inner) continue;
+            }
+            fits = true;
+            allow[i] |= 1 << lo;
+            allow[j] |= 1 << hi;
+            for (let x = 0; x < n; x++) if (x !== i && x !== j) allow[x] |= x > a && x < b ? inner | (placed & range) : range;
+          }
+        }
+      }
+    }
+    if (!fits) return false;
+    for (let x = 0; x < n; x++) {
+      const c = cells[x];
+      if (g[c]) {
+        if (!(allow[x] & (1 << g[c]))) return false;
+      } else if (!(free[c] &= allow[x])) return false;
+    }
+  }
+  return true;
+}
+
+// Look and Say cages with their clues read: [{ cells, want }], want as
+// sayCounts gives it.
+export const sayCages = (looksays = []) => looksays.map(({ clue, cells }) => ({ cells, want: sayCounts(clue) }));
+
+// For each digit a Look and Say cage names: no more placed than its count,
+// and enough empty cells that can take it for the rest. Once the count is
+// placed, the empty cells lose it; once it needs every empty cell that can
+// take it, those cells hold it. And the digits still owed fit in the empty
+// cells. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if the clue cannot be kept.
+function sayBounds(says, g, free) {
+  for (const { cells, want } of says) {
+    let empty = 0;
+    for (const c of cells) if (!g[c]) empty++;
+    let owed = 0;
+    for (let d = 1; d <= 9; d++) {
+      if (want[d] < 0) continue;
+      const bit = 1 << d;
+      let have = 0;
+      let can = 0;
+      for (const c of cells) {
+        if (g[c] === d) have++;
+        else if (!g[c] && free[c] & bit) can++;
+      }
+      if (have > want[d] || have + can < want[d]) return false;
+      owed += want[d] - have;
+      for (const c of cells) {
+        if (g[c]) continue;
+        if (have === want[d]) free[c] &= ~bit;
+        else if (have + can === want[d] && free[c] & bit) free[c] = bit;
+      }
+    }
+    if (owed > empty) return false;
+    for (const c of cells) if (!g[c] && !free[c]) return false;
+  }
+  return true;
+}
+
+// The four halves an Equality cage's digits are even across: low and high,
+// odd and even. None holds 5.
+const EQUAL_HALVES = [between(1, 4), between(6, 9), (1 << 1) | (1 << 3) | (1 << 7) | (1 << 9), (1 << 2) | (1 << 4) | (1 << 6) | (1 << 8)];
+
+// Narrows each Equality cage: different digits, no 5, and each of the four
+// halves holding half its cells. Once a half has its share placed, the
+// empty cells lose it; once it needs every empty cell that can take one of
+// its digits, those cells keep only its digits. Placed digits count as
+// masks of one, and `free` is narrowed in place, as in thermoBounds; false
+// if the cage cannot be even.
+function equalityBounds(equalities, g, free) {
+  for (const { cells } of equalities) {
+    if (!distinctBounds(cells, g, free)) return false;
+    const half = cells.length / 2;
+    for (const c of cells) {
+      if (g[c] === 5) return false;
+      if (!g[c] && !(free[c] &= ~(1 << 5))) return false;
+    }
+    for (const digits of EQUAL_HALVES) {
+      let have = 0;
+      let can = 0;
+      for (const c of cells) {
+        if (g[c]) have += (digits >> g[c]) & 1;
+        else if (free[c] & digits) can++;
+      }
+      if (have > half || have + can < half) return false;
+      for (const c of cells) {
+        if (g[c]) continue;
+        if (have === half) free[c] &= ~digits;
+        else if (have + can === half && free[c] & digits) free[c] &= digits;
+        if (!free[c]) return false;
+      }
+    }
+  }
+  return true;
+}
+
 /* ---- candidates and solving ---- */
 
 const norm = (v) => ({
   cages: v?.cages ?? [],
+  relliks: v?.relliks ?? [],
+  lunchboxes: v?.lunchboxes ?? [],
+  looksays: v?.looksays ?? [],
+  equalities: v?.equalities ?? [],
   thermos: v?.thermos ?? [],
   arrows: v?.arrows ?? [],
   doubles: v?.doubles ?? [],
@@ -1422,13 +1739,13 @@ const norm = (v) => ({
 });
 
 // What can go in each empty cell, by every cell it must differ from, its
-// cage, its thermometers, arrows and other lines, its dots and marks, its
-// 2x2 squares under Global Entropy or Global Mod, the digits around it under
-// Anti-taxicab and Dutch Flatmates, and the clues outside; 0 for a filled
-// cell. A cage allows digits not already
+// cage of whatever kind, its thermometers, arrows and other lines, its dots
+// and marks, its 2x2 squares under Global Entropy or Global Mod, the digits
+// around it under Anti-taxicab and Dutch Flatmates, and the clues outside;
+// 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1451,6 +1768,10 @@ export function variantCandidates(grid, variant) {
     if (of[c] >= 0) m &= allow[of[c]];
     out[c] = m;
   }
+  rellikBounds(relliks, grid, out);
+  lunchboxBounds(lunchboxes, grid, out);
+  sayBounds(sayCages(looksays), grid, out);
+  equalityBounds(equalities, grid, out);
   thermoBounds(thermos, grid, out);
   arrowBounds(arrows, grid, out);
   scaleBounds(scales(doubles, pills), grid, out);
@@ -1480,13 +1801,14 @@ export function variantCandidates(grid, variant) {
 }
 
 // Depth first search. At each step every empty cell's candidates are worked
-// out from its houses, the cells it must differ from, its thermometers,
+// out from its houses, the cells it must differ from, its cages of the
+// other kinds, its thermometers,
 // arrows and other lines, its dots and marks, its 2x2 squares, the digits
 // around it under Anti-taxicab and Dutch Flatmates, the clues outside, and
-// its cage, where a
+// its killer cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
-// cage cannot do without and only one of its cells can take, goes there;
+// killer cage cannot do without and only one of its cells can take, goes there;
 // otherwise the search branches on the cell with the fewest candidates. A
 // digit with no place left, or a cell with no candidate, ends the branch.
 // `found` is called on each solution and returns true to stop.
@@ -1497,8 +1819,9 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
+  const says = sayCages(looksays);
   const balances = scales(doubles, pills);
   const barred = barredSides(rules, dots, xvs);
   const sorts = squareKinds(rules);
@@ -1550,6 +1873,10 @@ function search(grid, variant, found) {
       for (const o of pairs[c]) if (g[o]) m &= ~(1 << g[o]);
       free[c] = m;
     }
+    if (relliks.length && !rellikBounds(relliks, g, free)) return null;
+    if (lunchboxes.length && !lunchboxBounds(lunchboxes, g, free)) return null;
+    if (says.length && !sayBounds(says, g, free)) return null;
+    if (equalities.length && !equalityBounds(equalities, g, free)) return null;
     if (thermos.length && !thermoBounds(thermos, g, free)) return null;
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
     if (balances.length && !scaleBounds(balances, g, free)) return null;
