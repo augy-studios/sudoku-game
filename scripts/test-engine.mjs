@@ -565,15 +565,14 @@ test("arrows are checked, solved and carried in seeds", () => {
   assert.match(madeSeed("H", new Array(81).fill(0), { cages: killerPuzzle().cages, thermos, arrows, rules: 1 }).text, /^KTAD-H-/);
 });
 
+// A seeded source of numbers from 0 to 1.
+const seeded = (x) => () => (x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32;
+
 // Lines laid through a solved grid, each walked from a random cell while
-// `fits` takes the line so far and the next cell, then clues taken out, in
-// a seeded order, while the answer stays the only one. As many as `count`
-// lines of `min` to `max` cells.
-function linePuzzle(key, x, fits, { count = 8, min = 3, max = 6 } = {}) {
-  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
-  const rand = () => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32);
+// `fits` takes the line so far and the next cell. As many as `count` lines
+// of `min` to `max` cells, none sharing a cell with another in `used`.
+function layLines(solution, rand, fits, { count = 8, min = 3, max = 6, used = new Set() } = {}) {
   const lines = [];
-  const used = new Set();
   for (let tries = 0; lines.length < count && tries < 5000; tries++) {
     const start = Math.floor(rand() * 81);
     if (used.has(start)) continue;
@@ -587,23 +586,39 @@ function linePuzzle(key, x, fits, { count = 8, min = 3, max = 6 } = {}) {
     line.forEach((c) => used.add(c));
     lines.push(line);
   }
+  return lines;
+}
+
+// Clues taken out of a solved grid, in a seeded order, while the answer
+// stays the only one under `variant`.
+function thinOut(solution, variant, rand) {
   const puzzle = solution.slice();
   for (const c of [...Array(81).keys()].sort(() => rand() - 0.5)) {
     const d = puzzle[c];
     puzzle[c] = 0;
-    if (variantSolutions(puzzle, { [key]: lines }, 2)?.length !== 1) puzzle[c] = d;
+    if (variantSolutions(puzzle, variant, 2)?.length !== 1) puzzle[c] = d;
   }
-  return { puzzle, solution, [key]: lines };
+  return puzzle;
 }
 
-const whisperPuzzle = () => linePuzzle("whispers", 11, (line, o, sol) => Math.abs(sol[o] - sol[line.at(-1)]) >= 5);
+const fitsWhisper = (line, o, sol) => Math.abs(sol[o] - sol[line.at(-1)]) >= 5;
 // The line's digits with the next cell's still a run: all different, and
 // spread no wider than there are of them.
-const renbanPuzzle = () =>
-  linePuzzle("renbans", 13, (line, o, sol) => {
-    const digits = [...line, o].map((c) => sol[c]);
-    return new Set(digits).size === digits.length && Math.max(...digits) - Math.min(...digits) === digits.length - 1;
-  });
+const fitsRenban = (line, o, sol) => {
+  const digits = [...line, o].map((c) => sol[c]);
+  return new Set(digits).size === digits.length && Math.max(...digits) - Math.min(...digits) === digits.length - 1;
+};
+
+// A puzzle of one kind of line, on the thermo and arrow puzzles' grid.
+function linePuzzle(key, x, fits) {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(x);
+  const lines = layLines(solution, rand, fits);
+  return { puzzle: thinOut(solution, { [key]: lines }, rand), solution, [key]: lines };
+}
+
+const whisperPuzzle = () => linePuzzle("whispers", 11, fitsWhisper);
+const renbanPuzzle = () => linePuzzle("renbans", 13, fitsRenban);
 
 // Solves by steps alone, checking each against the answer.
 function stepsAgree(puzzle, solution, variant) {
@@ -718,6 +733,99 @@ test("renban lines are checked, solved and carried in seeds", () => {
   assert.match(madeSeed("H", new Array(81).fill(0), { cages: killerPuzzle().cages, whispers, renbans, rules: 1 }).text, /^KSRD-H-/);
   assert.equal(seedVariantName("KSRD-H-BBBB"), "Killer, German Whispers, Renban, Diagonal");
   assert.equal(variantName({ whispers, renbans }), "German Whispers, Renban");
+});
+
+// Cages laid through a solved grid: `count` of them, two to four cells
+// joined edge to edge with no digit twice, none sharing a cell.
+function layCages(solution, rand, count) {
+  const cages = [];
+  const used = new Set();
+  while (cages.length < count) {
+    const cells = [Math.floor(rand() * 81)];
+    if (used.has(cells[0])) continue;
+    const want = 2 + Math.floor(rand() * 3);
+    while (cells.length < want) {
+      const next = cells
+        .flatMap((c) => [c - 9, c + 9, c % 9 ? c - 1 : -1, c % 9 < 8 ? c + 1 : -1])
+        .filter((n) => n >= 0 && n < 81 && !used.has(n) && !cells.includes(n) && !cells.some((o) => solution[o] === solution[n]));
+      if (!next.length) break;
+      cells.push(next[Math.floor(rand() * next.length)]);
+    }
+    if (cells.length < 2) continue;
+    cells.forEach((c) => used.add(c));
+    cages.push({ sum: cells.reduce((t, c) => t + solution[c], 0), cells: cells.sort((a, b) => a - b) });
+  }
+  return cages.sort((a, b) => a.cells[0] - b.cells[0]);
+}
+
+// Rules that go together. Relabelling digits keeps every rule, so a first
+// row of 1 to 9 stands for every grid: with it, a search that finds none
+// has shown there is none.
+const firstRow = () => [1, 2, 3, 4, 5, 6, 7, 8, 9, ...new Array(72).fill(0)];
+
+// The widest mixes of switch rules that have a grid, and a grid for each.
+// Diagonal with anti-knight runs past the solver's budget from an empty
+// grid, so its grid is written out, found by a search with no budget.
+const WIDEST = [
+  { keys: ["diagonal", "antiking", "windoku"] },
+  { keys: ["diagonal", "antiknight"], grid: "123456789967812453845793216352968174671345892498127635286579341534681927719234568" },
+  { keys: ["antiknight", "windoku"] },
+  { keys: ["antiknight", "antiking"] },
+].map(({ keys, grid }) => {
+  const rules = keys.reduce((m, k) => m | rule(k), 0);
+  return { keys, rules, grid: grid ? [...grid].map(Number) : variantSolve(firstRow(), { rules }) };
+});
+
+test("anti-knight rules out some mixes of switch rules altogether", () => {
+  const rules = (...keys) => keys.reduce((m, k) => m | rule(k), 0);
+  for (const keys of [
+    ["antiknight", "antiking", "diagonal"],
+    ["antiknight", "antiking", "windoku"],
+    ["antiknight", "diagonal", "windoku"],
+  ]) {
+    assert.deepEqual(variantSolutions(firstRow(), { rules: rules(...keys) }, 1), [], `${keys.join(", ")} has no grid`);
+  }
+  for (const { keys, rules, grid } of WIDEST) assert.ok(grid && keepsRules(grid, rules), `${keys.join(", ")} has a grid`);
+});
+
+// Every drawn part at once, on a grid that keeps the switch rules, made,
+// checked, solved by steps and carried in a seed, as the maker, the solver
+// and a made game do.
+test("every drawn part at once, with each widest mix of switch rules", () => {
+  for (const { keys, rules, grid: solution } of WIDEST) {
+    const rand = seeded(17);
+    const cages = layCages(solution, rand, 6);
+    // Each kind of line away from the others, so every one shows.
+    const used = new Set();
+    const lines = { count: 3, max: 5, used };
+    const thermos = layLines(solution, rand, (line, o, sol) => sol[o] > sol[line.at(-1)], lines);
+    const arrows = layLines(solution, rand, (line, o, sol) => line.slice(1).reduce((t, c) => t + sol[c], sol[o]) <= sol[line[0]], lines).filter(
+      ([circle, ...cells]) => cells.reduce((t, c) => t + solution[c], 0) === solution[circle]
+    );
+    const whispers = layLines(solution, rand, fitsWhisper, lines);
+    const renbans = layLines(solution, rand, fitsRenban, lines);
+    const variant = { cages, thermos, arrows, whispers, renbans, rules };
+    const name = keys.join(", ");
+    for (const list of ["thermos", "arrows", "whispers", "renbans"]) assert.ok(variant[list].length, `${name}: some ${list}`);
+    assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
+
+    const puzzle = thinOut(solution, variant, rand);
+    const check = checkClues(puzzle, variant);
+    assert.equal(check.ok, true, `${name}: ${check.why}`);
+    assert.deepEqual(check.solution, solution);
+    const cand = variantCandidates(puzzle, variant);
+    for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `${name}: candidates at ${c}`);
+    stepsAgree(puzzle, solution, variant);
+
+    const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+    const letters = "KTASR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
+    const back = parseSeed(seed.text.toLowerCase());
+    assert.ok(back, `${name}: the seed reads back`);
+    assert.equal(back.text, seed.text);
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    assert.deepEqual(puzzleFor(back).solution, solution);
+  }
 });
 
 test("the solver finds clashes and candidates", () => {
