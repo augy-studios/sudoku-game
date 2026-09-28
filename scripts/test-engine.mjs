@@ -28,6 +28,10 @@ import {
   zipperProblem,
   betweenProblem,
   lockoutProblem,
+  entropicProblem,
+  modularProblem,
+  ENTROPIC_KINDS,
+  MODULAR_KINDS,
   LOCKOUT_GAP,
   dotProblem,
   xvProblem,
@@ -723,9 +727,18 @@ function linesOfLengths(key, x, fits, lengths) {
   return { puzzle: thinOut(solution, { [key]: lines }, rand), solution, [key]: lines };
 }
 
+// An entropic or a modular line: each next cell of a kind, as `kinds` sorts
+// digits, other than the two before it.
+const fitsKinds = (kinds) => () => (line, o, sol) => {
+  const kind = (c) => kinds.findIndex((m) => m & (1 << sol[c]));
+  return line.slice(-2).every((c) => kind(c) !== kind(o));
+};
+
 const zipperPuzzle = () => linesOfLengths("zippers", 29, fitsZipper, [5, 4]);
 const betweenPuzzle = () => linesOfLengths("betweens", 31, fitsBetween, [4, 3]);
 const lockoutPuzzle = () => linesOfLengths("lockouts", 37, fitsLockout, [4, 3]);
+const entropicPuzzle = () => linesOfLengths("entropics", 43, fitsKinds(ENTROPIC_KINDS), [5, 3]);
+const modularPuzzle = () => linesOfLengths("modulars", 47, fitsKinds(MODULAR_KINDS), [5, 3]);
 
 // Solves by steps alone, checking each against the answer.
 function stepsAgree(puzzle, solution, variant) {
@@ -1578,6 +1591,51 @@ test("the rules about sides clash, narrow and read back from seeds", () => {
   assert.equal(parseSeed(seed.text.replace("PQSK-", "PQS-")), null, "Q needs its two");
 });
 
+// Entropic and modular lines alike, `kinds` sorting digits for each.
+function kindLinesTest(key, letter, kinds, made, { threes, twoAt, apart }) {
+  const kind = (d) => kinds.findIndex((m) => m & (1 << d));
+  for (const t of made[key]) {
+    for (let i = 2; i < t.length; i++) assert.equal(new Set(t.slice(i - 2, i + 1).map((c) => kind(made.solution[c]))).size, 3, `three kinds along ${t}`);
+  }
+  assert.ok(made[key].some((t) => t.length === 5));
+  linesRoundTrip(key, letter, made);
+
+  // Row 1's first cells: after `threes`' first two, the third takes the
+  // kind they leave; and the fourth, the first's kind.
+  const t = [0, 1, 2, 3];
+  const [a, b] = threes;
+  const cand = variantCandidates(placed({ 0: a, 1: b }), { [key]: [t] });
+  assert.equal(cand[2], kinds.find((m) => !(m & ((1 << a) | (1 << b)))));
+  assert.equal(cand[3], kinds[kind(a)] & ~(1 << a) & ~(1 << b));
+  // A line of two cells is none.
+  assert.equal((key === "entropics" ? entropicProblem : modularProblem)([[0, 1]]).why, "length");
+
+  // Two of one kind next to each other clash, and so do different kinds
+  // three apart.
+  assert.deepEqual(sorted(clashes(placed({ 0: twoAt[0], 1: twoAt[1] }), { [key]: [t] })), [0, 1]);
+  assert.deepEqual(sorted(clashes(placed({ 0: apart[0], 3: apart[1] }), { [key]: [t] })), [0, 3]);
+  assert.equal(clashes(placed({ 0: a, 1: b }), { [key]: [t] }).size, 0);
+}
+
+test("entropic lines are checked, solved and carried in seeds", () => {
+  kindLinesTest("entropics", "QEN", ENTROPIC_KINDS, entropicPuzzle(), { threes: [2, 5], twoAt: [2, 3], apart: [2, 8] });
+});
+
+test("modular lines are checked, solved and carried in seeds", () => {
+  kindLinesTest("modulars", "QMO", MODULAR_KINDS, modularPuzzle(), { threes: [1, 5], twoAt: [1, 4], apart: [1, 5] });
+  // With entropic lines on the same grid: QEN, then QMO, as PARTS has them,
+  // and a Q part's letters before a single part letter's.
+  const { entropics, solution } = entropicPuzzle();
+  const { modulars } = modularPuzzle();
+  const both = { entropics, modulars };
+  const seed = madeSeed("H", solution.map((d, c) => (c % 2 ? d : 0)), both);
+  assert.match(seed.text, /^QENQMO-H-/);
+  const back = parseSeed(seed.text);
+  assert.ok(back, "they read back together");
+  assert.deepEqual([back.entropics, back.modulars], [entropics, modulars]);
+  assert.equal(seedVariantName("KFQENQMOPD-H-BBBB"), "Killer, Lockout, Entropic, Modular, Kropki, Diagonal");
+});
+
 // Every drawn part at once, on a grid that keeps the switch rules, made,
 // checked, solved by steps and carried in a seed, as the maker, the solver
 // and a made game do.
@@ -1600,6 +1658,11 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const zippers = layLines(solution, seeded(29), fitsZipper(3), { ...lines, count: 2, max: 3 });
     const betweens = layLines(solution, seeded(31), fitsBetween(3), { ...lines, count: 2, max: 3 });
     const lockouts = layLines(solution, seeded(37), fitsLockout(3), { ...lines, count: 2, max: 3 });
+    // By now the others leave no room, so these two cross them, as lines
+    // may: away from each other only.
+    const crossing = { count: 2, max: 3, used: new Set() };
+    const entropics = layLines(solution, seeded(43), fitsKinds(ENTROPIC_KINDS)(), crossing);
+    const modulars = layLines(solution, seeded(47), fitsKinds(MODULAR_KINDS)(), crossing);
     // A few dots and marks, never two on one side.
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
@@ -1611,9 +1674,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const skyscrapers = layViews(solution, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
     const xsums = layViews(solution, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken);
     const littles = layLittles(solution, rand, 0.1, taken);
-    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
+    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
     const name = keys.join(", ");
-    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -1626,12 +1689,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASROZCFPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASROZCFQENQMOPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) {
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) {
       assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     }
     assert.deepEqual(puzzleFor(back).solution, solution);
@@ -1654,7 +1717,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
+  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

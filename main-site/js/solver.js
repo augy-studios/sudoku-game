@@ -16,9 +16,9 @@
 // cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
 // way with the Arrows tool, from the circle; Whispers, Renban, Palindrome,
-// Zipper, Between and Lockout add German Whispers, renban, palindrome,
-// zipper, between and lockout lines, drawn the same way again with their own
-// tools, a between line from one circle to the other and a lockout line from
+// Zipper, Between, Lockout, Entropic and Modular add German Whispers,
+// renban, palindrome, zipper, between, lockout, entropic and modular lines,
+// drawn the same way again with their own tools, a between line from one circle to the other and a lockout line from
 // one diamond to the other;
 // Kropki and XV add dots and X and V marks on the sides between cells, put
 // down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
@@ -45,6 +45,8 @@ import {
   zipperProblem,
   betweenProblem,
   lockoutProblem,
+  entropicProblem,
+  modularProblem,
   LOCKOUT_GAP,
   dotProblem,
   xvProblem,
@@ -84,7 +86,7 @@ let board = null;
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
 // killer, thermo, arrow, whisper, renban, palindrome, zipper, between,
-// lockout, kropki, xv, sandwich, little, skyscraper, xsum, jigsaw and rules
+// lockout, entropic, modular, kropki, xv, sandwich, little, skyscraper, xsum, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each kind of line, dot, mark and outside clue
 // likewise.
@@ -103,6 +105,8 @@ const fresh = () => ({
   zipper: false,
   between: false,
   lockout: false,
+  entropic: false,
+  modular: false,
   kropki: false,
   xv: false,
   sandwich: false,
@@ -120,6 +124,8 @@ const fresh = () => ({
   zippers: [],
   betweens: [],
   lockouts: [],
+  entropics: [],
+  modulars: [],
   dots: [],
   xvs: [],
   sandwiches: [],
@@ -182,6 +188,8 @@ const palindromes = () => (s.palindrome && s.palindromes.length ? s.palindromes 
 const zippers = () => (s.zipper && s.zippers.length ? s.zippers : null);
 const betweens = () => (s.between && s.betweens.length ? s.betweens : null);
 const lockouts = () => (s.lockout && s.lockouts.length ? s.lockouts : null);
+const entropics = () => (s.entropic && s.entropics.length ? s.entropics : null);
+const modulars = () => (s.modular && s.modulars.length ? s.modulars : null);
 const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
 const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : null);
@@ -190,7 +198,7 @@ const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers 
 const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
+  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -204,6 +212,8 @@ const variant = () =>
         zippers: zippers() ?? [],
         betweens: betweens() ?? [],
         lockouts: lockouts() ?? [],
+        entropics: entropics() ?? [],
+        modulars: modulars() ?? [],
         dots: dots() ?? [],
         xvs: xvs() ?? [],
         sandwiches: sandwiches() ?? [],
@@ -303,6 +313,8 @@ function hintText(step, reveal) {
       ...(zippers() ? ["zipper lines"] : []),
       ...(betweens() ? ["between lines"] : []),
       ...(lockouts() ? ["lockout lines"] : []),
+      ...(entropics() ? ["entropic lines"] : []),
+      ...(modulars() ? ["modular lines"] : []),
       ...(dots() ? ["dots"] : []),
       ...(xvs() ? ["X and V marks"] : []),
       ...(sandwiches() ? ["Sandwich sums"] : []),
@@ -333,6 +345,8 @@ function problemText(check) {
   if (why === "zippers") return ZIPPER_PROBLEMS[check.problem.why];
   if (why === "betweens") return BETWEEN_PROBLEMS[check.problem.why];
   if (why === "lockouts") return LOCKOUT_PROBLEMS[check.problem.why];
+  if (why === "entropics") return ENTROPIC_PROBLEMS[check.problem.why];
+  if (why === "modulars") return MODULAR_PROBLEMS[check.problem.why];
   if (why === "dots") return DOT_PROBLEMS[check.problem.why];
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
   if (why === "sandwiches") return SANDWICH_PROBLEMS[check.problem.why];
@@ -369,6 +383,8 @@ function clashText() {
   if (zippers()) extra.push("not making a zipper line's total");
   if (betweens()) extra.push("not between a between line's circles");
   if (lockouts()) extra.push(`not outside a lockout line's diamonds, or diamonds less than ${LOCKOUT_GAP} apart`);
+  if (entropics()) extra.push("not one low, one middle and one high in three cells in a row on an entropic line");
+  if (modulars()) extra.push("not one each of 1 4 7, 2 5 8 and 3 6 9 in three cells in a row on a modular line");
   if (dots()) extra.push("breaking a dot");
   if (xvs()) extra.push("not adding up to an X or a V");
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
@@ -440,6 +456,22 @@ const LOCKOUT_PROBLEMS = {
   cell: "A lockout line has a cell off the board.",
   loop: "A lockout line cannot cross itself.",
   apart: "Each cell of a lockout line must touch the one before it.",
+};
+
+const ENTROPIC_PROBLEMS = {
+  count: "There is room for forty entropic lines.",
+  length: "An entropic line needs three to nine cells.",
+  cell: "An entropic line has a cell off the board.",
+  loop: "An entropic line cannot cross itself.",
+  apart: "Each cell of an entropic line must touch the one before it.",
+};
+
+const MODULAR_PROBLEMS = {
+  count: "There is room for forty modular lines.",
+  length: "A modular line needs three to nine cells.",
+  cell: "A modular line has a cell off the board.",
+  loop: "A modular line cannot cross itself.",
+  apart: "Each cell of a modular line must touch the one before it.",
 };
 
 const DOT_PROBLEMS = {
@@ -766,6 +798,8 @@ function onGo() {
   if (s.zipper && !s.zippers.length) return say("Draw a zipper line first: tap Zippers, then each cell along it.");
   if (s.between && !s.betweens.length) return say("Draw a between line first: tap Betweens, then a circle, each cell along it, and the other circle.");
   if (s.lockout && !s.lockouts.length) return say("Draw a lockout line first: tap Lockouts, then a diamond, each cell along it, and the other diamond.");
+  if (s.entropic && !s.entropics.length) return say("Draw an entropic line first: tap Entropics, then each cell along it.");
+  if (s.modular && !s.modulars.length) return say("Draw a modular line first: tap Modulars, then each cell along it.");
   if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
@@ -1093,6 +1127,30 @@ const LINES = {
     problem: lockoutProblem,
     problems: LOCKOUT_PROBLEMS,
   },
+  entropic: {
+    list: "entropics",
+    short: "entropic",
+    name: "entropic line",
+    title: "Entropic line",
+    a: "An entropic line",
+    start: "end",
+    least: 3,
+    started: "One end placed. Tap the next cell: any three in a row hold one of 1 to 3, one of 4 to 6 and one of 7 to 9.",
+    problem: entropicProblem,
+    problems: ENTROPIC_PROBLEMS,
+  },
+  modular: {
+    list: "modulars",
+    short: "modular",
+    name: "modular line",
+    title: "Modular line",
+    a: "A modular line",
+    start: "end",
+    least: 3,
+    started: "One end placed. Tap the next cell: any three in a row hold one each of 1 4 7, 2 5 8 and 3 6 9.",
+    problem: modularProblem,
+    problems: MODULAR_PROBLEMS,
+  },
 };
 
 const addLabel = () => `${editingLine >= 0 ? "Change" : "Add"} ${LINES[lineKind].short}`;
@@ -1160,9 +1218,14 @@ function lineStatus() {
   return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}. Tapping the last cell takes it back.${again}`;
 }
 
+// The fewest cells a kind of line has.
+const least = (L) => L.least ?? 2;
+
 function onLineAdd() {
   const L = LINES[lineKind];
-  if (path.length < 2) return say(`${L.a} needs two cells at least: the ${L.start} and one more.`);
+  if (path.length < least(L)) {
+    return say(least(L) === 2 ? `${L.a} needs two cells at least: the ${L.start} and one more.` : `${L.a} needs ${least(L) === 3 ? "three" : least(L)} cells at least.`);
+  }
   const next = s[L.list].filter((_, i) => i !== editingLine).concat([path.slice()]);
   const problem = L.problem(next);
   if (problem) return say(L.problems[problem.why]);
@@ -1564,6 +1627,12 @@ function defaultStatus() {
     if (s.lockout && !s.lockouts.length) {
       return `A lockout puzzle: tap Lockouts, then a diamond, each cell along the line and the other diamond. The diamonds differ by ${LOCKOUT_GAP} or more, and the line's digits lie outside them, like 3 8 1 7.`;
     }
+    if (s.entropic && !s.entropics.length) {
+      return "An entropic puzzle: tap Entropics, then each cell along a line. Any three in a row hold one low digit (1 to 3), one middle and one high, like 2 9 5.";
+    }
+    if (s.modular && !s.modulars.length) {
+      return "A modular puzzle: tap Modulars, then each cell along a line. Any three in a row hold one each of 1 4 7, 2 5 8 and 3 6 9, like 1 5 9.";
+    }
     if (s.kropki && !s.dots.length) {
       return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
     }
@@ -1650,6 +1719,8 @@ function render() {
     zippers: shownLines("zipper"),
     betweens: shownLines("between"),
     lockouts: shownLines("lockout"),
+    entropics: shownLines("entropic"),
+    modulars: shownLines("modular"),
     dots: s.kropki ? s.dots : null,
     xvs: s.xv ? s.xvs : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
@@ -1718,6 +1789,8 @@ function render() {
     solverZippers: enter && s.zipper,
     solverBetweens: enter && s.between,
     solverLockouts: enter && s.lockout,
+    solverEntropics: enter && s.entropic,
+    solverModulars: enter && s.modular,
     lineBar: Boolean(lineKind),
     solverMarks: enter && (s.kropki || s.xv),
     markBar: markMode,
@@ -1758,6 +1831,8 @@ function render() {
   $("solverZippers").setAttribute("aria-pressed", String(lineKind === "zipper"));
   $("solverBetweens").setAttribute("aria-pressed", String(lineKind === "between"));
   $("solverLockouts").setAttribute("aria-pressed", String(lineKind === "lockout"));
+  $("solverEntropics").setAttribute("aria-pressed", String(lineKind === "entropic"));
+  $("solverModulars").setAttribute("aria-pressed", String(lineKind === "modular"));
   $("solverMarks").setAttribute("aria-pressed", String(markMode));
   $("solverOutside").setAttribute("aria-pressed", String(outMode));
   $("solverRegions").setAttribute("aria-pressed", String(regionMode));
@@ -1778,7 +1853,7 @@ function render() {
     $("lineAddLabel").textContent = addLabel();
     $("lineRemoveLabel").textContent = `Remove ${LINES[lineKind].short}`;
     $("lineRemove").classList.toggle("hidden", editingLine < 0);
-    $("lineAdd").disabled = path.length < 2;
+    $("lineAdd").disabled = path.length < least(LINES[lineKind]);
   }
   if (cageMode) {
     $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
@@ -1885,6 +1960,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverZippers").addEventListener("click", () => toggleLineMode("zipper"));
   $("solverBetweens").addEventListener("click", () => toggleLineMode("between"));
   $("solverLockouts").addEventListener("click", () => toggleLineMode("lockout"));
+  $("solverEntropics").addEventListener("click", () => toggleLineMode("entropic"));
+  $("solverModulars").addEventListener("click", () => toggleLineMode("modular"));
   $("solverMarks").addEventListener("click", toggleMarkMode);
   $("markDone").addEventListener("click", () => endCage(true));
   $("solverOutside").addEventListener("click", toggleOutMode);

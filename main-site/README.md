@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between and lockout lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -90,7 +90,7 @@ in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Palindrome, Zipper, Between, Lockout, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
+Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
@@ -108,15 +108,15 @@ as a dot is (`barredSides`). So one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, P, V, B,
-L, Y, U, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that order, as in
-`KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a new rule's
-letter became Q and two more: Q is only ever read with the two after it,
+seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, QEN, QMO,
+P, V, B, L, Y, U, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that
+order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
+new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages, thermometers,
 arrows, whisper lines, renban lines, palindrome lines, zipper lines,
-between lines, lockout lines, dots, XV marks, Sandwich sums, Little Killer
+between lines, lockout lines, entropic lines, modular lines, dots, XV marks, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums or regions (a line as its length, its first
 cell and each step's direction; dots, marks, Skyscraper counts and X-Sums
 as a list, or every side's or view's value, whichever is shorter; Sandwich
@@ -205,6 +205,20 @@ clash with them, as do a digit the same as an end's, ends a lockout line
 cannot have, and a between line's ends with no room between. They are drawn
 as a thinner line, teal for between and brown for lockout, that stops at the
 ring or diamond round each end, on the board and in a saved image.
+
+**Entropic and Modular.** Any three cells in a row along an entropic line
+hold one low digit (1 to 3), one middle (4 to 6) and one high (7 to 9), as
+in 2 9 5 1 7; along a modular line, one each of 1 4 7, 2 5 8 and 3 6 9, as
+in 1 5 9 4 8. So cells three apart along one hold the same kind, and the
+line's first three cells set the kinds for the rest. The Entropics and
+Modulars tools draw them as Whispers does, three to nine cells long, since
+a run of three is what the rule is about, up to forty of each, and they
+may share cells. The solver tries the six ways to give the line's three
+places, counted in threes, a kind each, keeps those every cell can go along
+with, and keeps each cell to its place's kinds in them. Two digits of one
+kind in different places, or of different kinds in the same place, show as
+a clash. They are drawn as a thick line, gold for entropic and orange for
+modular, on the board and in a saved image.
 
 **Kropki and XV.** They mark the side two cells share. A white dot's
 digits are consecutive and a black dot's are one double the other; an X's

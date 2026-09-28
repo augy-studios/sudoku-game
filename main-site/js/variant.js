@@ -2,8 +2,8 @@
 // the API imports it too, to work out a made variant puzzle's answer.
 //
 // A variant is { cages, thermos, arrows, whispers, renbans, palindromes,
-// zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers,
-// xsums, regions, rules }:
+// zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches,
+// littles, skyscrapers, xsums, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -35,6 +35,12 @@
 //            each end: the diamonds' digits differ by at least LOCKOUT_GAP,
 //            and the digits along the line, the ends left out, lie outside
 //            them, never between or equal to either. They may share cells.
+//   entropics  entropic lines, paths like a thermometer's of three cells or
+//            more: every three cells in a row along one hold a low digit,
+//            1 to 3, a middle one, 4 to 6, and a high one, 7 to 9. They may
+//            share cells.
+//   modulars modular lines, as entropic lines with the digits sorted by
+//            what is left over dividing by 3: 1 4 7, 2 5 8 and 3 6 9.
 //   dots    Kropki dots, [{ cells: [a, b], mark }] on the side two cells
 //            share, a before b in reading order. A "white" dot's digits are
 //            consecutive; a "black" dot's are one double the other.
@@ -96,7 +102,7 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (xsums?.length) names.unshift("X-Sums");
@@ -105,6 +111,8 @@ export function variantName({ cages, thermos, arrows, whispers, renbans, palindr
   if (sandwiches?.length) names.unshift("Sandwich");
   if (xvs?.length) names.unshift("XV");
   if (dots?.length) names.unshift("Kropki");
+  if (modulars?.length) names.unshift("Modular");
+  if (entropics?.length) names.unshift("Entropic");
   if (lockouts?.length) names.unshift("Lockout");
   if (betweens?.length) names.unshift("Between");
   if (zippers?.length) names.unshift("Zipper");
@@ -281,14 +289,15 @@ export function cageOf(cages) {
 export const touching = (a, b) => a !== b && Math.abs(ROW[a] - ROW[b]) <= 1 && Math.abs(COL[a] - COL[b]) <= 1;
 
 // Whether lines, thermometers, arrows or the others, are well formed: forty at most,
-// each two to nine cells on the board, each touching the one before, none
-// twice. null if so, or what is wrong: { why, line }.
-function lineProblem(lines) {
+// each `least` (two, unless a kind says) to nine cells on the board, each
+// touching the one before, none twice. null if so, or what is wrong:
+// { why, line }.
+function lineProblem(lines, least = 2) {
   // A seed has room for forty.
   if (lines.length > 40) return { why: "count", line: 40 };
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i];
-    if (!Array.isArray(t) || t.length < 2 || t.length > 9) return { why: "length", line: i };
+    if (!Array.isArray(t) || t.length < least || t.length > 9) return { why: "length", line: i };
     const seen = new Set();
     for (let j = 0; j < t.length; j++) {
       const c = t[j];
@@ -309,6 +318,9 @@ export const palindromeProblem = lineProblem;
 export const zipperProblem = lineProblem;
 export const betweenProblem = lineProblem;
 export const lockoutProblem = lineProblem;
+// A run of three is what their rule is about.
+export const entropicProblem = (lines) => lineProblem(lines, 3);
+export const modularProblem = (lines) => lineProblem(lines, 3);
 
 // How far apart a lockout line's diamonds are at least, as most puzzles
 // have it.
@@ -572,6 +584,51 @@ export const lockoutOutside = (x, y) => (Math.abs(x - y) >= LOCKOUT_GAP ? ALL & 
 
 const betweenBounds = (betweens, g, free) => endBounds(betweens, g, free, betweenInside);
 const lockoutBounds = (lockouts, g, free) => endBounds(lockouts, g, free, lockoutOutside);
+
+// The three kinds of digit an entropic line and a modular line sort digits
+// into, as masks: low, middle and high; and 1 4 7, 2 5 8 and 3 6 9.
+export const ENTROPIC_KINDS = [between(1, 3), between(4, 6), between(7, 9)];
+export const MODULAR_KINDS = [0, 1, 2].map((k) => [1, 2, 3].reduce((m, i) => m | (1 << (k + 1 + 3 * (i - 1))), 0));
+// The six ways to give three places a kind each, all different.
+const ORDERS = [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0],
+];
+
+// Every three cells in a row along such a line hold one digit of each kind,
+// so the cells as far along as each other, counted in threes, hold one kind,
+// and the three places' kinds all differ. Narrows each line to the ways to
+// give its three places their kinds that every cell can go along with, and
+// each cell to the digits of its place's kinds in those. Placed digits count
+// as masks of one, and `free` is narrowed in place, as in thermoBounds; false
+// if no way is left.
+function kindBounds(lines, g, free, kinds) {
+  for (const t of lines) {
+    // For each place, the kinds every one of its cells can take.
+    const can = [7, 7, 7];
+    t.forEach((c, i) => {
+      const m = g[c] ? 1 << g[c] : free[c];
+      let fits = 0;
+      for (let k = 0; k < 3; k++) if (m & kinds[k]) fits |= 1 << k;
+      can[i % 3] &= fits;
+    });
+    const allow = [0, 0, 0];
+    for (const order of ORDERS) {
+      if (order.every((k, place) => can[place] & (1 << k))) order.forEach((k, place) => (allow[place] |= kinds[k]));
+    }
+    if (!allow[0]) return false;
+    t.forEach((c, i) => {
+      if (!g[c]) free[c] &= allow[i % 3];
+    });
+  }
+  return true;
+}
+const entropicBounds = (entropics, g, free) => kindBounds(entropics, g, free, ENTROPIC_KINDS);
+const modularBounds = (modulars, g, free) => kindBounds(modulars, g, free, MODULAR_KINDS);
 
 /* ---- dots and marks between two cells ---- */
 
@@ -965,6 +1022,8 @@ const norm = (v) => ({
   zippers: v?.zippers ?? [],
   betweens: v?.betweens ?? [],
   lockouts: v?.lockouts ?? [],
+  entropics: v?.entropics ?? [],
+  modulars: v?.modulars ?? [],
   dots: v?.dots ?? [],
   xvs: v?.xvs ?? [],
   sandwiches: v?.sandwiches ?? [],
@@ -980,7 +1039,7 @@ const norm = (v) => ({
 // the clues outside; 0 for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1011,6 +1070,8 @@ export function variantCandidates(grid, variant) {
   zipperBounds(zippers, grid, out);
   betweenBounds(betweens, grid, out);
   lockoutBounds(lockouts, grid, out);
+  entropicBounds(entropics, grid, out);
+  modularBounds(modulars, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
   barredBounds(barredSides(rules, dots, xvs), grid, out);
@@ -1038,7 +1099,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const barred = barredSides(rules, dots, xvs);
   let steps = 0;
@@ -1095,6 +1156,8 @@ function search(grid, variant, found) {
     if (zippers.length && !zipperBounds(zippers, g, free)) return null;
     if (betweens.length && !betweenBounds(betweens, g, free)) return null;
     if (lockouts.length && !lockoutBounds(lockouts, g, free)) return null;
+    if (entropics.length && !entropicBounds(entropics, g, free)) return null;
+    if (modulars.length && !modularBounds(modulars, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
     if (barred.length && !barredBounds(barred, g, free)) return null;

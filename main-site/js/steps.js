@@ -5,8 +5,8 @@
 // the same as a cell's notes, so the board can draw one as the other.
 //
 // Each takes a variant, { cages, thermos, arrows, whispers, renbans,
-// palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles,
-// skyscrapers, xsums, regions, rules }
+// palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
+// sandwiches, littles, skyscrapers, xsums, regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -24,6 +24,10 @@ import {
   zipperProblem,
   betweenProblem,
   lockoutProblem,
+  entropicProblem,
+  modularProblem,
+  ENTROPIC_KINDS,
+  MODULAR_KINDS,
   betweenInside,
   lockoutOutside,
   dotProblem,
@@ -43,7 +47,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -88,7 +92,9 @@ export function bitCount(mask) {
 // a total past 9 where there is a middle cell; a between line's digits not
 // strictly between its circles', and a lockout line's not outside its
 // diamonds', with the ends, and ends that cannot be; a digit on either the
-// same as a filled end's;
+// same as a filled end's; two digits on an entropic or a modular line of
+// one kind where their places differ, or of different kinds where their
+// places are the same, counted in threes;
 // the two digits either side of a dot or an XV mark they break, or of a
 // side Anti-consecutive, Strict Kropki or Strict XV bars them from; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
@@ -181,6 +187,23 @@ export function clashes(grid, variant = null) {
       for (const end of [a, b]) {
         const same = filled.filter((c) => grid[end] && grid[c] === grid[end]);
         if (same.length) [end, ...same].forEach((c) => out.add(c));
+      }
+    }
+  }
+  for (const [list, kinds] of [
+    ["entropics", ENTROPIC_KINDS],
+    ["modulars", MODULAR_KINDS],
+  ]) {
+    const kind = (d) => kinds.findIndex((m) => m & (1 << d));
+    for (const t of variant?.[list] ?? []) {
+      for (let i = 0; i < t.length; i++) {
+        for (let j = i + 1; j < t.length; j++) {
+          const [a, b] = [t[i], t[j]];
+          if (grid[a] && grid[b] && (kind(grid[a]) === kind(grid[b])) !== ((j - i) % 3 === 0)) {
+            out.add(a);
+            out.add(b);
+          }
+        }
       }
     }
   }
@@ -296,7 +319,7 @@ export const MIN_CLUES = 17;
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
 // "cages", "thermos", "arrows", "whispers", "renbans", "palindromes",
-// "zippers", "betweens", "lockouts", "dots", "xvs",
+// "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs",
 // "sandwiches", "littles", "skyscrapers", "xsums" or "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
@@ -342,6 +365,8 @@ export function checkClues(clues, variant = null) {
     ["zippers", zipperProblem],
     ["betweens", betweenProblem],
     ["lockouts", lockoutProblem],
+    ["entropics", entropicProblem],
+    ["modulars", modularProblem],
   ]) {
     const problem = variant?.[list]?.length && lineProblem(variant[list]);
     if (problem) return { ok: false, why: list, problem };

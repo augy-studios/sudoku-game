@@ -466,11 +466,14 @@ body {
 }
 /* German Whispers green and renban purple, the colours these lines have
    in most apps, and as faint as a thermometer. Palindromes are often grey,
-   which here is a thermometer's, so blue; zippers pink. */
+   which here is a thermometer's, so blue; zippers pink, entropic lines
+   gold and modular lines orange. */
 .whisper,
 .renban,
 .palindrome,
-.zipper {
+.zipper,
+.entropic,
+.modular {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -480,6 +483,8 @@ body {
 .renban { stroke: #9a5bd8; }
 .palindrome { stroke: #3f86d4; }
 .zipper { stroke: #d4509a; }
+.entropic { stroke: #d9a514; }
+.modular { stroke: #e0692a; }
 /* Between and lockout lines: thinner, from a ring or a diamond round each
    end's digit, which the line stops short of. */
 .between,
@@ -495,6 +500,8 @@ body {
 .renban-pending,
 .palindrome-pending,
 .zipper-pending,
+.entropic-pending,
+.modular-pending,
 .between-pending,
 .lockout-pending {
   stroke: var(--warn);

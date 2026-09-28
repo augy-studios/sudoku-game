@@ -75,6 +75,18 @@ export const RULE_HELP = {
     rule: `The digits in the diamonds at a brown line's two ends differ by at least ${LOCKOUT_GAP}, and the digits along it lie outside them, never between or equal to either, like 3 8 1 7.`,
     draw: "Tap Lockouts, then one diamond, each cell along the line, and the other diamond last, and tap Add lockout.",
   },
+  entropic: {
+    name: "Entropic",
+    list: "entropics",
+    rule: "Any three cells in a row along a gold line hold one low digit (1 to 3), one middle (4 to 6) and one high (7 to 9), like 2 9 5 1 7.",
+    draw: "Tap Entropics, then each cell along the line from one end, three at least, and tap Add entropic.",
+  },
+  modular: {
+    name: "Modular",
+    list: "modulars",
+    rule: "Any three cells in a row along an orange line hold one digit from each of 1 4 7, 2 5 8 and 3 6 9, like 1 5 9 4 8.",
+    draw: "Tap Modulars, then each cell along the line from one end, three at least, and tap Add modular.",
+  },
   kropki: {
     name: "Kropki",
     list: "dots",

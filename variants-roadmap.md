@@ -1,12 +1,13 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 29 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 27 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
-**Built so far (25):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
-Renban, Palindrome, Zipper, Between, Lockout · Kropki, XV · Sandwich,
+**Built so far (27):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
+Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular · Kropki,
+XV · Sandwich,
 Little Killer, Skyscrapers, X-Sums · Diagonal, Anti-knight, Anti-king,
 Windoku, Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV.
 
@@ -46,8 +47,6 @@ easily misread; best left.
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Entropic | Every run of three cells has one of 1–3, one of 4–6 and one of 7–9. | Line tool |
-| Modular | Every run of three cells has one of 147, one of 258 and one of 369. | Line tool |
 | Double Arrow | The digits between the two end circles add up to the circles' sum. | Arrow |
 | Sum Line | The line splits into segments that each add up to a given sum. | Line tool, with a sum |
 | Region Sum Line | The line's segment in each box it passes through adds up to the same total. | Line tool, boxes or regions |
@@ -75,8 +74,8 @@ easily misread; best left.
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Global Entropy | Every 2×2 square has one of 1–3, one of 4–6 and one of 7–9. | New |
-| Global Mod | Every 2×2 square has one of 147, one of 258 and one of 369. | New |
+| Global Entropy | Every 2×2 square has one of 1–3, one of 4–6 and one of 7–9. | `ENTROPIC_KINDS`, from Entropic lines |
+| Global Mod | Every 2×2 square has one of 147, one of 258 and one of 369. | `MODULAR_KINDS`, from Modular lines |
 | Anti-taxicab | A digit X never has another X exactly X steps away along rows and columns. | New |
 | Dutch Flatmates | Every 5 has a 1 directly above it or a 9 directly below it. | New |
 
@@ -101,7 +100,7 @@ easily misread; best left.
 
 1. ~~Zipper, Between and Lockout~~: built. Lockout's gap is fixed at 4.
 2. ~~Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV~~: built, the rules about sides as barred sides (`barredSides`).
-3. Entropic and Modular lines.
+3. ~~Entropic and Modular lines~~: built, as QEN and QMO, three cells at least.
 4. Greater Than and Quad: marks.
 5. Hidden Skyscraper and Numbered Room: both reuse the views Skyscrapers and X-Sums use.
 

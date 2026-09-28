@@ -66,6 +66,10 @@ export const icons = {
   zipper: svg(`<path d="M4 12h16" stroke-width="2.6"/><path d="M7 12V7.5M10 12v4.5M13 12V7.5M16 12v4.5" stroke-width="1.4"/>`),
   // A line between two circles.
   between: svg(`<circle cx="5.5" cy="12" r="3"/><circle cx="18.5" cy="12" r="3"/><path d="M8.5 12h7" stroke-width="2.2"/>`),
+  // A thick line over bars low, middle and high.
+  entropic: svg(`<path d="M4 9h16" stroke-width="2.6"/><path d="M6 20v-2M12 20v-4.5M18 20v-7" stroke-width="2"/>`),
+  // A thick line over three different marks, one of each kind.
+  modular: svg(`<path d="M4 9h16" stroke-width="2.6"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="12" cy="17.5" r="1.8" fill="currentColor"/><path d="M16.3 15.7h3.4v3.6h-3.4z" stroke-width="1.4"/>`),
   // A line between two diamonds.
   lockout: svg(`<path d="M5.5 8.2 9.3 12l-3.8 3.8L1.7 12Z"/><path d="M18.5 8.2l3.8 3.8-3.8 3.8-3.8-3.8Z"/><path d="M9.3 12h5.4" stroke-width="2.2"/>`),
   cage: svg(`<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M7.5 9.5h3" stroke-width="1.6"/>`),

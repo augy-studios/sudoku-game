@@ -10,7 +10,8 @@
 // bulb, faint enough to read digits through, and arrows a thin one from a
 // ring round the circle's digit to a head. German Whispers lines are a
 // green line as thick as a thermometer's, with no bulb, renban lines a
-// purple one, palindrome lines a blue one and zipper lines a pink one.
+// purple one, palindrome lines a blue one, zipper lines a pink one,
+// entropic lines a gold one and modular lines an orange one.
 // Between lines are a thinner teal line from a ring round one end's digit to
 // a ring round the other's, and lockout lines a brown one between diamonds.
 // Kropki dots sit on the side two cells share, white or black, and XV marks
@@ -136,12 +137,13 @@ export class BoardView {
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, thermos, arrows, whispers, renbans,
-  // palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches,
-  // littles, skyscrapers, xsums and regions are a variant puzzle's, and
+  // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
+  // sandwiches, littles, skyscrapers, xsums and regions are a variant
+  // puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, as pathKind says:
   // "thermo", "arrow", "whisper", "renban", "palindrome", "zipper",
-  // "between" or "lockout". margin leaves room round the
+  // "between", "lockout", "entropic" or "modular". margin leaves room round the
   // grid for clues outside it; spots, margin spots [r, c] to show as open
   // for a clue, and spot the one picked.
   set(view) {
@@ -161,6 +163,8 @@ export class BoardView {
     this.zippers = view.zippers ?? [];
     this.betweens = view.betweens ?? [];
     this.lockouts = view.lockouts ?? [];
+    this.entropics = view.entropics ?? [];
+    this.modulars = view.modulars ?? [];
     this.dots = view.dots ?? [];
     this.xvs = view.xvs ?? [];
     this.sandwiches = view.sandwiches ?? [];
@@ -249,17 +253,19 @@ export class BoardView {
     const zippers = this.zippers ?? [];
     const betweens = this.betweens ?? [];
     const lockouts = this.lockouts ?? [];
+    const entropics = this.entropics ?? [];
+    const modulars = this.modulars ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? [])];
     const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, edges, outside, margin, regions, path, this.pathKind]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, outside, margin, regions, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, edges, path, ...outside.slice(0, 5)].some((list) => list.length);
+    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, path, ...outside.slice(0, 5)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -352,8 +358,8 @@ export class BoardView {
         `<path d="${line}"/></g>`
       );
     };
-    // German Whispers, renban, palindrome and zipper lines: through the
-    // cells' middles, no more. A line of one cell, while it is drawn, is a
+    // German Whispers, renban, palindrome, zipper, entropic and modular
+    // lines: through the cells' middles, no more. A line of one cell, while it is drawn, is a
     // dot.
     const line = (t, cls) => {
       if (!t.length) return "";
@@ -393,7 +399,7 @@ export class BoardView {
     };
     const ring = ended("ring");
     const diamond = ended("diamond");
-    const draw = { thermo, arrow, whisper: line, renban: line, palindrome: line, zipper: line, between: ring, lockout: diamond };
+    const draw = { thermo, arrow, whisper: line, renban: line, palindrome: line, zipper: line, entropic: line, modular: line, between: ring, lockout: diamond };
     const kind = this.pathKind;
     const pending = draw[kind](path, `${kind} ${kind}-pending`);
     const marks =
@@ -401,6 +407,8 @@ export class BoardView {
       renbans.map((t) => line(t, "renban")).join("") +
       palindromes.map((t) => line(t, "palindrome")).join("") +
       zippers.map((t) => line(t, "zipper")).join("") +
+      entropics.map((t) => line(t, "entropic")).join("") +
+      modulars.map((t) => line(t, "modular")).join("") +
       betweens.map((t) => ring(t, "between")).join("") +
       lockouts.map((t) => diamond(t, "lockout")).join("") +
       thermos.map((t) => thermo(t, "thermo")).join("") +
