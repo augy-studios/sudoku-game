@@ -12,7 +12,9 @@ import { newSeed, parseSeed, puzzleFor, madeSeed } from "../main-site/js/seed.js
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
-import { killerSolutions, killerCandidates, cageProblem } from "../main-site/js/killer.js";
+import { variantSolutions, variantSolve, variantCandidates, cageProblem, layout, RULES } from "../main-site/js/variant.js";
+
+const killerSolutions = (grid, cages, limit) => variantSolutions(grid, { cages }, limit);
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
 
 let passed = 0;
@@ -276,33 +278,106 @@ test("killer cages are checked, solved and carried in seeds", () => {
   assert.equal(cageProblem([{ sum: 3, cells: [0, 1] }, { sum: 4, cells: [1, 2] }]).why, "overlap");
 
   // Candidates never lose the answer's digit, and a cage's sum narrows them.
-  const cand = killerCandidates(empty, cages);
+  const cand = variantCandidates(empty, { cages });
   for (let c = 0; c < 81; c++) assert.ok(cand[c] & (1 << solution[c]));
   const pair = cages.find((k) => k.cells.length === 2 && k.sum === 3);
   if (pair) assert.equal(cand[pair.cells[0]], (1 << 1) | (1 << 2));
 
   // Hints with the cages are always the answer's digit.
   const grid = empty.slice();
-  for (let step = nextStep(grid, null, cages); step; step = nextStep(grid, null, cages)) {
+  for (let step = nextStep(grid, null, { cages }); step; step = nextStep(grid, null, { cages })) {
     assert.equal(step.d, solution[step.c]);
     grid[step.c] = step.d;
   }
 
-  assert.equal(checkClues(empty, cages).ok, true);
+  assert.equal(checkClues(empty, { cages }).ok, true);
   const clash = empty.slice();
   const cage = cages.find((k) => k.cells.length > 1);
   clash[cage.cells[0]] = 9;
   clash[cage.cells[1]] = 9;
-  assert.equal(checkClues(clash, cages).why, "clash", "a digit twice in a cage");
-  assert.equal(checkClues(empty, cages.slice(0, 3)).why, "many", "too few cages");
+  assert.equal(checkClues(clash, { cages }).why, "clash", "a digit twice in a cage");
+  assert.equal(checkClues(empty, { cages: cages.slice(0, 3) }).why, "many", "too few cages");
 
-  const seed = madeSeed(rateLevel(empty, cages), empty, cages);
+  const seed = madeSeed(rateLevel(empty, { cages }), empty, { cages });
   assert.match(seed.text, /^K-[EMHX]-/);
   const back = parseSeed(seed.text.toLowerCase());
   assert.equal(back.text, seed.text);
   assert.deepEqual(back.cages, seed.cages);
   assert.deepEqual(puzzleFor(back).solution, solution);
-  assert.equal(parseSeed(madeSeed("M", empty, cages.slice(0, 3)).text), null, "too few cages is no seed");
+  assert.equal(parseSeed(madeSeed("M", empty, { cages: cages.slice(0, 3) }).text), null, "too few cages is no seed");
+});
+
+const rule = (key) => RULES.find((r) => r.key === key).bit;
+
+// Whether a full grid keeps every rule in `rules`.
+function keepsRules(grid, rules) {
+  const { houses, pairs } = layout(rules);
+  for (const { cells } of houses) if (new Set(cells.map((c) => grid[c])).size !== 9) return false;
+  return pairs.every((others, c) => others.every((o) => grid[o] !== grid[c]));
+}
+
+// A puzzle under `rules` with one answer: an answer that keeps them, and
+// its clues taken out one at a time, in a seeded order, while the answer
+// stays the only one.
+function rulesPuzzle(rules) {
+  const solution = variantSolve(new Array(81).fill(0), { rules });
+  const puzzle = solution.slice();
+  let x = 11;
+  const order = [...Array(81).keys()].sort(() => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32) - 0.5);
+  for (const c of order) {
+    const d = puzzle[c];
+    puzzle[c] = 0;
+    if (variantSolutions(puzzle, { rules }, 2)?.length !== 1) puzzle[c] = d;
+  }
+  return { puzzle, solution };
+}
+
+test("the switch rules make the right houses and pairs", () => {
+  assert.equal(layout(0).houses.length, 27);
+  assert.equal(layout(rule("diagonal")).houses.length, 29);
+  assert.equal(layout(rule("windoku")).houses.length, 31);
+  const knight = layout(rule("antiknight")).pairs;
+  assert.equal(knight[40].length, 8, "the centre has eight knight's moves");
+  assert.deepEqual(knight[2], [13, 21], "only moves out of its box are new");
+  // A king's diagonal step inside the same box is already a peer.
+  assert.deepEqual(layout(rule("antiking")).pairs[2], [12]);
+  assert.equal(layout(rule("diagonal")).peers[40].length, 20 + 12, "the centre is on both diagonals, four cells of them in its box");
+});
+
+test("rules puzzles solve, check, hint and carry their rules in seeds", () => {
+  for (const [key, letter] of [["diagonal", "D"], ["antiknight", "N"], ["antiking", "G"], ["windoku", "W"]]) {
+    const rules = rule(key);
+    const { puzzle, solution } = rulesPuzzle(rules);
+    assert.ok(keepsRules(solution, rules), `${key}: the answer keeps the rule`);
+    assert.equal(checkClues(puzzle, { rules }).ok, true);
+    // Classic rules alone leave it open: the rule is doing work.
+    assert.notEqual(countSolutions(puzzle, 2), 1, `${key}: needs the rule`);
+    const grid = puzzle.slice();
+    for (let step = nextStep(grid, null, { rules }); step; step = nextStep(grid, null, { rules })) {
+      assert.equal(step.d, solution[step.c], `${key}: hint at ${step.c}`);
+      grid[step.c] = step.d;
+    }
+    const seed = madeSeed(rateLevel(puzzle, { rules }), puzzle, { rules });
+    assert.ok(seed.text.startsWith(`${letter}-`), seed.text);
+    const back = parseSeed(seed.text.toLowerCase());
+    assert.equal(back.text, seed.text);
+    assert.equal(back.rules, rules);
+    assert.deepEqual(puzzleFor(back).solution, solution);
+  }
+  // A clash only the rule sees.
+  const clash = new Array(81).fill(0);
+  clash[0] = 5;
+  clash[80] = 5;
+  assert.equal(clashes(clash).size, 0);
+  assert.equal(clashes(clash, { rules: rule("diagonal") }).size, 2);
+  // Letters come out in one order, whatever order they go in.
+  const both = rule("diagonal") | rule("windoku");
+  const { puzzle } = rulesPuzzle(both);
+  const seed = madeSeed("H", puzzle, { rules: both });
+  assert.ok(seed.text.startsWith("DW-H-"));
+  assert.equal(parseSeed(seed.text.replace("DW-", "WD-")).text, seed.text);
+  // Killer seeds from before the switch rules read as they did.
+  assert.equal(parseSeed("K" + seed.text.slice(2)), null, "a killer seed needs cages");
 });
 
 test("the solver finds clashes and candidates", () => {

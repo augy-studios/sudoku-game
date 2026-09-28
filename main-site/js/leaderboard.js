@@ -4,7 +4,7 @@
 
 import { api, localDate } from "./api.js";
 import { LEVELS } from "./levels.js";
-import { parseSeed } from "./seed.js";
+import { parseSeed, seedVariantName } from "./seed.js";
 import { escapeHtml, openModal, closeModal, copyText } from "./ui.js";
 import { playSeed } from "./game.js";
 
@@ -80,7 +80,7 @@ function renderPuzzles(data) {
     .map(
       (p) => `<li><button class="made-row" type="button" data-seed="${escapeHtml(p.seed)}">
         <span class="made-row-seed">${escapeHtml(shortSeed(p.seed))}</span>
-        <span class="made-row-info">${p.seed.startsWith("K") ? "Killer, " : ""}${escapeHtml(LEVELS[p.level]?.name ?? "")}, ${p.players} ${p.players === 1 ? "player" : "players"}, best ${p.top_score}</span>
+        <span class="made-row-info">${escapeHtml([seedVariantName(p.seed), LEVELS[p.level]?.name].filter(Boolean).join(", "))}, ${p.players} ${p.players === 1 ? "player" : "players"}, best ${p.top_score}</span>
       </button></li>`
     )
     .join("")}</ul>`;

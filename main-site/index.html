@@ -205,10 +205,14 @@
             <section id="solver" class="panel solver hidden" aria-labelledby="solverTitle">
                 <h3 id="solverTitle" class="panel-title">Type in a puzzle</h3>
 
-                <div class="mode-toggle solver-variant" id="solverVariant" role="radiogroup" aria-label="Rules">
-                    <button class="mode-btn" type="button" role="radio" aria-checked="true" data-variant="classic"><span data-icon="grid"></span>Classic</button>
-                    <button class="mode-btn" type="button" role="radio" aria-checked="false" data-variant="killer"><span data-icon="cage"></span>Killer</button>
+                <div class="rule-pick" id="solverRules" role="group" aria-label="Rules, on top of the classic ones">
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="killer">Killer</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="diagonal">Diagonal</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiknight">Anti-knight</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiking">Anti-king</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="windoku">Windoku</button>
                 </div>
+                <p id="solverRuleLine" class="field-note rule-line hidden"></p>
 
                 <div class="board-wrap"><div id="solverBoard"></div></div>
 

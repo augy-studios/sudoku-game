@@ -4,10 +4,16 @@
 // keys move the selection. What happens with a digit is game.js's business.
 //
 // A killer puzzle's cages are drawn over the cells: a dashed line just inside
-// each cage's edge, and its sum in the corner of its first cell.
+// each cage's edge, and its sum in the corner of its first cell. A Diagonal
+// puzzle has a faint line along each long diagonal, and a Windoku puzzle
+// tints its four windows. Anti-knight and anti-king have nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
+import { layout, RULES } from "./variant.js";
+
+const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
+const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
 
 // Box b, place i within it, to the cell's index in reading order.
 const cellAt = (b, i) => (Math.floor(b / 3) * 3 + Math.floor(i / 3)) * 9 + (b % 3) * 3 + (i % 3);
@@ -79,8 +85,9 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages are a killer puzzle's; picked, a Set of
-  // cells, are those being gathered into a new cage.
+  // digits by the solution. cages are a killer puzzle's, and rules the
+  // variant's switches (variant.js); picked, a Set of cells, are those
+  // being gathered into a new cage.
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -89,6 +96,10 @@ export class BoardView {
     const focusDigit = view.focusDigit || selDigit;
     this.root.classList.toggle("interactive", Boolean(interactive));
     this.cages = view.cages ?? [];
+    this.rules = view.rules ?? 0;
+    const windows = new Set(
+      this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
+    );
     // Each cage's first cell carries its sum, so its notes make room.
     const heads = new Set(this.cages.map((cage) => Math.min(...cage.cells)));
     this.drawCages();
@@ -111,6 +122,7 @@ export class BoardView {
         mark && mark.c === c ? `mark mark-${mark.kind}` : "",
         view.picked?.has(c) ? "picked" : "",
         heads.has(c) ? "cage-head" : "",
+        windows.has(c) ? "window" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -145,15 +157,16 @@ export class BoardView {
     }
   }
 
-  // The dashed outlines and sums. Only redrawn when the cages change, or
-  // when `resized`.
+  // The dashed outlines and sums, and the diagonals. Only redrawn when they
+  // change, or when `resized`.
   drawCages(resized = false) {
     const cages = this.cages ?? [];
-    const key = JSON.stringify(cages);
+    const diagonal = Boolean(this.rules & DIAGONAL);
+    const key = JSON.stringify([cages, diagonal]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    if (!cages.length) {
+    if (!cages.length && !diagonal) {
       layer.innerHTML = "";
       return;
     }
@@ -193,6 +206,16 @@ export class BoardView {
       const head = rect(Math.min(...cage.cells));
       sums += `<text class="cage-sum" x="${f(head.x + head.w * 0.06)}" y="${f(head.y + head.w * 0.27)}" font-size="${f(head.w * 0.24)}">${cage.sum}</text>`;
     }
-    layer.innerHTML = `<path class="cage-line" d="${path}"/>${sums}`;
+    let diagonals = "";
+    if (diagonal) {
+      const a = rect(0);
+      const b = rect(80);
+      const c = rect(8);
+      const d = rect(72);
+      diagonals =
+        `<path class="diagonal-line" d="M${f(a.x)} ${f(a.y)}L${f(b.x + b.w)} ${f(b.y + b.h)}` +
+        `M${f(c.x + c.w)} ${f(c.y)}L${f(d.x)} ${f(d.y + d.h)}"/>`;
+    }
+    layer.innerHTML = `${diagonals}<path class="cage-line" d="${path}"/>${sums}`;
   }
 }

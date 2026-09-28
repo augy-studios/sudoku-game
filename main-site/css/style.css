@@ -416,6 +416,15 @@ body {
   stroke-linejoin: round;
 }
 .cell.cage-head .notes { padding-top: 30%; }
+/* Diagonal and Windoku. */
+.diagonal-line {
+  fill: none;
+  stroke: var(--brand-ink);
+  stroke-width: 2;
+  opacity: 0.28;
+}
+/* Warm, so windows never pass for the boxes' green tint. */
+.cell.window { background: color-mix(in srgb, var(--warn) 22%, transparent); }
 /* Cells being gathered into a new cage. */
 .cell.picked {
   box-shadow: inset 0 0 0 3px var(--warn), inset 0 0 0 100vmax var(--cell-same);
@@ -536,7 +545,29 @@ body {
   max-width: 460px;
   line-height: 1.4;
 }
-.solver-variant { width: min(100%, 320px); }
+/* The variant's rule buttons: on or off, any mix. */
+.rule-pick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 480px;
+}
+.rule-btn {
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface);
+  color: var(--muted-strong);
+  font-size: 0.85rem;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.rule-btn[aria-pressed="true"] {
+  background: var(--brand-fill);
+  color: var(--on-brand);
+  border-color: transparent;
+}
+.card .rule-line { color: var(--ink); }
 .cage-bar {
   display: flex;
   flex-wrap: wrap;

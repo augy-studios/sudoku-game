@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `killer.js` | Pure. Killer sudoku: cages, what they allow, and a solver for them, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -79,13 +79,27 @@ made puzzle never goes on the main boards: played solo it goes on a board of
 its own (mode `made`, from migration 002), without time bonuses, and in a
 network game it is not scored.
 
-**Killer.** The solver and the maker both have a Classic or Killer switch.
-In Killer, the Cages tool gathers cells (tap them), takes the sum from the
-pad, the keyboard or the sum box, and adds the cage; tapping a cage already
-drawn picks it up to change or remove. Undo covers cages too. Clues are
-optional. Checks, clashes (a digit twice in a cage, or a cage past its sum),
-candidates and hints all follow the cages. The killer solver (killer.js)
-narrows each cage to the digit sets that make its sum and that its empty
+**Variants.** The solver and the maker both have rule buttons over the
+board, on or off in any mix: Killer, Diagonal (both long diagonals hold 1
+to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
+touching at a corner differ) and Windoku (four more 3x3 windows, rows and
+columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
+and windows tinted, on the board and in a saved image; the anti rules have
+nothing to draw, so the level chip and the rules line name them. In
+variant.js, diagonals and windows are extra houses and the knight's and
+king's moves extra pairs of cells that must differ, so one solver handles
+every mix, cages included; with no rules it takes the same steps as the
+killer solver it grew from. A variant puzzle needs no least number of
+clues. Its seed starts with its rules' letters, K, D, N, G and W, always in
+that order, as in `KD-H-...`; a killer seed's body carries the cages too,
+and the others' the clues only.
+
+**Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
+sum from the pad, the keyboard or the sum box, and adds the cage; tapping a
+cage already drawn picks it up to change or remove. Undo covers cages too.
+Clues are optional. Checks, clashes (a digit twice in a cage, or a cage
+past its sum), candidates and hints all follow the cages. The solver
+(variant.js) narrows each cage to the digit sets that make its sum and that its empty
 cells could hold, places forced digits in houses and cages, and otherwise
 branches on the cell with fewest candidates. It gives up after a fixed
 400,000 steps, well under a second, and says so: a layout with that much

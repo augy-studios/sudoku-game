@@ -68,7 +68,7 @@ export class Replay {
     });
   }
 
-  // game: { puzzle, solution, log, players, cages? }. view: { highlightSame }.
+  // game: { puzzle, solution, log, players, cages?, rules? }. view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
   load(game, view, { autoplay = false } = {}) {
     this.pause();
@@ -115,6 +115,7 @@ export class Replay {
       focusDigit: mark?.c != null ? frame.values[mark.c] : 0,
       mark: mark?.c != null ? { c: mark.c, kind: mark.kind } : null,
       cages: this.game.cages ?? null,
+      rules: this.game.rules ?? 0,
     });
     $("rpScrub").value = String(i);
     const total = this.frames.length - 1;

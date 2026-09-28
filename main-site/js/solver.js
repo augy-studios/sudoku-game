@@ -11,9 +11,10 @@
 // a seed that carries the whole puzzle, to share, play, copy or save as an
 // image.
 //
-// Either can be a killer puzzle: the Killer switch adds cages, drawn with
-// the Cages tool (tap cells, type the sum, Add cage), and every check, hint
-// and candidate then follows the cages too.
+// Either can be a variant puzzle, with the rule buttons over the board:
+// Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
+// cage), and Diagonal, Anti-knight, Anti-king and Windoku add their rules
+// (variant.js). Every check, hint and candidate then follows them too.
 //
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
@@ -21,7 +22,7 @@
 import { ROW, COL } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
 import { madeSeed, parseSeed } from "./seed.js";
-import { cageProblem, cageOf } from "./killer.js";
+import { cageProblem, cageOf, RULES, ALL_RULES, variantName } from "./variant.js";
 import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
@@ -41,7 +42,9 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false, variant: "classic", cages: [] });
+// killer and rules are the variant's switches; cages are kept while Killer
+// is off, for when it comes back on.
+const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false, killer: false, rules: 0, cages: [] });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
 let s = states.solver;
@@ -66,10 +69,11 @@ const creating = () => mode === "create";
 // The grid this stage edits.
 const grid = () => (s.stage === "solve" ? s.values : s.clues);
 const goLabel = () => (creating() ? "Check it" : "Help me solve it");
-const killer = () => s.variant === "killer";
-// The cages the rules use: none in a classic puzzle, even if some are kept
-// for when the switch goes back.
+const killer = () => s.killer;
+// The cages the rules use: none with Killer off, even if some are kept.
 const cages = () => (killer() && s.cages.length ? s.cages : null);
+// The variant, for steps.js and variant.js, or null for a classic puzzle.
+const variant = () => (cages() || s.rules ? { cages: cages() ?? [], rules: s.rules } : null);
 
 /* ---- keeping it ---- */
 
@@ -84,13 +88,13 @@ function settle() {
   solution = null;
   made = null;
   if (s.stage === "enter") return;
-  const check = checkClues(s.clues, cages());
+  const check = checkClues(s.clues, variant());
   if (!check.ok) {
     s.stage = "enter";
     return;
   }
   solution = check.solution;
-  if (s.stage === "made") made = madeSeed(rateLevel(s.clues, cages()), s.clues, cages());
+  if (s.stage === "made") made = madeSeed(rateLevel(s.clues, variant()), s.clues, variant());
 }
 
 function load(which) {
@@ -101,7 +105,9 @@ function load(which) {
   st.clues = saved.clues;
   st.open = saved.open === true;
   st.candidates = saved.candidates === true;
-  st.variant = saved.variant === "killer" ? "killer" : "classic";
+  // Before the switch rules, a killer puzzle was saved as variant "killer".
+  st.killer = saved.killer === true || saved.variant === "killer";
+  st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
   const kept = Array.isArray(saved.cages) ? saved.cages : [];
   st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
   if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
@@ -114,7 +120,13 @@ function load(which) {
 /* ---- words ---- */
 
 const where = (c) => `row ${ROW[c] + 1}, column ${COL[c] + 1}`;
-const unitName = (u) => (u.kind === "box" ? `the ${BOX_NAMES[u.index]} box` : `${u.kind} ${u.index + 1}`);
+const WINDOW_NAMES = ["top left", "top right", "bottom left", "bottom right"];
+function unitName(u) {
+  if (u.kind === "box") return `the ${BOX_NAMES[u.index]} box`;
+  if (u.kind === "diagonal") return `the diagonal from the top ${u.index ? "right" : "left"}`;
+  if (u.kind === "window") return `the ${WINDOW_NAMES[u.index]} window`;
+  return `${u.kind} ${u.index + 1}`;
+}
 
 // A hint in two taps: where to look, then the digit and why.
 function hintText(step, reveal) {
@@ -125,9 +137,9 @@ function hintText(step, reveal) {
     return `Nothing can be filled by looking alone now. The cell at ${where(c)} has the fewest options; tap Show it for its digit.`;
   }
   if (kind === "single") {
-    return cages()
-      ? `${d} goes in ${where(c)}: its row, column, box and cage rule out every other digit.`
-      : `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
+    if (!variant()) return `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
+    const its = cages() ? "its row, column, box and cage" : "its row, column and box";
+    return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
   }
   if (kind === "hidden") return `${d} goes in ${where(c)}: it is the only place left for a ${d} in ${unitName(unit)}.`;
   return `${d} goes in ${where(c)}. That takes more than one step to see, so it comes from the answer.`;
@@ -139,7 +151,7 @@ function hintText(step, reveal) {
 function problemText(check) {
   const { why } = check;
   if (why === "empty") return creating() ? "Put some clues in first." : "Type in the puzzle's digits first.";
-  if (why === "clash") return `The red digits clash: the same digit twice in a row, column or box${killer() ? ", or in a cage, or past a cage's sum" : ""}. Fix them first.`;
+  if (why === "clash") return `${clashText()} Fix them first.`;
   if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
@@ -153,6 +165,16 @@ function problemText(check) {
   const [a, b] = check.digits;
   const either = `It has more than one answer: ${where(check.c)} could be ${a} or ${b}, for one.`;
   return creating() ? `${either} Add a clue there or nearby, then check again.` : `${either} A clue is probably missing or wrong; check it against the original.`;
+}
+
+const ruleNames = () => variantName({ rules: s.rules });
+
+// What makes digits clash, under the rules on.
+function clashText() {
+  const extra = [];
+  if (s.rules) extra.push(`against the ${ruleNames()} rules`);
+  if (cages()) extra.push("twice in a cage, or past a cage's sum");
+  return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
 const CAGE_PROBLEMS = {
@@ -318,10 +340,12 @@ function pasteText(text) {
   const seed = parseGrid(text) ? null : parseSeed(text);
   if (seed?.made) {
     endCage();
-    s.variant = seed.cages ? "killer" : s.variant;
+    s.killer = Boolean(seed.cages);
+    s.rules = seed.rules ?? 0;
     change(seed.grid.slice(), seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages);
     selected = null;
-    return say(`Pasted a made puzzle${seed.cages ? `, with ${plural(seed.cages.length, "cage")}` : ""}. Tap ${goLabel()} when ready.`);
+    const name = variantName(seed);
+    return say(`Pasted a made ${name ? `${name} ` : ""}puzzle. Tap ${goLabel()} when ready.`);
   }
   const next = parseGrid(text);
   if (!next) return say("That paste is not a puzzle. It needs 81 cells in reading order: digits for clues, and 0 or . for blanks.");
@@ -352,7 +376,7 @@ async function onImage() {
   if (!s.clues.some(Boolean) && !cages()) return;
   let ok = false;
   try {
-    ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png", cages());
+    ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png", variant());
   } catch {
     ok = false;
   }
@@ -372,7 +396,7 @@ async function onPasteBtn() {
 function onGo() {
   endCage();
   if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
-  const check = checkClues(s.clues, cages());
+  const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
     if (check.why === "many") selected = check.c;
@@ -382,7 +406,7 @@ function onGo() {
   solution = check.solution;
   if (creating()) {
     s.stage = "made";
-    made = madeSeed(rateLevel(s.clues, cages()), s.clues, cages());
+    made = madeSeed(rateLevel(s.clues, variant()), s.clues, variant());
     save();
     return say(`It has exactly one answer, so it is a proper puzzle. ${madeSummary()}`);
   }
@@ -393,10 +417,10 @@ function onGo() {
 }
 
 function madeSummary() {
-  const what = made.cages
-    ? `a killer puzzle with ${plural(made.cages.length, "cage")} and ${plural(s.clues.filter(Boolean).length, "clue")}`
-    : `with ${plural(s.clues.filter(Boolean).length, "clue")}`;
-  return `Rated ${LEVELS[made.level].name}, ${what}. Share the seed, ${made.cages ? "" : "copy the puzzle "}or save it as an image.`;
+  const clues = plural(s.clues.filter(Boolean).length, "clue");
+  const name = variantName(made);
+  const what = name ? `a ${name} puzzle with ${made.cages ? `${plural(made.cages.length, "cage")} and ` : ""}${clues}` : `with ${clues}`;
+  return `Rated ${LEVELS[made.level].name}, ${what}. Share the seed, ${name ? "" : "copy the puzzle "}or save it as an image.`;
 }
 
 // A made puzzle, played as a game. It scores only on its own board: its
@@ -447,7 +471,7 @@ function onCheck() {
 // The empty cell with the fewest candidates, and its digit from the answer:
 // for when nothing can be filled by looking.
 function easiest() {
-  const cand = candidates(s.values, cages());
+  const cand = candidates(s.values, variant());
   let best = -1;
   for (let c = 0; c < 81; c++) {
     if (!s.values[c] && (best < 0 || bitCount(cand[c]) < bitCount(cand[best]))) best = c;
@@ -476,7 +500,7 @@ function onHint() {
     render();
     return;
   }
-  pending = nextStep(s.values, selected, cages()) ?? easiest();
+  pending = nextStep(s.values, selected, variant()) ?? easiest();
   selected = pending.c;
   padDigit = 0;
   mark = null;
@@ -498,10 +522,12 @@ function toggleCandidates() {
 
 /* ---- cages ---- */
 
-function setVariant(variant) {
-  if (s.stage !== "enter" || variant === s.variant) return;
+// A rule button: killer, or one of RULES by key.
+function toggleRule(key) {
+  if (s.stage !== "enter") return;
   endCage();
-  s.variant = variant;
+  if (key === "killer") s.killer = !s.killer;
+  else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
   render();
@@ -589,7 +615,7 @@ function defaultStatus() {
   const n = s.clues.filter(Boolean).length;
   if (s.stage === "enter") {
     if (cageMode) return cageStatus();
-    if (clashes(s.clues, cages()).size) return "The red digits clash: the same digit twice in a row, column or box, or in a cage.";
+    if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
       if (!k) return "A killer puzzle: tap Cages, then the cells of a cage, then type its sum. Clues are optional.";
@@ -604,7 +630,7 @@ function defaultStatus() {
   }
   if (s.stage === "made") return `It has exactly one answer. ${madeSummary()}`;
   if (isSolved()) return "Solved. Every digit is right.";
-  if (clashes(s.values, cages()).size) return "The red digits clash: the same digit twice in a row, column or box, or in a cage.";
+  if (clashes(s.values, variant()).size) return clashText();
   return `${plural(s.values.filter((d) => !d).length, "cell")} to go. Stuck? Tap Hint.`;
 }
 
@@ -627,7 +653,7 @@ function render() {
   const g = grid();
   const solved = isSolved();
   const settings = getSettings();
-  const wrong = clashes(g, cages());
+  const wrong = clashes(g, variant());
   if (checked) for (const c of wrongCells()) wrong.add(c);
 
   board.set({
@@ -635,7 +661,7 @@ function render() {
     puzzle: solving ? s.clues : g,
     solution: solving ? solution : g,
     values: g,
-    notes: solving && s.candidates && !solved ? candidates(g, cages()) : empty(),
+    notes: solving && s.candidates && !solved ? candidates(g, variant()) : empty(),
     selected,
     interactive: canEdit(),
     highlightSame: settings.highlight_same,
@@ -645,6 +671,7 @@ function render() {
     wrong,
     // In the classic switch, cages kept for later are not shown.
     cages: killer() ? s.cages : null,
+    rules: s.rules,
     picked: cageMode ? picked : null,
   });
 
@@ -680,11 +707,12 @@ function render() {
     solverEdit: !enter,
     solverPlay: stage === "made",
     solverSeedCopy: stage === "made",
-    solverVariant: enter,
+    solverRules: enter,
+    solverRuleLine: !enter && Boolean(variant()),
     solverCages: enter && killer(),
     cageBar: cageMode,
-    // A killer puzzle's cages do not fit in 81 characters.
-    solverCopy: !killer(),
+    // A variant's rules and cages do not fit in 81 characters.
+    solverCopy: !killer() && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -705,7 +733,11 @@ function render() {
   $("solverHintLabel").textContent = pending ? "Show it" : "Hint";
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
-  document.querySelectorAll("#solverVariant [data-variant]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.variant === s.variant)));
+  document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
+    const on = b.dataset.rule === "killer" ? s.killer : Boolean(s.rules & RULES.find((r) => r.key === b.dataset.rule).bit);
+    b.setAttribute("aria-pressed", String(on));
+  });
+  $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
   if (cageMode) {
     $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
@@ -789,9 +821,9 @@ export function initSolver({ reopen = true } = {}) {
   $("solverImage").addEventListener("click", onImage);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
-  $("solverVariant").addEventListener("click", (e) => {
-    const b = e.target.closest("[data-variant]");
-    if (b) setVariant(b.dataset.variant);
+  $("solverRules").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rule]");
+    if (b) toggleRule(b.dataset.rule);
   });
   $("solverCages").addEventListener("click", toggleCageMode);
   $("cageAdd").addEventListener("click", onCageAdd);

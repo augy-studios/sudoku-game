@@ -1,16 +1,104 @@
-// Killer sudoku: the classic rules, plus cages. A cage is a group of cells
-// with a sum; its digits add up to the sum and never repeat within it. Pure,
-// with no DOM, and the API imports it too, to work out a made killer
-// puzzle's answer.
+// Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
+// the API imports it too, to work out a made variant puzzle's answer.
 //
-// A cage is { sum, cells }, cells in reading order. A cell is in at most one
-// cage, and cells in no cage are allowed.
+// A variant is { cages, rules }:
+//
+//   cages  killer cages, [{ sum, cells }] with cells in reading order. A
+//          cage's digits add up to its sum and never repeat within it. A
+//          cell is in at most one cage; cells in none are allowed.
+//   rules  switches, as bits (RULES below): Diagonal, both long diagonals
+//          hold 1 to 9; Anti-knight, cells a knight's move apart differ;
+//          Anti-king, cells touching at a corner differ; Windoku, four more
+//          3x3 windows hold 1 to 9.
+//
+// Diagonals and windows are extra houses, like rows, columns and boxes; the
+// knight's and king's moves are extra pairs of cells that must differ.
 
-import { ROW, COL, BOX, PEERS } from "./sudoku.js";
+import { ROW, COL, BOX } from "./sudoku.js";
 
 const ALL = 0b1111111110;
 const POP = new Uint8Array(1024);
 for (let m = 1; m < 1024; m++) POP[m] = POP[m >> 1] + (m & 1);
+
+// In the order their letters go in a seed.
+export const RULES = [
+  { key: "diagonal", bit: 1, letter: "D", name: "Diagonal" },
+  { key: "antiknight", bit: 2, letter: "N", name: "Anti-knight" },
+  { key: "antiking", bit: 4, letter: "G", name: "Anti-king" },
+  { key: "windoku", bit: 8, letter: "W", name: "Windoku" },
+];
+export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
+const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
+
+// The rules' names, for a label: "Killer, Diagonal, Anti-knight".
+export function variantName({ cages, rules } = {}) {
+  const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
+  if (cages?.length) names.unshift("Killer");
+  return names.join(", ");
+}
+
+/* ---- the layout a set of rules makes ---- */
+
+const cellAt = (r, c) => r * 9 + c;
+const WINDOW_CORNERS = [
+  [1, 1],
+  [1, 5],
+  [5, 1],
+  [5, 5],
+];
+
+// { houses: [{ kind, index, cells }], housesOf: per cell, the houses it is
+// in, pairs: per cell, the cells that must differ from it outside its
+// houses, peers: per cell, every cell that must differ from it }. Rows,
+// columns and boxes come first, in that order, as the classic solver has
+// them.
+const layouts = new Map();
+
+export function layout(rules = 0) {
+  if (layouts.has(rules)) return layouts.get(rules);
+  const houses = [];
+  for (const [kind, of] of [["row", ROW], ["column", COL], ["box", BOX]]) {
+    for (let index = 0; index < 9; index++) houses.push({ kind, index, cells: [...Array(81).keys()].filter((c) => of[c] === index) });
+  }
+  if (has(rules, "diagonal")) {
+    houses.push({ kind: "diagonal", index: 0, cells: [...Array(9).keys()].map((i) => cellAt(i, i)) });
+    houses.push({ kind: "diagonal", index: 1, cells: [...Array(9).keys()].map((i) => cellAt(i, 8 - i)) });
+  }
+  if (has(rules, "windoku")) {
+    WINDOW_CORNERS.forEach(([r0, c0], index) => {
+      const cells = [];
+      for (let r = r0; r < r0 + 3; r++) for (let c = c0; c < c0 + 3; c++) cells.push(cellAt(r, c));
+      houses.push({ kind: "window", index, cells });
+    });
+  }
+  const housesOf = Array.from({ length: 81 }, () => []);
+  houses.forEach((h, i) => h.cells.forEach((c) => housesOf[c].push(i)));
+
+  const moves = [];
+  if (has(rules, "antiknight")) moves.push([1, 2], [2, 1], [-1, 2], [-2, 1], [1, -2], [2, -1], [-1, -2], [-2, -1]);
+  if (has(rules, "antiking")) moves.push([1, 1], [1, -1], [-1, 1], [-1, -1]);
+  const pairs = [];
+  const peers = [];
+  for (let c = 0; c < 81; c++) {
+    const housed = new Set(housesOf[c].flatMap((h) => houses[h].cells));
+    housed.delete(c);
+    const extra = new Set();
+    for (const [dr, dc] of moves) {
+      const r = ROW[c] + dr;
+      const col = COL[c] + dc;
+      if (r < 0 || r > 8 || col < 0 || col > 8) continue;
+      const o = cellAt(r, col);
+      if (!housed.has(o)) extra.add(o);
+    }
+    pairs.push([...extra].sort((a, b) => a - b));
+    peers.push([...housed, ...extra].sort((a, b) => a - b));
+  }
+  const out = { houses, housesOf, pairs, peers };
+  layouts.set(rules, out);
+  return out;
+}
+
+/* ---- cages ---- */
 
 // COMBOS[k][s]: every set of k different digits adding up to s, as masks.
 const COMBOS = Array.from({ length: 10 }, () => Array.from({ length: 46 }, () => []));
@@ -74,10 +162,16 @@ export function cageOf(cages) {
   return out;
 }
 
-// What can go in each empty cell, by its row, column, box and cage; 0 for a
-// filled cell. A cage allows digits not already in it that some way of
-// filling the rest of it can use.
-export function killerCandidates(grid, cages) {
+/* ---- candidates and solving ---- */
+
+const norm = (v) => ({ cages: v?.cages ?? [], rules: v?.rules ?? 0 });
+
+// What can go in each empty cell, by every cell it must differ from and its
+// cage; 0 for a filled cell. A cage allows digits not already in it that
+// some way of filling the rest of it can use.
+export function variantCandidates(grid, variant) {
+  const { cages, rules } = norm(variant);
+  const { peers } = layout(rules);
   const allow = cages.map((cage) => {
     let used = 0;
     let rest = cage.sum;
@@ -95,38 +189,32 @@ export function killerCandidates(grid, cages) {
   for (let c = 0; c < 81; c++) {
     if (grid[c]) continue;
     let m = ALL;
-    for (const o of PEERS[c]) m &= ~(1 << grid[o]);
+    for (const o of peers[c]) m &= ~(1 << grid[o]);
     if (of[c] >= 0) m &= allow[of[c]];
     out[c] = m;
   }
   return out;
 }
 
-// The 27 houses: rows, columns and boxes, each nine cells.
-const HOUSES = [];
-for (const of of [ROW, COL, BOX]) {
-  for (let i = 0; i < 9; i++) HOUSES.push([...Array(81).keys()].filter((c) => of[c] === i));
-}
-
 // Depth first search. At each step every empty cell's candidates are worked
-// out from its row, column, box and cage, where a cage allows only the digit
-// sets that make its sum and that its empty cells could still hold. Then a
-// digit with one place left in a house, or one a cage cannot do without and
-// only one of its cells can take, goes there; otherwise the search branches
-// on the cell with the fewest candidates. A digit with no place left, or a
-// cell with no candidate, ends the branch. `found` is called on each
-// solution and returns true to stop.
+// out from its houses, the cells it must differ from, and its cage, where a
+// cage allows only the digit sets that make its sum and that its empty cells
+// could still hold. Then a digit with one place left in a house, or one a
+// cage cannot do without and only one of its cells can take, goes there;
+// otherwise the search branches on the cell with the fewest candidates. A
+// digit with no place left, or a cell with no candidate, ends the branch.
+// `found` is called on each solution and returns true to stop.
 //
-// It gives up after BUDGET steps and says so, returning false: a cage
-// layout with too much freedom can take minutes to settle. The count is the
-// same everywhere, so the page and the server always agree on a puzzle.
+// It gives up after BUDGET steps and says so, returning false: a layout
+// with too much freedom can take minutes to settle. The count is the same
+// everywhere, so the page and the server always agree on a puzzle.
 export const BUDGET = 400000;
 
-function search(grid, cages, found) {
+function search(grid, variant, found) {
+  const { cages, rules } = norm(variant);
+  const { houses, housesOf, pairs } = layout(rules);
   let steps = 0;
-  const rows = new Int32Array(9);
-  const cols = new Int32Array(9);
-  const boxes = new Int32Array(9);
+  const hm = new Int32Array(houses.length);
   const of = cageOf(cages);
   const n = cages.length;
   const used = new Int32Array(n);
@@ -142,10 +230,11 @@ function search(grid, cages, found) {
     if (!d) continue;
     const bit = 1 << d;
     const k = of[c];
-    if ((rows[ROW[c]] | cols[COL[c]] | boxes[BOX[c]] | (k >= 0 ? used[k] : 0)) & bit) return true;
-    rows[ROW[c]] |= bit;
-    cols[COL[c]] |= bit;
-    boxes[BOX[c]] |= bit;
+    let taken = k >= 0 ? used[k] : 0;
+    for (const h of housesOf[c]) taken |= hm[h];
+    for (const o of pairs[c]) if (o < c && g[o] === d) taken |= bit;
+    if (taken & bit) return true;
+    for (const h of housesOf[c]) hm[h] |= bit;
     if (k >= 0) {
       used[k] |= bit;
       rest[k] -= d;
@@ -160,7 +249,16 @@ function search(grid, cages, found) {
   // The next placement: { cell, mask } to branch on, or null on a dead end,
   // or cell -1 when the grid is full.
   const choose = (free) => {
-    for (let c = 0; c < 81; c++) free[c] = g[c] ? 0 : ALL & ~(rows[ROW[c]] | cols[COL[c]] | boxes[BOX[c]]);
+    for (let c = 0; c < 81; c++) {
+      if (g[c]) {
+        free[c] = 0;
+        continue;
+      }
+      let m = ALL;
+      for (const h of housesOf[c]) m &= ~hm[h];
+      for (const o of pairs[c]) if (g[o]) m &= ~(1 << g[o]);
+      free[c] = m;
+    }
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;
@@ -197,11 +295,11 @@ function search(grid, cages, found) {
     if (bestCount === 1) return { cell: best, mask: free[best] };
 
     // A digit with one place in a house, or none.
-    for (const house of HOUSES) {
+    for (const { cells } of houses) {
       let once = 0;
       let twice = 0;
       let placed = 0;
-      for (const c of house) {
+      for (const c of cells) {
         if (g[c]) placed |= 1 << g[c];
         else {
           twice |= once & free[c];
@@ -212,7 +310,7 @@ function search(grid, cages, found) {
       const single = once & ~twice;
       if (single) {
         const bit = single & -single;
-        for (const c of house) if (!g[c] && free[c] & bit) return { cell: c, mask: bit };
+        for (const c of cells) if (!g[c] && free[c] & bit) return { cell: c, mask: bit };
       }
     }
     // A digit a cage must have, with one cell to take it, or none.
@@ -246,26 +344,20 @@ function search(grid, cages, found) {
     if (!next) return false;
     if (next.cell < 0) return found(g);
     const { cell, mask } = next;
-    const r = ROW[cell];
-    const col = COL[cell];
-    const b = BOX[cell];
+    const hs = housesOf[cell];
     const k = of[cell];
     for (let d = 1; d <= 9; d++) {
       const bit = 1 << d;
       if (!(mask & bit)) continue;
       g[cell] = d;
-      rows[r] |= bit;
-      cols[col] |= bit;
-      boxes[b] |= bit;
+      for (const h of hs) hm[h] |= bit;
       if (k >= 0) {
         used[k] |= bit;
         rest[k] -= d;
         left[k]--;
       }
       if (step(depth + 1)) return true;
-      rows[r] &= ~bit;
-      cols[col] &= ~bit;
-      boxes[b] &= ~bit;
+      for (const h of hs) hm[h] &= ~bit;
       if (k >= 0) {
         used[k] &= ~bit;
         rest[k] += d;
@@ -281,15 +373,15 @@ function search(grid, cages, found) {
 
 // Up to `limit` of the solutions, or null if the search ran out of budget
 // before it could say.
-export function killerSolutions(grid, cages, limit = 2) {
+export function variantSolutions(grid, variant, limit = 2) {
   const out = [];
-  const settled = search(grid, cages, (g) => {
+  const settled = search(grid, variant, (g) => {
     out.push(g.slice());
     return out.length >= limit;
   });
   return settled || out.length >= limit ? out : null;
 }
 
-export function killerSolve(grid, cages) {
-  return killerSolutions(grid, cages, 1)?.[0] ?? null;
+export function variantSolve(grid, variant) {
+  return variantSolutions(grid, variant, 1)?.[0] ?? null;
 }

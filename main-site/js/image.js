@@ -1,6 +1,8 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a killer puzzle's cages as on screen.
+// and a variant puzzle's cages, diagonals and windows as on screen.
+
+import { variantName } from "./variant.js";
 
 const CELL = 112;
 const PAD = 36;
@@ -15,7 +17,14 @@ const CELL_LINE = "#c9d2cb";
 const BOX_LINE = "#2d3a31";
 const CAPTION = "#5b6b60";
 
-export async function drawPuzzle(grid, cages = null) {
+// Warm, so windows never pass for the boxes' green tint.
+const WINDOW_TINT = "rgba(232, 168, 56, 0.28)";
+const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
+
+// variant: { cages, rules } (variant.js), or nothing for a classic puzzle.
+export async function drawPuzzle(grid, variant = null) {
+  const cages = variant?.cages ?? [];
+  const rules = variant?.rules ?? 0;
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -37,6 +46,12 @@ export async function drawPuzzle(grid, cages = null) {
     if ((Math.floor(b / 3) + (b % 3)) % 2 === 1) ctx.fillRect(PAD + (b % 3) * CELL * 3, PAD + Math.floor(b / 3) * CELL * 3, CELL * 3, CELL * 3);
   }
 
+  // Windoku's windows, rows and columns 2 to 4 and 6 to 8.
+  if (rules & 8) {
+    ctx.fillStyle = WINDOW_TINT;
+    for (const r of [1, 5]) for (const c of [1, 5]) ctx.fillRect(PAD + c * CELL, PAD + r * CELL, CELL * 3, CELL * 3);
+  }
+
   const line = (width, colour, every) => {
     ctx.strokeStyle = colour;
     ctx.lineWidth = width;
@@ -53,7 +68,17 @@ export async function drawPuzzle(grid, cages = null) {
   line(2, CELL_LINE, 1);
   line(6, BOX_LINE, 3);
 
-  if (cages?.length) drawCages(ctx, cages);
+  if (rules & 1) {
+    ctx.strokeStyle = DIAGONAL_INK;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(PAD, PAD);
+    ctx.lineTo(PAD + BOARD, PAD + BOARD);
+    ctx.moveTo(PAD + BOARD, PAD);
+    ctx.lineTo(PAD, PAD + BOARD);
+    ctx.stroke();
+  }
+  if (cages.length) drawCages(ctx, cages);
 
   ctx.fillStyle = INK;
   ctx.font = `${Math.round(CELL * 0.6)}px ${FONT}`;
@@ -66,7 +91,8 @@ export async function drawPuzzle(grid, cages = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  ctx.fillText("uwuSudoku  ·  sudoku.uwuapps.org", WIDTH / 2, PAD * 2 + BOARD + 20);
+  const name = variantName({ cages, rules });
+  ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20);
   return canvas;
 }
 
@@ -126,8 +152,8 @@ function drawCages(ctx, cages) {
 }
 
 // Saves the grid as a PNG through the browser's download. True if it went.
-export async function savePuzzleImage(grid, filename = "sudoku.png", cages = null) {
-  const canvas = await drawPuzzle(grid, cages);
+export async function savePuzzleImage(grid, filename = "sudoku.png", variant = null) {
+  const canvas = await drawPuzzle(grid, variant);
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
   if (!blob) return false;
   const url = URL.createObjectURL(blob);
