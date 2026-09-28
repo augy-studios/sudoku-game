@@ -11,8 +11,10 @@
 // ring round the circle's digit to a head. German Whispers lines are a
 // green line as thick as a thermometer's, with no bulb, and renban lines a
 // purple one. Kropki dots sit on the side two cells share, white or black,
-// and XV marks there as a letter. Anti-knight and anti-king have nothing to
-// draw.
+// and XV marks there as a letter. Sandwich and Little Killer clues sit
+// outside the grid, in a margin a cell wide the board then leaves round it,
+// a Little Killer's with a small arrow along its diagonal. Anti-knight and
+// anti-king have nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
@@ -24,10 +26,30 @@ const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
 // Box b, place i within it, to the cell's index in reading order.
 const cellAt = (b, i) => (Math.floor(b / 3) * 3 + Math.floor(i / 3)) * 9 + (b % 3) * 3 + (i % 3);
 
+// The middle of margin spot (r, c), -1 and 9 being the rows and columns just
+// outside the grid, from the cells' boxes: { x, y, w }.
+function spotCentre(r, c, rect) {
+  const w = rect(0).w;
+  const across = (i) => {
+    if (i < 0) return rect(0).x - w / 2;
+    if (i > 8) return rect(8).x + rect(8).w + w / 2;
+    return rect(i).x + rect(i).w / 2;
+  };
+  const down = (i) => {
+    if (i < 0) return rect(0).y - w / 2;
+    if (i > 8) return rect(72).y + rect(72).h + w / 2;
+    return rect(i * 9).y + rect(i * 9).h / 2;
+  };
+  return { x: across(c), y: down(r), w };
+}
+
 export class BoardView {
-  constructor(root, { onSelect }) {
+  // onSpot: called with [r, c] when a tap lands in the margin, for a board
+  // that takes clues there.
+  constructor(root, { onSelect, onSpot = null }) {
     this.root = root;
     this.onSelect = onSelect;
+    this.onSpot = onSpot;
     this.cells = [];
     this.keys = [];
     this.view = null;
@@ -71,6 +93,16 @@ export class BoardView {
       const at = e.detail && r.width ? [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height] : null;
       this.onSelect(Number(cell.dataset.cell), { at });
     });
+    // A tap in the margin, as the spot it lands in.
+    root.parentElement.addEventListener("click", (e) => {
+      if (!this.onSpot || !this.view?.interactive || !this.view.margin || e.target.closest("[data-cell]")) return;
+      const first = this.cells[0].getBoundingClientRect();
+      const last = this.cells[80].getBoundingClientRect();
+      const r = Math.floor(((e.clientY - first.top) / (last.bottom - first.top)) * 9);
+      const c = Math.floor(((e.clientX - first.left) / (last.right - first.left)) * 9);
+      const inside = r >= 0 && r <= 8 && c >= 0 && c <= 8;
+      if (r >= -1 && r <= 9 && c >= -1 && c <= 9 && !inside) this.onSpot([r, c]);
+    });
     root.addEventListener("keydown", (e) => {
       if (!this.view?.interactive) return;
       const moves = { ArrowUp: -9, ArrowDown: 9, ArrowLeft: -1, ArrowRight: 1 };
@@ -96,10 +128,13 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages, thermos, arrows, whispers, renbans, dots
-  // and xvs are a variant puzzle's, and rules its switches (variant.js); picked, a
-  // Set of cells, are those being gathered into a new cage, and path a line
-  // being drawn, as pathKind says: "thermo", "arrow", "whisper" or "renban".
+  // digits by the solution. cages, thermos, arrows, whispers, renbans, dots,
+  // xvs, sandwiches and littles are a variant puzzle's, and rules its
+  // switches (variant.js); picked, a Set of cells, are those being gathered
+  // into a new cage, and path a line being drawn, as pathKind says:
+  // "thermo", "arrow", "whisper" or "renban". margin leaves room round the
+  // grid for clues outside it; spots, margin spots [r, c] to show as open
+  // for a clue, and spot the one picked.
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -115,6 +150,11 @@ export class BoardView {
     this.renbans = view.renbans ?? [];
     this.dots = view.dots ?? [];
     this.xvs = view.xvs ?? [];
+    this.sandwiches = view.sandwiches ?? [];
+    this.littles = view.littles ?? [];
+    this.spots = view.spots ?? [];
+    this.spot = view.spot ?? null;
+    this.root.parentElement.classList.toggle("margined", Boolean(view.margin));
     this.path = view.path ?? [];
     this.pathKind = view.pathKind ?? "thermo";
     const windows = new Set(
@@ -187,13 +227,16 @@ export class BoardView {
     const whispers = this.whispers ?? [];
     const renbans = this.renbans ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? [])];
+    const outside = [this.sandwiches ?? [], this.littles ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, edges, path, this.pathKind]);
+    const margin = this.root.parentElement.classList.contains("margined");
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, edges, outside, margin, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    if (!cages.length && !diagonal && !thermos.length && !arrows.length && !whispers.length && !renbans.length && !edges.length && !path.length) {
+    const drawn = [cages, thermos, arrows, whispers, renbans, edges, path, ...outside.slice(0, 3)].some((list) => list.length);
+    if (!drawn && !diagonal && !this.spot) {
       layer.innerHTML = "";
       return;
     }
@@ -312,6 +355,38 @@ export class BoardView {
         return `<text class="xv-mark" x="${x}" y="${y}" font-size="${f(p.w * 0.36)}">${mark.toUpperCase()}</text>`;
       })
       .join("");
-    layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}`;
+    // Clues outside: open spots faint, the picked one ringed, a Sandwich's
+    // sum by its row or column, a Little Killer's with an arrow along its
+    // diagonal, off to one side of its spot.
+    const spotAt = ([r, c]) => spotCentre(r, c, rect);
+    const open = (this.spots ?? []).map((s) => {
+      const { x, y, w } = spotAt(s);
+      return `<circle class="spot-open" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.08)}"/>`;
+    });
+    let picked = "";
+    if (this.spot) {
+      const { x, y, w } = spotAt(this.spot);
+      picked = `<rect class="spot-picked" x="${f(x - w * 0.42)}" y="${f(y - w * 0.42)}" width="${f(w * 0.84)}" height="${f(w * 0.84)}" rx="${f(w * 0.18)}"/>`;
+    }
+    const sandwichSums = (this.sandwiches ?? []).map(({ line, sum }) => {
+      const { x, y, w } = spotAt(line < 9 ? [line, -1] : [-1, line - 9]);
+      return `<text class="outside-sum" x="${f(x)}" y="${f(y)}" font-size="${f(w * 0.42)}">${sum}</text>`;
+    });
+    const littleSums = (this.littles ?? []).map(({ cells, sum }) => {
+      const dr = ROW[cells[1]] - ROW[cells[0]];
+      const dc = COL[cells[1]] - COL[cells[0]];
+      const { x, y, w } = spotAt([ROW[cells[0]] - dr, COL[cells[0]] - dc]);
+      const tx = x - dc * w * 0.1;
+      const ty = y - dr * w * 0.1;
+      const [ax, ay, bx, by] = [x + dc * w * 0.2, y + dr * w * 0.2, x + dc * w * 0.44, y + dr * w * 0.44];
+      const h = w * 0.1;
+      const head = `M${f(bx - dc * h)} ${f(by)}L${f(bx)} ${f(by)}L${f(bx)} ${f(by - dr * h)}`;
+      return (
+        `<text class="outside-sum little-sum" x="${f(tx)}" y="${f(ty)}" font-size="${f(w * 0.32)}">${sum}</text>` +
+        `<path class="little-arrow" d="M${f(ax)} ${f(ay)}L${f(bx)} ${f(by)}${head}" stroke-width="${f(w * 0.04)}"/>`
+      );
+    });
+    const outsides = [...open, picked, ...sandwichSums, ...littleSums].join("");
+    layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}${outsides}`;
   }
 }

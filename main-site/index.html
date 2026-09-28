@@ -213,6 +213,8 @@
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="renban">Renban</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="kropki">Kropki</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="xv">XV</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="sandwich">Sandwich</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="little">Little Killer</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="diagonal">Diagonal</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiknight">Anti-knight</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiking">Anti-king</button>
@@ -245,6 +247,15 @@
                     <button id="markDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
                 </div>
 
+                <!-- The Outside tool's: a picked margin spot's sum, what goes there, and Done. -->
+                <div id="outBar" class="cage-bar hidden">
+                    <input id="outSum" class="field cage-sum-field hidden" type="number" inputmode="numeric" min="0" max="81" placeholder="Sum" enterkeyhint="done" aria-label="Sum">
+                    <button id="outAdd" class="btn btn-primary pill hidden" type="button"><span data-icon="check"></span><span id="outAddLabel">Add sum</span></button>
+                    <button id="outTurn" class="btn btn-quiet pill hidden" type="button"><span id="outTurnLabel">Turn</span></button>
+                    <button id="outRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span>Remove sum</button>
+                    <button id="outDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
+                </div>
+
                 <div id="solverPad" class="pad" aria-label="Numbers">
                     <button class="pad-btn" type="button" data-digit="1">1<span class="count"></span></button>
                     <button class="pad-btn" type="button" data-digit="2">2<span class="count"></span></button>
@@ -267,6 +278,7 @@
                     <button id="solverWhispers" class="tool-btn" type="button" aria-pressed="false"><span data-icon="whisper"></span><span>Whispers</span></button>
                     <button id="solverRenbans" class="tool-btn" type="button" aria-pressed="false"><span data-icon="renban"></span><span>Renbans</span></button>
                     <button id="solverMarks" class="tool-btn" type="button" aria-pressed="false"><span data-icon="kropki"></span><span>Marks</span></button>
+                    <button id="solverOutside" class="tool-btn" type="button" aria-pressed="false"><span data-icon="outside"></span><span>Outside</span></button>
                     <button id="solverClear" class="tool-btn" type="button"><span data-icon="trash"></span><span>Clear</span></button>
                     <button id="solverCheck" class="tool-btn" type="button"><span data-icon="check"></span><span>Check</span></button>
                     <button id="solverHint" class="tool-btn" type="button"><span data-icon="bulb"></span><span id="solverHintLabel">Hint</span></button>

@@ -11,8 +11,9 @@
 // `made: true`, and scores only on its own board. A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
 // T for thermometers, A for arrows, S for German Whispers lines, R for
-// renban lines, P for Kropki dots and V for XV marks, which the seed then
-// carries too, and D, N, G and W for the switch rules (variant.js).
+// renban lines, P for Kropki dots, V for XV marks, B for Sandwich clues and
+// L for Little Killer clues, which the seed then carries too, and D, N, G
+// and W for the switch rules (variant.js).
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
 import { generate, solve, countSolutions, COL } from "./sudoku.js";
@@ -26,6 +27,10 @@ import {
   renbanProblem,
   dotProblem,
   xvProblem,
+  sandwichProblem,
+  littleProblem,
+  diagonalFrom,
+  SANDWICH_MAX,
   DOT_MARKS,
   XV_MARKS,
   RULES,
@@ -151,8 +156,11 @@ function decodeGrid(body) {
    same way, from the circle, and German Whispers lines and renban lines the
    same way again. Then Kropki dots, and then XV marks, as whichever is
    shorter: how many, and for each its side and which of the two marks it
-   is; or for every side, its mark or none. Each part is there only when the
-   seed's letters say so, so a seed from before a part came reads as it did. */
+   is; or for every side, its mark or none. Then Sandwich clues, for each
+   row and then each column its sum, or none; then Little Killer clues: how
+   many, and for each its first cell, which way it runs and its sum. Each
+   part is there only when the seed's letters say so, so a seed from before
+   a part came reads as it did. */
 
 function packDigits(digits) {
   let n = 0n;
@@ -289,6 +297,60 @@ function readEdges(take, marks) {
 const sortEdges = (edges) =>
   edges.map((e) => ({ cells: e.cells.slice(), mark: e.mark })).sort((p, q) => p.cells[0] * 81 + p.cells[1] - (q.cells[0] * 81 + q.cells[1]));
 
+// Sandwich clues: for each of the 18 lines, 0 for none or its sum and 1.
+function writeSandwiches(digits, sandwiches) {
+  const sums = new Map(sandwiches.map((s) => [s.line, s.sum]));
+  for (let line = 0; line < 18; line++) digits.push([sums.has(line) ? sums.get(line) + 1 : 0, SANDWICH_MAX + 2]);
+}
+
+function readSandwiches(take) {
+  const out = [];
+  for (let line = 0; line < 18; line++) {
+    const v = take(SANDWICH_MAX + 2);
+    if (v) out.push({ line, sum: v - 1 });
+  }
+  return out;
+}
+
+// The four ways a Little Killer diagonal can run.
+const DIAGONALS = [
+  [1, 1],
+  [1, -1],
+  [-1, 1],
+  [-1, -1],
+];
+// A Little Killer diagonal's sum can be as much as nine 9s.
+const LITTLE_SUMS = 82;
+
+function writeLittles(digits, littles) {
+  digits.push([littles.length, MAX_LINES + 1]);
+  for (const { cells, sum } of littles) {
+    const dr = Math.floor(cells[1] / 9) - Math.floor(cells[0] / 9);
+    const dc = (cells[1] % 9) - (cells[0] % 9);
+    digits.push([cells[0], 81], [DIAGONALS.findIndex(([r, c]) => r === dr && c === dc), 4], [sum, LITTLE_SUMS]);
+  }
+}
+
+// The other way; a diagonal of one cell, which no clue has, reads as
+// written so that checking it refuses the seed.
+function readLittles(take) {
+  const out = [];
+  const count = take(MAX_LINES + 1);
+  for (let i = 0; i < count; i++) {
+    const first = take(81);
+    const [dr, dc] = DIAGONALS[take(4)];
+    out.push({ cells: diagonalFrom(Math.floor(first / 9), first % 9, dr, dc), sum: take(LITTLE_SUMS) });
+  }
+  return out;
+}
+
+const sortSandwiches = (sandwiches) => sandwiches.map((s) => ({ line: s.line, sum: s.sum })).sort((a, b) => a.line - b.line);
+// By first cell, then by second, which is which way each runs.
+const sortLittles = (littles) =>
+  littles
+    .map((l) => ({ cells: l.cells.slice(), sum: l.sum }))
+    .sort((a, b) => a.cells[0] - b.cells[0] || b.cells[1] - a.cells[1]);
+
 // withs: which parts the seed's letters say it has, { cages, thermos, ... }
 // as PARTS names them.
 function decodeParts(body, withs) {
@@ -357,6 +419,8 @@ const PARTS = [
   lines("renbans", "R", "Renban", renbanProblem),
   edges("dots", "P", "Kropki", dotProblem, DOT_MARKS),
   edges("xvs", "V", "XV", xvProblem, XV_MARKS),
+  { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
+  { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
 ];
 
 // The letters that start a variant seed, in this order.
@@ -371,8 +435,8 @@ function prefixFor(parts, rules) {
 }
 
 // The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
-// renbans, dots, xvs, rules } for a variant puzzle (variant.js), or nothing
-// for a classic one. `level` is
+// renbans, dots, xvs, sandwiches, littles, rules } for a variant puzzle
+// (variant.js), or nothing for a classic one. `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.
 export function madeSeed(level, grid, variant = null) {

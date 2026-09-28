@@ -323,6 +323,14 @@ body {
   width: min(100%, 480px);
   aspect-ratio: 1;
 }
+/* Room a cell wide round the grid, for Sandwich and Little Killer clues:
+   the grid takes the middle 9 of 11. */
+.board-wrap.margined > .board {
+  position: absolute;
+  inset: calc(100% / 11);
+  width: auto;
+  height: auto;
+}
 .board {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -458,6 +466,26 @@ body {
 .renban-pending {
   stroke: var(--warn);
   opacity: 0.45;
+}
+/* Clues outside the grid, and the spots that can take one while the
+   Outside tool is on: open ones a faint dot, the picked one ringed. */
+.outside-sum {
+  fill: var(--ink);
+  font-family: inherit;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.little-arrow {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.spot-open { fill: var(--muted-strong); opacity: 0.35; }
+.spot-picked {
+  fill: color-mix(in srgb, var(--warn) 14%, transparent);
+  stroke: var(--warn);
+  stroke-width: 2;
 }
 /* Kropki dots and XV marks: on top and solid, as they sit between digits.
    A white dot is white and a black one black whatever the theme, as hints

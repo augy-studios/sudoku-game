@@ -18,9 +18,11 @@
 // way with the Arrows tool, from the circle; Whispers and Renban add German
 // Whispers and renban lines, drawn the same way again with their own tools;
 // Kropki and XV add dots and X and V marks on the sides between cells, put
-// down with the Marks tool; and Diagonal, Anti-knight, Anti-king and
-// Windoku add their rules (variant.js). Every check, hint and candidate
-// then follows them too.
+// down with the Marks tool; Sandwich and Little Killer add sums outside
+// the grid, put down with the Outside tool in a margin the board leaves
+// for them; and Diagonal, Anti-knight, Anti-king and Windoku add their
+// rules (variant.js). Every check, hint and candidate then follows them
+// too.
 //
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
@@ -37,6 +39,10 @@ import {
   renbanProblem,
   dotProblem,
   xvProblem,
+  sandwichProblem,
+  littleProblem,
+  diagonalFrom,
+  SANDWICH_MAX,
   DOT_MARKS,
   XV_MARKS,
   touching,
@@ -64,9 +70,10 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, whisper, renban, kropki, xv and rules are the
-// variant's switches; cages are kept while Killer is off, for when it comes
-// back on, and each kind of line, the dots and the XV marks likewise.
+// killer, thermo, arrow, whisper, renban, kropki, xv, sandwich, little and
+// rules are the variant's switches; cages are kept while Killer is off, for
+// when it comes back on, and each kind of line, dot, mark and outside clue
+// likewise.
 const fresh = () => ({
   open: false,
   stage: "enter",
@@ -80,6 +87,8 @@ const fresh = () => ({
   renban: false,
   kropki: false,
   xv: false,
+  sandwich: false,
+  little: false,
   rules: 0,
   cages: [],
   thermos: [],
@@ -88,6 +97,8 @@ const fresh = () => ({
   renbans: [],
   dots: [],
   xvs: [],
+  sandwiches: [],
+  littles: [],
 });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
@@ -110,6 +121,11 @@ let editingLine = -1;
 // The Marks tool: on, and the cell picked for a mark on one of its sides.
 let markMode = false;
 let anchor = null;
+// The Outside tool: on, the margin spot [r, c] picked, and which of the
+// clues it can take is chosen (spotKinds below).
+let outMode = false;
+let spot = null;
+let choice = 0;
 let selected = null;
 let padDigit = 0;
 let checked = false; // Check was pressed, and nothing has changed since
@@ -131,7 +147,9 @@ const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
 const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
 const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
-const drawn = () => Boolean(cages() || thermos() || arrows() || whispers() || renbans() || dots() || xvs());
+const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : null);
+const littles = () => (s.little && s.littles.length ? s.littles : null);
+const drawn = () => Boolean(cages() || thermos() || arrows() || whispers() || renbans() || dots() || xvs() || sandwiches() || littles());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules
@@ -143,6 +161,8 @@ const variant = () =>
         renbans: renbans() ?? [],
         dots: dots() ?? [],
         xvs: xvs() ?? [],
+        sandwiches: sandwiches() ?? [],
+        littles: littles() ?? [],
         rules: s.rules,
       }
     : null;
@@ -180,7 +200,7 @@ function load(which) {
   // Before the switch rules, a killer puzzle was saved as variant "killer".
   st.killer = saved.killer === true || saved.variant === "killer";
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
-  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES)]) {
+  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(OUTSIDE)]) {
     st[kind] = saved[kind] === true;
     const kept = Array.isArray(saved[P.list]) ? saved[P.list] : [];
     st[P.list] = !P.problem(kept) ? kept : [];
@@ -226,6 +246,8 @@ function hintText(step, reveal) {
       ...(renbans() ? ["renban lines"] : []),
       ...(dots() ? ["dots"] : []),
       ...(xvs() ? ["X and V marks"] : []),
+      ...(sandwiches() ? ["Sandwich sums"] : []),
+      ...(littles() ? ["Little Killer sums"] : []),
     ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
@@ -248,6 +270,8 @@ function problemText(check) {
   if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
   if (why === "dots") return DOT_PROBLEMS[check.problem.why];
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
+  if (why === "sandwiches") return SANDWICH_PROBLEMS[check.problem.why];
+  if (why === "littles") return LITTLE_PROBLEMS[check.problem.why];
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
@@ -275,6 +299,8 @@ function clashText() {
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
   if (dots()) extra.push("breaking a dot");
   if (xvs()) extra.push("not adding up to an X or a V");
+  if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
+  if (littles()) extra.push("not adding up to a Little Killer sum");
   return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -317,6 +343,19 @@ const DOT_PROBLEMS = {
   twice: "Two dots sit on the same side.",
 };
 
+const SANDWICH_PROBLEMS = {
+  line: "A Sandwich sum goes left of a row or above a column.",
+  sum: `A Sandwich sum is 0 to ${SANDWICH_MAX}: the digits 2 to 8 add up to ${SANDWICH_MAX} at most.`,
+  twice: "That row or column has a Sandwich sum already.",
+};
+
+const LITTLE_PROBLEMS = {
+  cell: "A Little Killer sum needs a diagonal of two cells at least.",
+  diagonal: "A Little Killer sum's diagonal runs from the edge it sits by to the far edge.",
+  sum: "That diagonal cannot add up to that: each of its cells holds 1 to 9.",
+  twice: "Two Little Killer sums point down the same diagonal from the same end.",
+};
+
 const XV_PROBLEMS = {
   cell: "An X or a V has a cell off the board.",
   apart: "An X or a V must sit on the side two cells share.",
@@ -351,7 +390,7 @@ function wrongCells() {
 }
 
 // The lists of drawn parts: "cages", then LINES's lists and EDGES's.
-const partLists = () => ["cages", ...Object.values(LINES).map((L) => L.list), ...Object.values(EDGES).map((E) => E.list)];
+const partLists = () => ["cages", ...[LINES, EDGES, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
 
 const snapshot = () => {
   const out = { clues: s.clues.slice(), values: s.values.slice() };
@@ -397,6 +436,7 @@ function selectCell(c, { focus = false, at = null } = {}) {
   if (cageMode) return pickCell(c);
   if (lineKind) return pickLineCell(c);
   if (markMode) return pickMarkSide(c, at);
+  if (outMode) return say("Clues outside go round the edge of the grid: tap a spot there, or Done.");
   selected = c;
   padDigit = 0;
   render();
@@ -432,6 +472,7 @@ function inputDigit(d) {
     return say(`Digits wait until the ${L.name} is done: tap its cells, ${L.start} first, then ${addLabel()}.`);
   }
   if (markMode) return say("Digits wait until the marks are done: tap Done first.");
+  if (outMode) return typeOutSum(String(d));
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
     // Nothing to put it in: light the digit up instead.
     padDigit = padDigit === d ? 0 : d;
@@ -469,6 +510,7 @@ function erase() {
   if (cageMode) return typeSum("back");
   if (lineKind) return stepBack();
   if (markMode) return;
+  if (outMode) return typeOutSum("back");
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
   const next = grid().slice();
   next[selected] = 0;
@@ -484,6 +526,7 @@ function undo() {
   for (const list of partLists()) s[list] = back[list];
   clearPicked();
   anchor = null;
+  clearSpot();
   path = [];
   editingLine = -1;
   checked = false;
@@ -499,7 +542,7 @@ function clearAll() {
   endCage();
   // Only what the rules on use: the rest is kept for when they come back.
   const parts = { cages: killer() ? [] : s.cages };
-  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES)]) parts[P.list] = s[kind] ? [] : s[P.list];
+  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
   change(empty(), parts);
   selected = null;
   say("Cleared. Undo brings it back.");
@@ -521,6 +564,10 @@ function pasteText(text) {
     for (const [kind, E] of Object.entries(EDGES)) {
       s[kind] = Boolean(seed[E.list]);
       parts[E.list] = seed[E.list] ? seed[E.list].map((e) => ({ cells: e.cells.slice(), mark: e.mark })) : s[E.list];
+    }
+    for (const [kind, O] of Object.entries(OUTSIDE)) {
+      s[kind] = Boolean(seed[O.list]);
+      parts[O.list] = seed[O.list] ? seed[O.list].map((o) => ({ ...o, ...(o.cells ? { cells: o.cells.slice() } : {}) })) : s[O.list];
     }
     change(seed.grid.slice(), parts);
     selected = null;
@@ -582,6 +629,8 @@ function onGo() {
   if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
   if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
+  if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
+  if (s.little && !s.littles.length) return say("Put a Little Killer sum down first: tap Outside, then a spot round the edge.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
@@ -712,7 +761,7 @@ function toggleCandidates() {
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
-  if (key === "killer" || key in LINES || key in EDGES) s[key] = !s[key];
+  if (key === "killer" || key in LINES || key in EDGES || key in OUTSIDE) s[key] = !s[key];
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -723,6 +772,7 @@ function toggleCageMode() {
   if (cageMode) return endCage(true);
   endLine();
   endMarks();
+  endOutside();
   cageMode = true;
   selected = null;
   padDigit = 0;
@@ -744,6 +794,7 @@ function endCage(draw = false) {
   clearPicked();
   endLine();
   endMarks();
+  endOutside();
   if (draw) {
     note = "";
     render();
@@ -1023,6 +1074,170 @@ function markStatus() {
   return `Tap near the side between two cells to mark it, or tap a cell and then one beside it. Each tap steps on: ${kinds}, then none.`;
 }
 
+/* ---- clues outside the grid ---- */
+
+// Sandwich's and Little Killer's clues, each kept in a list of its own as
+// lines are. Each key is also the name of the rule's switch.
+const OUTSIDE = {
+  sandwich: { list: "sandwiches", problem: sandwichProblem },
+  little: { list: "littles", problem: littleProblem },
+};
+// The ways a Little Killer diagonal can run, and an arrow for each.
+const DIAGONAL_WAYS = [
+  [1, 1, "↘"],
+  [1, -1, "↙"],
+  [-1, 1, "↗"],
+  [-1, -1, "↖"],
+];
+
+// The clues margin spot [r, c] can take, with the rules on: a Sandwich sum
+// left of a row or above a column, and a Little Killer sum each way a
+// diagonal of two cells or more runs into the grid from it.
+function spotKinds([r, c]) {
+  const kinds = [];
+  if (s.sandwich && ((c === -1 && r >= 0 && r <= 8) || (r === -1 && c >= 0 && c <= 8))) kinds.push({ kind: "sandwich", line: c === -1 ? r : 9 + c });
+  if (s.little) {
+    for (const [dr, dc, arrow] of DIAGONAL_WAYS) {
+      const cells = diagonalFrom(r + dr, c + dc, dr, dc);
+      if (cells.length >= 2) kinds.push({ kind: "little", cells, arrow });
+    }
+  }
+  return kinds;
+}
+
+// The margin spot a Sandwich or Little Killer clue sits in.
+const sandwichSpot = ({ line }) => (line < 9 ? [line, -1] : [-1, line - 9]);
+const littleSpot = ({ cells }) => [ROW[cells[0]] * 2 - ROW[cells[1]], COL[cells[0]] * 2 - COL[cells[1]]];
+const sameSpot = (a, b) => a[0] === b[0] && a[1] === b[1];
+
+// Every margin spot, for the ones a clue can go in.
+const MARGIN = [];
+for (let r = -1; r <= 9; r++) for (let c = -1; c <= 9; c++) if (r < 0 || r > 8 || c < 0 || c > 8) MARGIN.push([r, c]);
+
+// What each kind of clue at a spot is called: "Sandwich sum for row 3".
+function kindWords(k) {
+  if (k.kind === "sandwich") return `Sandwich sum for ${k.line < 9 ? `row ${k.line + 1}` : `column ${k.line - 8}`}`;
+  return `Little Killer sum ${k.arrow} from ${where(k.cells[0])}`;
+}
+
+function toggleOutMode() {
+  if (outMode) return endCage(true);
+  endCage();
+  outMode = true;
+  selected = null;
+  padDigit = 0;
+  note = "";
+  render();
+}
+
+function clearSpot() {
+  spot = null;
+  choice = 0;
+  $("outSum").value = "";
+}
+
+function endOutside() {
+  outMode = false;
+  clearSpot();
+}
+
+// A tap in the margin: picks the spot, and the clue there if it has one.
+// Out of the Outside tool, it opens it first.
+function pickSpot(at) {
+  if (s.stage !== "enter" || !(s.sandwich || s.little)) return;
+  if (!outMode) toggleOutMode();
+  const kinds = spotKinds(at);
+  if (!kinds.length) {
+    clearSpot();
+    const places = [s.sandwich && "left of a row or above a column", s.little && "anywhere round the edge with a diagonal into the grid"].filter(Boolean);
+    return say(`No clue goes there. Sums go ${places.join(", or ")}.`);
+  }
+  spot = at;
+  const sandwich = s.sandwich && s.sandwiches.find((w) => sameSpot(sandwichSpot(w), at));
+  const little = s.little && s.littles.find((l) => sameSpot(littleSpot(l), at));
+  const held = sandwich || little;
+  choice = held ? kinds.findIndex((k) => (sandwich ? k.kind === "sandwich" : k.cells?.[0] === little.cells[0] && k.cells[1] === little.cells[1])) : 0;
+  $("outSum").value = held ? String(held.sum) : "";
+  note = "";
+  render();
+}
+
+// The clue already at the picked spot, of the rules on: { list, index }, or
+// null.
+function heldAtSpot() {
+  if (!spot) return null;
+  for (const [kind, O] of Object.entries(OUTSIDE)) {
+    if (!s[kind]) continue;
+    const at = kind === "sandwich" ? sandwichSpot : littleSpot;
+    const index = s[O.list].findIndex((clue) => sameSpot(at(clue), spot));
+    if (index >= 0) return { list: O.list, index };
+  }
+  return null;
+}
+
+// Digits typed while a spot is picked go to its sum; "back" takes one off.
+function typeOutSum(key) {
+  if (!spot) return say("Tap a spot round the edge of the grid first, then type its sum.");
+  const box = $("outSum");
+  box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-2);
+  note = "";
+  render();
+}
+
+function turnSpot() {
+  const kinds = spot ? spotKinds(spot) : [];
+  if (kinds.length < 2) return;
+  choice = (choice + 1) % kinds.length;
+  note = "";
+  render();
+}
+
+// The picked spot's clue, put down or changed: whatever was at the spot
+// before goes, so a spot never holds two.
+function onOutAdd() {
+  if (!spot) return;
+  const text = $("outSum").value.trim();
+  if (!/^\d+$/.test(text)) return say("Type the sum first.");
+  const sum = Number(text);
+  const k = spotKinds(spot)[choice];
+  const parts = {
+    sandwiches: s.sandwiches.filter((w) => !sameSpot(sandwichSpot(w), spot)),
+    littles: s.littles.filter((l) => !sameSpot(littleSpot(l), spot)),
+  };
+  if (k.kind === "sandwich") parts.sandwiches.push({ line: k.line, sum });
+  else parts.littles.push({ cells: k.cells.slice(), sum });
+  const problem = k.kind === "sandwich" ? sandwichProblem(parts.sandwiches) : littleProblem(parts.littles);
+  if (problem) return say((k.kind === "sandwich" ? SANDWICH_PROBLEMS : LITTLE_PROBLEMS)[problem.why]);
+  parts.sandwiches.sort((a, b) => a.line - b.line);
+  change(s.clues, parts);
+  clearSpot();
+  say(`${kindWords(k)}: ${sum}. Tap the next spot, or Done.`);
+}
+
+function onOutRemove() {
+  const held = heldAtSpot();
+  if (!held) return;
+  change(s.clues, { [held.list]: s[held.list].filter((_, i) => i !== held.index) });
+  clearSpot();
+  say("Sum removed. Undo brings it back.");
+}
+
+// Margin spots open for a clue: those that can take one and have none yet.
+function openSpots() {
+  const taken = [...(s.sandwich ? s.sandwiches.map(sandwichSpot) : []), ...(s.little ? s.littles.map(littleSpot) : [])];
+  return MARGIN.filter((at) => spotKinds(at).length && !taken.some((t) => sameSpot(t, at)));
+}
+
+function outStatus() {
+  if (!spot) {
+    const places = [s.sandwich && "left of a row or above a column for a Sandwich sum", s.little && "round the edge for a Little Killer sum"].filter(Boolean);
+    return `Tap a spot ${places.join(", or ")}. A Sandwich sum adds up the digits between a line's 1 and 9; a Little Killer sum, the diagonal its arrow points along.`;
+  }
+  const kinds = spotKinds(spot);
+  const turn = kinds.length > 1 ? " Turn picks what goes there." : "";
+  return `${kindWords(kinds[choice])}: type it, then ${heldAtSpot() ? "Change sum" : "Add sum"}.${turn}`;
+}
+
 /* ---- drawing ---- */
 
 function defaultStatus() {
@@ -1031,6 +1246,7 @@ function defaultStatus() {
     if (cageMode) return cageStatus();
     if (lineKind) return lineStatus();
     if (markMode) return markStatus();
+    if (outMode) return outStatus();
     if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
     if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
     if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
@@ -1039,6 +1255,10 @@ function defaultStatus() {
       return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
     }
     if (s.xv && !s.xvs.length) return "An XV puzzle: tap Marks, then near the side between two cells. Digits either side of an X add up to 10, of a V to 5.";
+    if (s.sandwich && !s.sandwiches.length) {
+      return "A Sandwich puzzle: tap Outside, then a spot left of a row or above a column, and type the sum of the digits between its 1 and its 9.";
+    }
+    if (s.little && !s.littles.length) return "A Little Killer puzzle: tap Outside, then a spot round the edge, and type the sum of the diagonal its arrow points along.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
@@ -1105,6 +1325,11 @@ function render() {
     renbans: shownLines("renban"),
     dots: s.kropki ? s.dots : null,
     xvs: s.xv ? s.xvs : null,
+    sandwiches: s.sandwich ? s.sandwiches : null,
+    littles: s.little ? s.littles : null,
+    margin: s.sandwich || s.little,
+    spots: outMode ? openSpots() : [],
+    spot: outMode ? spot : null,
     path: lineKind ? path : [],
     pathKind: lineKind ?? "thermo",
     rules: s.rules,
@@ -1154,8 +1379,10 @@ function render() {
     lineBar: Boolean(lineKind),
     solverMarks: enter && (s.kropki || s.xv),
     markBar: markMode,
+    solverOutside: enter && (s.sandwich || s.little),
+    outBar: outMode,
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && ![...Object.keys(LINES), ...Object.keys(EDGES)].some((kind) => s[kind]) && !s.rules,
+    solverCopy: !killer() && ![LINES, EDGES, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -1178,7 +1405,7 @@ function render() {
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
     const { rule } = b.dataset;
-    const on = rule === "killer" || rule in LINES || rule in EDGES ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
+    const on = rule === "killer" || rule in LINES || rule in EDGES || rule in OUTSIDE ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
     b.setAttribute("aria-pressed", String(on));
   });
   $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
@@ -1188,6 +1415,19 @@ function render() {
   $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
   $("solverMarks").setAttribute("aria-pressed", String(markMode));
+  $("solverOutside").setAttribute("aria-pressed", String(outMode));
+  if (outMode) {
+    const kinds = spot ? spotKinds(spot) : [];
+    const held = heldAtSpot();
+    for (const id of ["outSum", "outAdd"]) $(id).classList.toggle("hidden", !spot);
+    $("outTurn").classList.toggle("hidden", kinds.length < 2);
+    $("outRemove").classList.toggle("hidden", !held);
+    $("outAddLabel").textContent = held ? "Change sum" : "Add sum";
+    $("outAdd").disabled = !/^\d+$/.test($("outSum").value.trim());
+    // Turn names what it turns the spot's clue into.
+    const next = kinds[(choice + 1) % kinds.length];
+    if (next) $("outTurnLabel").textContent = next.kind === "sandwich" ? "Sandwich" : `Diagonal ${next.arrow}`;
+  }
   if (lineKind) {
     $("lineAddLabel").textContent = addLabel();
     $("lineRemoveLabel").textContent = `Remove ${LINES[lineKind].short}`;
@@ -1245,6 +1485,10 @@ function onKey(e) {
   else if (lineKind && e.key === "Enter") onLineAdd();
   else if (lineKind && e.key === "Escape") endCage(true);
   else if (markMode && e.key === "Escape") endCage(true);
+  else if (outMode && /^[0-9]$/.test(e.key)) typeOutSum(e.key);
+  else if (outMode && (e.key === "Backspace" || e.key === "Delete")) typeOutSum("back");
+  else if (outMode && e.key === "Enter") onOutAdd();
+  else if (outMode && e.key === "Escape") endCage(true);
   else if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
   else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
@@ -1256,7 +1500,7 @@ function onKey(e) {
 // reopen: go back into the solver or the maker if one was open when the
 // page was left.
 export function initSolver({ reopen = true } = {}) {
-  board = new BoardView($("solverBoard"), { onSelect: selectCell });
+  board = new BoardView($("solverBoard"), { onSelect: selectCell, onSpot: pickSpot });
   load("solver");
   load("create");
 
@@ -1290,6 +1534,15 @@ export function initSolver({ reopen = true } = {}) {
   $("solverRenbans").addEventListener("click", () => toggleLineMode("renban"));
   $("solverMarks").addEventListener("click", toggleMarkMode);
   $("markDone").addEventListener("click", () => endCage(true));
+  $("solverOutside").addEventListener("click", toggleOutMode);
+  $("outAdd").addEventListener("click", onOutAdd);
+  $("outTurn").addEventListener("click", turnSpot);
+  $("outRemove").addEventListener("click", onOutRemove);
+  $("outDone").addEventListener("click", () => endCage(true));
+  $("outSum").addEventListener("input", () => render());
+  $("outSum").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onOutAdd();
+  });
   $("lineAdd").addEventListener("click", onLineAdd);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));

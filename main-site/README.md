@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, Kropki dots, XV marks, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, Kropki dots, XV marks, Sandwich and Little Killer clues, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -81,7 +81,8 @@ network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
 board, on or off in any mix: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Kropki, XV, Diagonal (both long diagonals hold 1
+Whispers), Renban, Kropki, XV, Sandwich, Little Killer, Diagonal (both
+long diagonals hold 1
 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
@@ -91,13 +92,16 @@ variant.js, diagonals and windows are extra houses and the knight's and
 king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
-clues. Its seed starts with its rules' letters, K, T, A, S, R, P, V, D, N,
-G and W, always in that order, as in `KD-H-...`; a seed with K, T, A, S,
-R, P or V carries its cages, thermometers, arrows, whisper lines, renban
-lines, dots or XV marks in its body too (a line as its length, its first
-cell and each step's direction; dots and marks as a list of their sides, or
-past 27 of them every side's mark, whichever is shorter), and the others'
-carry the clues only.
+clues, and one with anything drawn can have no given digits at all. Its
+seed starts with its rules' letters, K, T, A, S, R, P, V, B, L, D, N, G and
+W, always in that order, as in `KD-H-...`; a seed with K, T, A, S, R, P,
+V, B or L carries its cages, thermometers, arrows, whisper lines, renban
+lines, dots, XV marks, Sandwich sums or Little Killer sums in its body too
+(a line as its length, its first cell and each step's direction; dots and
+marks as a list of their sides, or past 27 of them every side's mark,
+whichever is shorter; Sandwich sums as every row's and column's sum or
+none; Little Killer sums as each one's first cell, way and sum), and the
+others' carry the clues only.
 
 Some mixes of the switch rules have no grid at all, whatever else is on:
 anti-knight with anti-king and either Diagonal or Windoku, and anti-knight
@@ -153,6 +157,23 @@ none. The solver keeps each cell of a marked pair to digits some digit the
 other cell can be makes a pair with, and a pair that breaks its mark shows
 as a clash. Dots are drawn white and black in either theme, and X and V as
 letters, on the side, on the board and in a saved image.
+
+**Sandwich and Little Killer.** Their clues sit outside the grid, so with
+either rule on, or a puzzle that has them, the board leaves a margin a cell
+wide round the grid (the grid takes the middle 9 of 11), and so does a
+saved image. A Sandwich sum, left of a row or above a column, adds up the
+digits between that line's 1 and 9, 0 when they sit side by side. A Little
+Killer sum, anywhere round the edge, adds up the whole diagonal its small
+arrow points along, and digits may repeat on it. The Outside tool puts
+them down: tap a spot in the margin (tapping one opens the tool), type the
+sum, and Add sum; Turn switches a spot between a Sandwich sum and each
+diagonal it could point along, and a spot holds one clue. The solver tries
+each place a sandwich's 1 and 9 could take and keeps what the cells between
+could add up to with different digits 2 to 8; a Little Killer diagonal it
+squeezes as it does an arrow. A sandwich or diagonal past its sum, or full
+at some other sum, shows as a clash. Near its last clues a Little Killer
+puzzle can take the checker its whole budget, about a second, to give up
+on.
 
 **Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
 sum from the pad, the keyboard or the sum box, and adds the cage; tapping a

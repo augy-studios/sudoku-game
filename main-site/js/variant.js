@@ -2,7 +2,7 @@
 // the API imports it too, to work out a made variant puzzle's answer.
 //
 // A variant is { cages, thermos, arrows, whispers, renbans, dots, xvs,
-// rules }:
+// sandwiches, littles, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -26,6 +26,14 @@
 //   xvs      XV marks, as dots: an "x" mark's digits add up to 10, a "v"
 //            mark's to 5. Cells with no dot or mark between them may be
 //            anything the other rules allow.
+//   sandwiches  Sandwich clues outside the grid, [{ line, sum }]: line 0 to
+//            8 a row, its clue on the left, and 9 to 17 a column, its clue
+//            above. The digits between the line's 1 and its 9 add up to the
+//            sum, 0 when they sit side by side.
+//   littles  Little Killer clues outside the grid, [{ cells, sum }]: cells
+//            a whole diagonal, from the edge the clue sits by to the far
+//            edge, two cells at least. Its digits add up to the sum, and may
+//            repeat where the rules allow.
 //   rules    switches, as bits (RULES below): Diagonal, both long
 //            diagonals hold 1 to 9; Anti-knight, cells a knight's move apart
 //            differ; Anti-king, cells touching at a corner differ; Windoku,
@@ -51,8 +59,10 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
+  if (littles?.length) names.unshift("Little Killer");
+  if (sandwiches?.length) names.unshift("Sandwich");
   if (xvs?.length) names.unshift("XV");
   if (dots?.length) names.unshift("Kropki");
   if (renbans?.length) names.unshift("Renban");
@@ -437,6 +447,147 @@ function edgeBounds(edges, g, free) {
   return true;
 }
 
+/* ---- clues outside the grid ---- */
+
+// A Sandwich clue's row or column: its cells, from the clue's side.
+export const SANDWICH_LINES = [
+  ...[...Array(9).keys()].map((r) => [...Array(9).keys()].map((c) => cellAt(r, c))),
+  ...[...Array(9).keys()].map((c) => [...Array(9).keys()].map((r) => cellAt(r, c))),
+];
+// The most the digits 2 to 8 add up to.
+export const SANDWICH_MAX = 35;
+
+// Whether Sandwich clues are well formed: a line and a sum 0 to 35 each, no
+// line twice. null if so, or what is wrong: { why, at }.
+export function sandwichProblem(sandwiches) {
+  const seen = new Set();
+  for (let i = 0; i < sandwiches.length; i++) {
+    const { line, sum } = sandwiches[i] ?? {};
+    if (!Number.isInteger(line) || line < 0 || line > 17) return { why: "line", at: i };
+    if (!Number.isInteger(sum) || sum < 0 || sum > SANDWICH_MAX) return { why: "sum", at: i };
+    if (seen.has(line)) return { why: "twice", at: i };
+    seen.add(line);
+  }
+  return null;
+}
+
+// The diagonal from row r, column c, stepping dr and dc, to the far edge;
+// empty if (r, c) is off the board.
+export function diagonalFrom(r, c, dr, dc) {
+  const out = [];
+  for (; r >= 0 && r < 9 && c >= 0 && c < 9; r += dr, c += dc) out.push(cellAt(r, c));
+  return out;
+}
+
+// Whether Little Killer clues are well formed: each a whole diagonal of two
+// cells or more, from an edge of the board to the far one, a sum its cells
+// could make, and no two from the same cell the same way. null if so, or
+// what is wrong: { why, at }.
+export function littleProblem(littles) {
+  const seen = new Set();
+  for (let i = 0; i < littles.length; i++) {
+    const { cells, sum } = littles[i] ?? {};
+    if (!Array.isArray(cells) || cells.length < 2 || !cells.every((c) => Number.isInteger(c) && c >= 0 && c <= 80)) return { why: "cell", at: i };
+    const dr = ROW[cells[1]] - ROW[cells[0]];
+    const dc = COL[cells[1]] - COL[cells[0]];
+    const whole = diagonalFrom(ROW[cells[0]], COL[cells[0]], dr, dc);
+    const fromEdge = !diagonalFrom(ROW[cells[0]] - dr, COL[cells[0]] - dc, dr, dc).length;
+    if (Math.abs(dr) !== 1 || Math.abs(dc) !== 1 || !fromEdge || whole.join() !== cells.join()) return { why: "diagonal", at: i };
+    if (!Number.isInteger(sum) || sum < cells.length || sum > 9 * cells.length) return { why: "sum", at: i };
+    const key = `${cells[0]},${cells[1]}`;
+    if (seen.has(key)) return { why: "twice", at: i };
+    seen.add(key);
+  }
+  return null;
+}
+
+// The digits 2 to 8, which a sandwich's filling is made of, and MIDDLE[k][s]:
+// every set of k of them adding up to s.
+const INNER = ALL & ~(1 << 1) & ~(1 << 9);
+const MIDDLE = COMBOS.map((row) => row.map((sets) => sets.filter((m) => !(m & ~INNER))));
+
+// Narrows each Sandwich clue's line to the ways it could still go: for each
+// place its 1 and its 9 could take, whether the cells between could add up
+// to the sum with different digits 2 to 8, and if so what each cell could
+// then be. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if no way is left.
+function sandwichBounds(sandwiches, g, free) {
+  const allow = new Int32Array(9);
+  for (const { line, sum } of sandwiches) {
+    const cells = SANDWICH_LINES[line];
+    const m = cells.map((c) => (g[c] ? 1 << g[c] : free[c]));
+    allow.fill(0);
+    let fits = false;
+    for (let i = 0; i < 9; i++) {
+      if (!(m[i] & (1 << 1))) continue;
+      for (let j = 0; j < 9; j++) {
+        if (j === i || !(m[j] & (1 << 9))) continue;
+        const lo = Math.min(i, j);
+        const hi = Math.max(i, j);
+        let placed = 0;
+        let rest = sum;
+        let left = 0;
+        let room = 0;
+        let ok = true;
+        for (let k = lo + 1; k < hi && ok; k++) {
+          const d = g[cells[k]];
+          if (!d) {
+            left++;
+            room |= m[k];
+          } else if (INNER & ~placed & (1 << d)) {
+            placed |= 1 << d;
+            rest -= d;
+          } else ok = false;
+        }
+        if (!ok || rest < 0) continue;
+        let inner = 0;
+        for (const set of MIDDLE[left][rest] ?? []) if (!(set & placed) && !(set & ~room)) inner |= set;
+        if (left ? !inner : rest) continue;
+        fits = true;
+        for (let k = 0; k < 9; k++) {
+          if (k === i) allow[k] |= 1 << 1;
+          else if (k === j) allow[k] |= 1 << 9;
+          else allow[k] |= k > lo && k < hi ? inner | placed : INNER;
+        }
+      }
+    }
+    if (!fits) return false;
+    for (let k = 0; k < 9; k++) {
+      const c = cells[k];
+      if (g[c]) {
+        if (!(allow[k] & (1 << g[c]))) return false;
+      } else if (!(free[c] &= allow[k])) return false;
+    }
+  }
+  return true;
+}
+
+// Squeezes each Little Killer diagonal as arrowBounds squeezes an arrow,
+// with the sum for the circle: each cell between what the sum leaves once
+// the others are at their most and at their least. Placed digits count as
+// masks of one, and `free` is narrowed in place; false if a diagonal cannot
+// add up.
+function littleBounds(littles, g, free) {
+  for (const { cells, sum } of littles) {
+    let lo = 0;
+    let hi = 0;
+    for (const c of cells) {
+      const m = g[c] ? 1 << g[c] : free[c];
+      if (!m) return false;
+      lo += LOW[m];
+      hi += HIGH[m];
+    }
+    if (sum < lo || sum > hi) return false;
+    for (const c of cells) {
+      if (g[c]) continue;
+      const m = free[c] & between(sum - (hi - HIGH[free[c]]), sum - (lo - LOW[free[c]]));
+      if (!m) return false;
+      free[c] = m;
+    }
+  }
+  return true;
+}
+
 /* ---- candidates and solving ---- */
 
 const norm = (v) => ({
@@ -447,15 +598,17 @@ const norm = (v) => ({
   renbans: v?.renbans ?? [],
   dots: v?.dots ?? [],
   xvs: v?.xvs ?? [],
+  sandwiches: v?.sandwiches ?? [],
+  littles: v?.littles ?? [],
   rules: v?.rules ?? 0,
 });
 
 // What can go in each empty cell, by every cell it must differ from, its
-// cage, its thermometers, arrows and other lines, and its dots and marks; 0
-// for a filled cell. A cage allows digits not already in it that some way
-// of filling the rest of it can use.
+// cage, its thermometers, arrows and other lines, its dots and marks, and
+// the clues outside; 0 for a filled cell. A cage allows digits not already
+// in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, dots, xvs, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules } = norm(variant);
   const { peers } = layout(rules);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -484,12 +637,15 @@ export function variantCandidates(grid, variant) {
   renbanBounds(renbans, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
+  sandwichBounds(sandwiches, grid, out);
+  littleBounds(littles, grid, out);
   return out;
 }
 
 // Depth first search. At each step every empty cell's candidates are worked
 // out from its houses, the cells it must differ from, its thermometers,
-// arrows and other lines, its dots and marks, and its cage, where a
+// arrows and other lines, its dots and marks, the clues outside, and its
+// cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
 // cage cannot do without and only one of its cells can take, goes there;
@@ -503,7 +659,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, dots, xvs, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules);
   let steps = 0;
   const hm = new Int32Array(houses.length);
@@ -557,6 +713,8 @@ function search(grid, variant, found) {
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
+    if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;
+    if (littles.length && !littleBounds(littles, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

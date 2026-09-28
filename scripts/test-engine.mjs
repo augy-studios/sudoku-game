@@ -24,6 +24,10 @@ import {
   renbanProblem,
   dotProblem,
   xvProblem,
+  sandwichProblem,
+  littleProblem,
+  diagonalFrom,
+  SANDWICH_LINES,
   markKeeps,
   touching,
   layout,
@@ -593,13 +597,16 @@ function layLines(solution, rand, fits, { count = 8, min = 3, max = 6, used = ne
 }
 
 // Clues taken out of a solved grid, in a seeded order, while the answer
-// stays the only one under `variant`.
-function thinOut(solution, variant, rand) {
+// stays the only one under `variant`. With `untilHard`, it stops at the
+// first the checker gives up on, which can take it a second or two.
+function thinOut(solution, variant, rand, { untilHard = false } = {}) {
   const puzzle = solution.slice();
   for (const c of [...Array(81).keys()].sort(() => rand() - 0.5)) {
     const d = puzzle[c];
     puzzle[c] = 0;
-    if (variantSolutions(puzzle, variant, 2)?.length !== 1) puzzle[c] = d;
+    const found = variantSolutions(puzzle, variant, 2);
+    if (found?.length !== 1) puzzle[c] = d;
+    if (!found && untilHard) break;
   }
   return puzzle;
 }
@@ -832,6 +839,140 @@ test("XV marks are checked, solved and carried in seeds", () => {
   assert.equal(seedVariantName("KTASRPVD-H-BBBB"), "Killer, Thermo, Arrow, German Whispers, Renban, Kropki, XV, Diagonal");
 });
 
+// A solved grid's Sandwich clue for a line: the digits between its 1 and
+// its 9, added up.
+function sandwichOf(solution, line) {
+  const digits = SANDWICH_LINES[line].map((c) => solution[c]);
+  const [i, j] = [digits.indexOf(1), digits.indexOf(9)].sort((a, b) => a - b);
+  return { line, sum: digits.slice(i + 1, j).reduce((t, d) => t + d, 0) };
+}
+
+// Every Little Killer clue a board has room for: a whole diagonal of two
+// cells or more from each spot round the edge, each way into the board.
+const LITTLE_SPOTS = [];
+for (let r = -1; r <= 9; r++) {
+  for (let c = -1; c <= 9; c++) {
+    if (r >= 0 && r < 9 && c >= 0 && c < 9) continue;
+    for (const [dr, dc] of [
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ]) {
+      const cells = diagonalFrom(r + dr, c + dc, dr, dc);
+      if (cells.length >= 2) LITTLE_SPOTS.push(cells);
+    }
+  }
+}
+const littleOf = (solution, cells) => ({ cells, sum: cells.reduce((t, c) => t + solution[c], 0) });
+
+// Some of a solved grid's Sandwich clues, each line with chance `p`.
+const laySandwiches = (solution, rand, p) => [...Array(18).keys()].filter(() => rand() < p).map((line) => sandwichOf(solution, line));
+// Some of its Little Killer clues, at most one from each spot.
+function layLittles(solution, rand, p) {
+  const spots = new Set();
+  return LITTLE_SPOTS.filter((cells) => {
+    const spot = `${cells[0] - (cells[1] - cells[0])}`;
+    if (spots.has(spot) || rand() >= p) return false;
+    spots.add(spot);
+    return true;
+  }).map((cells) => littleOf(solution, cells));
+}
+
+test("Sandwich clues are checked, solved and carried in seeds", () => {
+  assert.equal(sandwichProblem([{ line: 0, sum: 0 }, { line: 17, sum: 35 }]), null);
+  assert.equal(sandwichProblem([{ line: 18, sum: 5 }]).why, "line");
+  assert.equal(sandwichProblem([{ line: 3, sum: 36 }]).why, "sum");
+  assert.equal(sandwichProblem([{ line: 3, sum: 5 }, { line: 3, sum: 6 }]).why, "twice");
+
+  // 35 is every digit from 2 to 8, so the 1 and the 9 are at the ends.
+  const empty = new Array(81).fill(0);
+  const wide = variantCandidates(empty, { sandwiches: [{ line: 0, sum: 35 }] });
+  assert.equal(wide[0], (1 << 1) | (1 << 9));
+  assert.equal(wide[8], (1 << 1) | (1 << 9));
+  assert.equal(wide[4] & ((1 << 1) | (1 << 9)), 0);
+  // 0 puts them side by side: with the 9 in the middle, the 1 is beside it.
+  const nine = empty.slice();
+  nine[4] = 9;
+  const tight = variantCandidates(nine, { sandwiches: [{ line: 0, sum: 0 }] });
+  for (let c = 0; c < 9; c++) assert.equal(Boolean(tight[c] & (1 << 1)), c === 3 || c === 5, `1 at ${c}`);
+
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(29);
+  const sandwiches = laySandwiches(solution, rand, 0.7);
+  const variant = { sandwiches };
+  assert.equal(clashes(solution, variant).size, 0);
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the sums");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  // No digits at all is not "empty" when there are sums to go on.
+  assert.notEqual(checkClues(empty, { sandwiches: [...Array(18).keys()].map((line) => sandwichOf(solution, line)) }).why, "empty");
+
+  // A filling past its sum clashes, 1 and 9 with it; so does one that falls
+  // short once full.
+  const row = empty.slice();
+  row[0] = 1;
+  row[1] = 2;
+  row[2] = 3;
+  row[3] = 9;
+  assert.deepEqual([...clashes(row, { sandwiches: [{ line: 0, sum: 4 }] })].sort((a, b) => a - b), [0, 1, 2, 3]);
+  assert.equal(clashes(row, { sandwiches: [{ line: 0, sum: 5 }] }).size, 0);
+  assert.equal(clashes(row, { sandwiches: [{ line: 0, sum: 6 }] }).size, 4);
+
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^B-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.sandwiches, sandwiches);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+});
+
+test("Little Killer clues are checked, solved and carried in seeds", () => {
+  assert.equal(littleProblem([{ cells: diagonalFrom(0, 1, 1, 1), sum: 40 }]), null);
+  assert.equal(littleProblem([{ cells: diagonalFrom(8, 0, -1, 1), sum: 45 }]), null, "from the bottom edge, up and right");
+  assert.equal(littleProblem([{ cells: [8], sum: 5 }]).why, "cell");
+  assert.equal(littleProblem([{ cells: [10, 20, 30], sum: 10 }]).why, "diagonal", "not from an edge");
+  assert.equal(littleProblem([{ cells: [1, 11, 21], sum: 10 }]).why, "diagonal", "stops short of the far edge");
+  assert.equal(littleProblem([{ cells: [7, 17], sum: 19 }]).why, "sum");
+  assert.equal(LITTLE_SPOTS.length, 4 * 8 * 2 - 4 + 4 - 4, "two ways from each side spot but the ends, one from each corner");
+
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(31);
+  const littles = layLittles(solution, rand, 0.4);
+  const variant = { littles };
+  assert.ok(littles.length >= 8, `${littles.length} clues`);
+  assert.equal(clashes(solution, variant).size, 0);
+  // Near its last clues a Little Killer puzzle can outrun the checker's
+  // budget, so it is thinned only as far as the checker settles.
+  const puzzle = thinOut(solution, variant, rand, { untilHard: true });
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the sums");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  // Two cells adding to 17 are an 8 and a 9.
+  const pair = variantCandidates(new Array(81).fill(0), { littles: [{ cells: [7, 17], sum: 17 }] });
+  assert.equal(pair[7], (1 << 8) | (1 << 9));
+
+  const over = new Array(81).fill(0);
+  over[7] = 9;
+  over[17] = 9;
+  assert.deepEqual([...clashes(over, { littles: [{ cells: [7, 17], sum: 17 }] })], [7, 17]);
+
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^L-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  // The seed keeps them in one order: by first cell, then which way.
+  const order = (list) => list.slice().sort((a, b) => a.cells[0] - b.cells[0] || b.cells[1] - a.cells[1]);
+  assert.deepEqual(back.littles, order(littles));
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  assert.equal(seedVariantName("KTASRPVBLD-H-BBBB"), "Killer, Thermo, Arrow, German Whispers, Renban, Kropki, XV, Sandwich, Little Killer, Diagonal");
+});
+
 // Cages laid through a solved grid: `count` of them, two to four cells
 // joined edge to edge with no digit twice, none sharing a cell.
 function layCages(solution, rand, count) {
@@ -905,9 +1046,11 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
     const xvs = layEdges(solution, rand, ["x", "v"], 0.3, sides);
-    const variant = { cages, thermos, arrows, whispers, renbans, dots, xvs, rules };
+    const sandwiches = laySandwiches(solution, rand, 0.25);
+    const littles = layLittles(solution, rand, 0.1);
+    const variant = { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules };
     const name = keys.join(", ");
-    for (const list of ["thermos", "arrows", "whispers", "renbans", "dots", "xvs"]) assert.ok(variant[list].length, `${name}: some ${list}`);
+    for (const list of ["thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles"]) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
     const puzzle = thinOut(solution, variant, rand);
@@ -919,12 +1062,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASRPV" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASRPVBL" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     assert.deepEqual(puzzleFor(back).solution, solution);
   }
 });

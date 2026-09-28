@@ -497,6 +497,9 @@ function update({ fresh = false } = {}) {
       renbans: g.seed.renbans ?? null,
       dots: g.seed.dots ?? null,
       xvs: g.seed.xvs ?? null,
+      sandwiches: g.seed.sandwiches ?? null,
+      littles: g.seed.littles ?? null,
+      margin: Boolean(g.seed.sandwiches || g.seed.littles),
     });
   }
   renderChips(over);
@@ -719,6 +722,8 @@ function finish(fresh) {
       renbans: g.seed.renbans,
       dots: g.seed.dots,
       xvs: g.seed.xvs,
+      sandwiches: g.seed.sandwiches,
+      littles: g.seed.littles,
       rules: g.seed.rules,
     },
     { highlightSame: s.highlight_same },
@@ -951,6 +956,8 @@ function watch(link) {
       renbans: link.seed.renbans,
       dots: link.seed.dots,
       xvs: link.seed.xvs,
+      sandwiches: link.seed.sandwiches,
+      littles: link.seed.littles,
       rules: link.seed.rules,
     },
     { highlightSame: getSettings().highlight_same },

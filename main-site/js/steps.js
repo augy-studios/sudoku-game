@@ -5,8 +5,8 @@
 // the same as a cell's notes, so the board can draw one as the other.
 //
 // Each takes a variant, { cages, thermos, arrows, whispers, renbans, dots,
-// xvs, rules } (variant.js), as an optional last argument; without one the
-// rules are the classic ones.
+// xvs, sandwiches, littles, rules } (variant.js), as an optional last
+// argument; without one the rules are the classic ones.
 
 import { PEERS, countSolutions, findSolutions } from "./sudoku.js";
 import {
@@ -20,16 +20,17 @@ import {
   renbanProblem,
   dotProblem,
   xvProblem,
+  sandwichProblem,
+  littleProblem,
   markKeeps,
+  SANDWICH_LINES,
 } from "./variant.js";
 
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const isVariant = (v) =>
-  Boolean(
-    v?.cages?.length || v?.thermos?.length || v?.arrows?.length || v?.whispers?.length || v?.renbans?.length || v?.dots?.length || v?.xvs?.length || v?.rules
-  );
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles"];
+const isVariant = (v) => Boolean(v?.rules || DRAWN.some((list) => v?.[list]?.length));
 
 // 81 cells in reading order: digits for clues, 0 or . for blanks. Anything
 // else, such as spaces and grid lines, is skipped.
@@ -61,7 +62,10 @@ export function bitCount(mask) {
 // empty), or fill the arrow to some other sum; digits next to each other on
 // a German Whispers line less than 5 apart; a renban line's digits that
 // repeat, or all of them once they spread wider than the line is long; and
-// the two digits either side of a dot or an XV mark they break.
+// the two digits either side of a dot or an XV mark they break; a
+// sandwich's 1, 9 and the digits between once those go past its sum, or
+// fill it to some other sum; and a Little Killer diagonal's digits once
+// they go past its sum, or fill it to some other sum.
 export function clashes(grid, variant = null) {
   const peers = variant?.rules ? layout(variant.rules).peers : PEERS;
   const out = new Set();
@@ -115,6 +119,21 @@ export function clashes(grid, variant = null) {
       out.add(a);
       out.add(b);
     }
+  }
+  for (const { line, sum } of variant?.sandwiches ?? []) {
+    const cells = SANDWICH_LINES[line];
+    const i = cells.findIndex((c) => grid[c] === 1);
+    const j = cells.findIndex((c) => grid[c] === 9);
+    if (i < 0 || j < 0) continue;
+    const inside = cells.slice(Math.min(i, j) + 1, Math.max(i, j));
+    const filled = inside.filter((c) => grid[c]);
+    const total = filled.reduce((t, c) => t + grid[c], 0);
+    if (total > sum || (filled.length === inside.length && total !== sum)) [cells[i], cells[j], ...filled].forEach((c) => out.add(c));
+  }
+  for (const { cells, sum } of variant?.littles ?? []) {
+    const filled = cells.filter((c) => grid[c]);
+    const total = filled.reduce((t, c) => t + grid[c], 0);
+    if (total > sum || (filled.length === cells.length && total !== sum)) filled.forEach((c) => out.add(c));
   }
   return out;
 }
@@ -180,17 +199,19 @@ export const MIN_CLUES = 17;
 
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
-// "cages", "thermos", "arrows", "whispers", "renbans", "dots" or "xvs" (and
-// problem, from cageProblem, thermoProblem and so on),
+// "cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs",
+// "sandwiches" or "littles" (and problem, from cageProblem, thermoProblem
+// and so on),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
 // of the answers disagree on, and the two digits they put there). A
 // variant's rules do some of the clues' work, so it has no least number of
-// clues, and a killer puzzle can have none at all.
+// clues, and one with anything drawn, cages or lines or clues outside, can
+// have none at all.
 export function checkClues(clues, variant = null) {
   const killer = Boolean(variant?.cages?.length);
   const n = clues.filter(Boolean).length;
-  if (!n && !killer) return { ok: false, why: "empty" };
+  if (!n && !DRAWN.some((list) => variant?.[list]?.length)) return { ok: false, why: "empty" };
   if (clashes(clues, variant).size) return { ok: false, why: "clash" };
   if (killer) {
     const problem = cageProblem(variant.cages);
@@ -220,6 +241,14 @@ export function checkClues(clues, variant = null) {
     const problem = xvProblem(variant.xvs);
     if (problem) return { ok: false, why: "xvs", problem };
   }
+  if (variant?.sandwiches?.length) {
+    const problem = sandwichProblem(variant.sandwiches);
+    if (problem) return { ok: false, why: "sandwiches", problem };
+  }
+  if (variant?.littles?.length) {
+    const problem = littleProblem(variant.littles);
+    if (problem) return { ok: false, why: "littles", problem };
+  }
   const found = isVariant(variant) ? variantSolutions(clues, variant, 2) : countSolutions(clues, 2) ? findSolutions(clues, 2) : [];
   if (!found) return { ok: false, why: "hard" };
   if (!found.length) return { ok: false, why: "none" };
@@ -236,9 +265,10 @@ export function rateLevel(clues, variant = null) {
   const grid = clues.slice();
   for (let step = nextStep(grid, null, variant); step; step = nextStep(grid, null, variant)) grid[step.c] = step.d;
   const blanks = clues.filter((d) => !d).length;
-  // A killer puzzle usually has few clues or none, so blanks say little:
-  // what counts is how far singles get with the cages.
-  if (variant?.cages?.length) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
+  // A killer, sandwich or little killer puzzle usually has few clues or
+  // none, so blanks say little: what counts is how far singles get with the
+  // cages and the sums.
+  if (["cages", "sandwiches", "littles"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
   if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
   return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

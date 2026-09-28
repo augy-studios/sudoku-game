@@ -2,6 +2,8 @@
 // board whatever the theme, in the app's font, with the site's name under it,
 // and a variant puzzle's cages, thermometers, arrows, German Whispers and
 // renban lines, Kropki dots, XV marks, diagonals and windows as on screen.
+// Sandwich and Little Killer clues sit outside the grid, in a margin a cell
+// wide the image grows by.
 
 import { variantName } from "./variant.js";
 
@@ -27,8 +29,9 @@ const WHISPER_GREEN = "#a8dcb2";
 const RENBAN_PURPLE = "#dac6ee";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, whispers, renbans, dots, xvs, rules }
-// (variant.js), or nothing for a classic puzzle.
+// variant: { cages, thermos, arrows, whispers, renbans, dots, xvs,
+// sandwiches, littles, rules } (variant.js), or nothing for a classic
+// puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
@@ -38,6 +41,10 @@ export async function drawPuzzle(grid, variant = null) {
   const renbans = variant?.renbans ?? [];
   const dots = variant?.dots ?? [];
   const xvs = variant?.xvs ?? [];
+  const sandwiches = variant?.sandwiches ?? [];
+  const littles = variant?.littles ?? [];
+  // Room round the grid for clues outside it; the grid is drawn as without.
+  const margin = sandwiches.length || littles.length ? CELL : 0;
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -46,12 +53,13 @@ export async function drawPuzzle(grid, variant = null) {
     // Falls back to the system font.
   }
   const canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
+  canvas.width = WIDTH + margin * 2;
+  canvas.height = HEIGHT + margin * 2;
   const ctx = canvas.getContext("2d");
 
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(margin, margin);
 
   // Alternate boxes tinted, as on the board.
   ctx.fillStyle = BOX_ALT;
@@ -183,10 +191,38 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.fillText(String(grid[c]), PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.54) * CELL);
   }
 
+  // Clues outside, as on the board: a Sandwich's sum by its row or column,
+  // a Little Killer's to one side of its spot with an arrow along its
+  // diagonal. Spots -1 and 9 are the rows and columns just outside.
+  const spot = (r, c) => [PAD + (c + 0.5) * CELL, PAD + (r + 0.5) * CELL];
+  ctx.fillStyle = INK;
+  ctx.font = `${Math.round(CELL * 0.42)}px ${FONT}`;
+  for (const { line, sum } of sandwiches) ctx.fillText(String(sum), ...spot(line < 9 ? line : -1, line < 9 ? -1 : line - 9));
+  ctx.font = `${Math.round(CELL * 0.32)}px ${FONT}`;
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = CELL * 0.04;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const { cells, sum } of littles) {
+    const dr = Math.floor(cells[1] / 9) - Math.floor(cells[0] / 9);
+    const dc = (cells[1] % 9) - (cells[0] % 9);
+    const [x, y] = spot(Math.floor(cells[0] / 9) - dr, (cells[0] % 9) - dc);
+    ctx.fillText(String(sum), x - dc * CELL * 0.1, y - dr * CELL * 0.1);
+    const [bx, by] = [x + dc * CELL * 0.44, y + dr * CELL * 0.44];
+    const h = CELL * 0.1;
+    ctx.beginPath();
+    ctx.moveTo(x + dc * CELL * 0.2, y + dr * CELL * 0.2);
+    ctx.lineTo(bx, by);
+    ctx.moveTo(bx - dc * h, by);
+    ctx.lineTo(bx, by);
+    ctx.lineTo(bx, by - dr * h);
+    ctx.stroke();
+  }
+
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, rules });
-  ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20);
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules });
+  ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }
 
