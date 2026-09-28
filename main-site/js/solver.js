@@ -15,9 +15,11 @@
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
 // cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
-// way with the Arrows tool, from the circle; Whispers, Renban and Palindrome
-// add German Whispers, renban and palindrome lines, drawn the same way again
-// with their own tools;
+// way with the Arrows tool, from the circle; Whispers, Renban, Palindrome,
+// Zipper, Between and Lockout add German Whispers, renban, palindrome,
+// zipper, between and lockout lines, drawn the same way again with their own
+// tools, a between line from one circle to the other and a lockout line from
+// one diamond to the other;
 // Kropki and XV add dots and X and V marks on the sides between cells, put
 // down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
 // X-Sums add clues outside the grid, put down with the Outside tool in a
@@ -40,6 +42,10 @@ import {
   whisperProblem,
   renbanProblem,
   palindromeProblem,
+  zipperProblem,
+  betweenProblem,
+  lockoutProblem,
+  LOCKOUT_GAP,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -77,8 +83,9 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, whisper, renban, palindrome, kropki, xv, sandwich,
-// little, skyscraper, xsum, jigsaw and rules are the variant's switches; cages are kept while Killer is off, for
+// killer, thermo, arrow, whisper, renban, palindrome, zipper, between,
+// lockout, kropki, xv, sandwich, little, skyscraper, xsum, jigsaw and rules
+// are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each kind of line, dot, mark and outside clue
 // likewise.
 const fresh = () => ({
@@ -93,6 +100,9 @@ const fresh = () => ({
   whisper: false,
   renban: false,
   palindrome: false,
+  zipper: false,
+  between: false,
+  lockout: false,
   kropki: false,
   xv: false,
   sandwich: false,
@@ -107,6 +117,9 @@ const fresh = () => ({
   whispers: [],
   renbans: [],
   palindromes: [],
+  zippers: [],
+  betweens: [],
+  lockouts: [],
   dots: [],
   xvs: [],
   sandwiches: [],
@@ -128,8 +141,8 @@ let history = []; // earlier states of this stage, for undo
 let cageMode = false;
 let picked = new Set();
 let editing = -1;
-// The Thermos, Arrows, Whispers, Renbans or Palindromes tool, likewise: which is on, a
-// key of LINES below, the path so far from its first cell, and the line
+// The Thermos, Arrows or another line tool, likewise: which is on, a key of
+// LINES below, the path so far from its first cell, and the line
 // being changed.
 let lineKind = null;
 let path = [];
@@ -166,6 +179,9 @@ const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
 const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
 const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
 const palindromes = () => (s.palindrome && s.palindromes.length ? s.palindromes : null);
+const zippers = () => (s.zipper && s.zippers.length ? s.zippers : null);
+const betweens = () => (s.between && s.betweens.length ? s.betweens : null);
+const lockouts = () => (s.lockout && s.lockouts.length ? s.lockouts : null);
 const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
 const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : null);
@@ -174,7 +190,7 @@ const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers 
 const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
+  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -185,6 +201,9 @@ const variant = () =>
         whispers: whispers() ?? [],
         renbans: renbans() ?? [],
         palindromes: palindromes() ?? [],
+        zippers: zippers() ?? [],
+        betweens: betweens() ?? [],
+        lockouts: lockouts() ?? [],
         dots: dots() ?? [],
         xvs: xvs() ?? [],
         sandwiches: sandwiches() ?? [],
@@ -280,6 +299,9 @@ function hintText(step, reveal) {
       ...(whispers() ? ["whisper lines"] : []),
       ...(renbans() ? ["renban lines"] : []),
       ...(palindromes() ? ["palindrome lines"] : []),
+      ...(zippers() ? ["zipper lines"] : []),
+      ...(betweens() ? ["between lines"] : []),
+      ...(lockouts() ? ["lockout lines"] : []),
       ...(dots() ? ["dots"] : []),
       ...(xvs() ? ["X and V marks"] : []),
       ...(sandwiches() ? ["Sandwich sums"] : []),
@@ -307,6 +329,9 @@ function problemText(check) {
   if (why === "whispers") return WHISPER_PROBLEMS[check.problem.why];
   if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
   if (why === "palindromes") return PALINDROME_PROBLEMS[check.problem.why];
+  if (why === "zippers") return ZIPPER_PROBLEMS[check.problem.why];
+  if (why === "betweens") return BETWEEN_PROBLEMS[check.problem.why];
+  if (why === "lockouts") return LOCKOUT_PROBLEMS[check.problem.why];
   if (why === "dots") return DOT_PROBLEMS[check.problem.why];
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
   if (why === "sandwiches") return SANDWICH_PROBLEMS[check.problem.why];
@@ -340,6 +365,9 @@ function clashText() {
   if (whispers()) extra.push("less than 5 apart next to each other on a whisper line");
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
   if (palindromes()) extra.push("not the same from either end of a palindrome line");
+  if (zippers()) extra.push("not making a zipper line's total");
+  if (betweens()) extra.push("not between a between line's circles");
+  if (lockouts()) extra.push(`not outside a lockout line's diamonds, or diamonds less than ${LOCKOUT_GAP} apart`);
   if (dots()) extra.push("breaking a dot");
   if (xvs()) extra.push("not adding up to an X or a V");
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
@@ -387,6 +415,30 @@ const PALINDROME_PROBLEMS = {
   cell: "A palindrome line has a cell off the board.",
   loop: "A palindrome line cannot cross itself.",
   apart: "Each cell of a palindrome line must touch the one before it.",
+};
+
+const ZIPPER_PROBLEMS = {
+  count: "There is room for forty zipper lines.",
+  length: "A zipper line needs two to nine cells.",
+  cell: "A zipper line has a cell off the board.",
+  loop: "A zipper line cannot cross itself.",
+  apart: "Each cell of a zipper line must touch the one before it.",
+};
+
+const BETWEEN_PROBLEMS = {
+  count: "There is room for forty between lines.",
+  length: "A between line needs two to nine cells, its circles included.",
+  cell: "A between line has a cell off the board.",
+  loop: "A between line cannot cross itself.",
+  apart: "Each cell of a between line must touch the one before it.",
+};
+
+const LOCKOUT_PROBLEMS = {
+  count: "There is room for forty lockout lines.",
+  length: "A lockout line needs two to nine cells, its diamonds included.",
+  cell: "A lockout line has a cell off the board.",
+  loop: "A lockout line cannot cross itself.",
+  apart: "Each cell of a lockout line must touch the one before it.",
 };
 
 const DOT_PROBLEMS = {
@@ -710,6 +762,9 @@ function onGo() {
   if (s.whisper && !s.whispers.length) return say("Draw a whisper line first: tap Whispers, then each cell along it.");
   if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
   if (s.palindrome && !s.palindromes.length) return say("Draw a palindrome line first: tap Palindromes, then each cell along it.");
+  if (s.zipper && !s.zippers.length) return say("Draw a zipper line first: tap Zippers, then each cell along it.");
+  if (s.between && !s.betweens.length) return say("Draw a between line first: tap Betweens, then a circle, each cell along it, and the other circle.");
+  if (s.lockout && !s.lockouts.length) return say("Draw a lockout line first: tap Lockouts, then a diamond, each cell along it, and the other diamond.");
   if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
@@ -1003,6 +1058,39 @@ const LINES = {
     started: "One end placed. Tap the next cell: the line's digits read the same from either end.",
     problem: palindromeProblem,
     problems: PALINDROME_PROBLEMS,
+  },
+  zipper: {
+    list: "zippers",
+    short: "zipper",
+    name: "zipper line",
+    title: "Zipper line",
+    a: "A zipper line",
+    start: "end",
+    started: "One end placed. Tap the next cell: cells the same way in from each end add up to the same total, and a middle cell is that total.",
+    problem: zipperProblem,
+    problems: ZIPPER_PROBLEMS,
+  },
+  between: {
+    list: "betweens",
+    short: "between",
+    name: "between line",
+    title: "Between line",
+    a: "A between line",
+    start: "circle",
+    started: "One circle placed. Tap each next cell; the last one is the other circle. Digits along the line lie between the circles'.",
+    problem: betweenProblem,
+    problems: BETWEEN_PROBLEMS,
+  },
+  lockout: {
+    list: "lockouts",
+    short: "lockout",
+    name: "lockout line",
+    title: "Lockout line",
+    a: "A lockout line",
+    start: "diamond",
+    started: `One diamond placed. Tap each next cell; the last one is the other diamond. The diamonds differ by ${LOCKOUT_GAP} or more, and digits along the line lie outside them.`,
+    problem: lockoutProblem,
+    problems: LOCKOUT_PROBLEMS,
   },
 };
 
@@ -1466,6 +1554,15 @@ function defaultStatus() {
     if (s.palindrome && !s.palindromes.length) {
       return "A palindrome puzzle: tap Palindromes, then each cell along a line. Its digits read the same from either end, like 3 7 1 7 3.";
     }
+    if (s.zipper && !s.zippers.length) {
+      return "A zipper puzzle: tap Zippers, then each cell along a line. Cells the same way in from each end add up to the same total, like 2 5 9 4 7.";
+    }
+    if (s.between && !s.betweens.length) {
+      return "A between puzzle: tap Betweens, then a circle, each cell along the line and the other circle. The line's digits lie between the circles', like 2 5 4 7.";
+    }
+    if (s.lockout && !s.lockouts.length) {
+      return `A lockout puzzle: tap Lockouts, then a diamond, each cell along the line and the other diamond. The diamonds differ by ${LOCKOUT_GAP} or more, and the line's digits lie outside them, like 3 8 1 7.`;
+    }
     if (s.kropki && !s.dots.length) {
       return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
     }
@@ -1549,6 +1646,9 @@ function render() {
     whispers: shownLines("whisper"),
     renbans: shownLines("renban"),
     palindromes: shownLines("palindrome"),
+    zippers: shownLines("zipper"),
+    betweens: shownLines("between"),
+    lockouts: shownLines("lockout"),
     dots: s.kropki ? s.dots : null,
     xvs: s.xv ? s.xvs : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
@@ -1614,6 +1714,9 @@ function render() {
     solverWhispers: enter && s.whisper,
     solverRenbans: enter && s.renban,
     solverPalindromes: enter && s.palindrome,
+    solverZippers: enter && s.zipper,
+    solverBetweens: enter && s.between,
+    solverLockouts: enter && s.lockout,
     lineBar: Boolean(lineKind),
     solverMarks: enter && (s.kropki || s.xv),
     markBar: markMode,
@@ -1651,6 +1754,9 @@ function render() {
   $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
   $("solverPalindromes").setAttribute("aria-pressed", String(lineKind === "palindrome"));
+  $("solverZippers").setAttribute("aria-pressed", String(lineKind === "zipper"));
+  $("solverBetweens").setAttribute("aria-pressed", String(lineKind === "between"));
+  $("solverLockouts").setAttribute("aria-pressed", String(lineKind === "lockout"));
   $("solverMarks").setAttribute("aria-pressed", String(markMode));
   $("solverOutside").setAttribute("aria-pressed", String(outMode));
   $("solverRegions").setAttribute("aria-pressed", String(regionMode));
@@ -1775,6 +1881,9 @@ export function initSolver({ reopen = true } = {}) {
   $("solverWhispers").addEventListener("click", () => toggleLineMode("whisper"));
   $("solverRenbans").addEventListener("click", () => toggleLineMode("renban"));
   $("solverPalindromes").addEventListener("click", () => toggleLineMode("palindrome"));
+  $("solverZippers").addEventListener("click", () => toggleLineMode("zipper"));
+  $("solverBetweens").addEventListener("click", () => toggleLineMode("between"));
+  $("solverLockouts").addEventListener("click", () => toggleLineMode("lockout"));
   $("solverMarks").addEventListener("click", toggleMarkMode);
   $("markDone").addEventListener("click", () => endCage(true));
   $("solverOutside").addEventListener("click", toggleOutMode);

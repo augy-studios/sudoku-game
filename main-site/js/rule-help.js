@@ -12,7 +12,7 @@
 // rule  what it means, for someone solving.
 // draw  how to put it on, for someone typing a puzzle in or making one.
 
-import { RULES } from "./variant.js";
+import { RULES, LOCKOUT_GAP } from "./variant.js";
 
 export const RULE_HELP = {
   killer: {
@@ -56,6 +56,24 @@ export const RULE_HELP = {
     list: "palindromes",
     rule: "The digits on a blue line read the same from either end, like 3 7 1 7 3.",
     draw: "Tap Palindromes, then each cell along the line from one end, and tap Add palindrome.",
+  },
+  zipper: {
+    name: "Zipper",
+    list: "zippers",
+    rule: "On a pink line, digits the same distance in from either end add up to the same total, like 2 5 9 4 7. If the line has a middle cell, its digit is that total.",
+    draw: "Tap Zippers, then each cell along the line from one end, and tap Add zipper.",
+  },
+  between: {
+    name: "Between",
+    list: "betweens",
+    rule: "The digits along a teal line lie strictly between the digits in the circles at its two ends, like 2 5 4 7.",
+    draw: "Tap Betweens, then one circle, each cell along the line, and the other circle last, and tap Add between.",
+  },
+  lockout: {
+    name: "Lockout",
+    list: "lockouts",
+    rule: `The digits in the diamonds at a brown line's two ends differ by at least ${LOCKOUT_GAP}, and the digits along it lie outside them, never between or equal to either, like 3 8 1 7.`,
+    draw: "Tap Lockouts, then one diamond, each cell along the line, and the other diamond last, and tap Add lockout.",
   },
   kropki: {
     name: "Kropki",

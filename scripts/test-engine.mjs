@@ -25,6 +25,10 @@ import {
   whisperProblem,
   renbanProblem,
   palindromeProblem,
+  zipperProblem,
+  betweenProblem,
+  lockoutProblem,
+  LOCKOUT_GAP,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -655,6 +659,53 @@ function palindromePuzzle() {
   return { puzzle: thinOut(solution, { palindromes }, rand), solution, palindromes };
 }
 
+// A zipper of `length` cells: past its middle, each next cell and the one
+// as far in from the other end make the line's total, the middle cell's
+// digit on a line of odd length, and on one of even length whatever the
+// two cells either side of its middle make.
+const fitsZipper = (length) => (line, o, sol) => {
+  const k = line.length;
+  if (k <= (length - 1) / 2 || k === length / 2) return true;
+  const total = length % 2 ? sol[line[(length - 1) / 2]] : sol[line[length / 2 - 1]] + sol[line[length / 2]];
+  return sol[o] + sol[line[length - 1 - k]] === total;
+};
+
+// A between line of `length` cells: the cells after the first circle all
+// on one side of it, and the last cell, the other circle, past all of them.
+const fitsBetween = (length) => (line, o, sol) => {
+  if (!line.length) return true;
+  const x = sol[line[0]];
+  if (line.length < length - 1) {
+    const inner = [...line.slice(1), o].map((c) => sol[c]);
+    return inner.every((d) => d > x) || inner.every((d) => d < x);
+  }
+  const [lo, hi] = [Math.min(x, sol[o]), Math.max(x, sol[o])];
+  return line.slice(1).every((c) => sol[c] > lo && sol[c] < hi);
+};
+
+// A lockout line of `length` cells: anything along it, then a last cell, the
+// other diamond, far enough from the first and with every cell between
+// outside the two.
+const fitsLockout = (length) => (line, o, sol) => {
+  if (line.length < length - 1) return true;
+  const [lo, hi] = [Math.min(sol[line[0]], sol[o]), Math.max(sol[line[0]], sol[o])];
+  return hi - lo >= LOCKOUT_GAP && line.slice(1).every((c) => sol[c] < lo || sol[c] > hi);
+};
+
+// Lines of one kind, four of each length in `lengths`, on the thermo and
+// arrow puzzles' grid, and the puzzle they make.
+function linesOfLengths(key, x, fits, lengths) {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(x);
+  const used = new Set();
+  const lines = lengths.flatMap((n) => layLines(solution, rand, fits(n), { count: 4, min: n, max: n, used }));
+  return { puzzle: thinOut(solution, { [key]: lines }, rand), solution, [key]: lines };
+}
+
+const zipperPuzzle = () => linesOfLengths("zippers", 29, fitsZipper, [5, 4]);
+const betweenPuzzle = () => linesOfLengths("betweens", 31, fitsBetween, [4, 3]);
+const lockoutPuzzle = () => linesOfLengths("lockouts", 37, fitsLockout, [4, 3]);
+
 // Solves by steps alone, checking each against the answer.
 function stepsAgree(puzzle, solution, variant) {
   const grid = puzzle.slice();
@@ -815,6 +866,137 @@ test("palindrome lines are checked, solved and carried in seeds", () => {
   assert.deepEqual([mixed.renbans, mixed.palindromes], [renbans, palindromes]);
   assert.equal(seedVariantName("KROPD-H-BBBB"), "Killer, Renban, Palindrome, Kropki, Diagonal");
   assert.equal(variantName({ renbans, palindromes }), "Renban, Palindrome");
+});
+
+// A line kind's puzzle is checked and solved, and its seed reads back, with
+// `letter` at its front.
+function linesRoundTrip(key, letter, { puzzle, solution, [key]: lines }) {
+  assert.equal(lines.length, 8, `${key}: all laid`);
+  assert.equal(clashes(solution, { [key]: lines }).size, 0, `${key}: the answer keeps them`);
+  assert.equal(checkClues(puzzle, { [key]: lines }).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, `${key}: needs the lines`);
+  const cand = variantCandidates(puzzle, { [key]: lines });
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `${key}: candidates at ${c}`);
+  stepsAgree(puzzle, solution, { [key]: lines });
+
+  const seed = madeSeed(rateLevel(puzzle, { [key]: lines }), puzzle, { [key]: lines });
+  assert.match(seed.text, new RegExp(`^${letter}-[EMHX]-`));
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back[key], lines);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+}
+
+// Cells of `grid` set to digits: { cell: digit }.
+const placed = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+const sorted = (set) => [...set].sort((p, q) => p - q);
+const ALL_DIGITS = 0b1111111110;
+const digitsMask = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+
+test("zipper lines are checked, solved and carried in seeds", () => {
+  assert.equal(zipperProblem([[20, 30, 40]]), null);
+  assert.equal(zipperProblem([[0, 2]]).why, "apart");
+
+  const made = zipperPuzzle();
+  for (const t of made.zippers) {
+    const totals = [];
+    for (let i = 0, j = t.length - 1; i < j; i++, j--) totals.push(made.solution[t[i]] + made.solution[t[j]]);
+    if (t.length % 2) totals.push(made.solution[t[(t.length - 1) / 2]]);
+    assert.equal(new Set(totals).size, 1, `one total along ${t}`);
+  }
+  assert.ok(made.zippers.some((t) => t.length === 4));
+  linesRoundTrip("zippers", "Z", made);
+
+  // Row 3, column 3 and row 5, column 5 share no house, so the ends could
+  // both be 1: the middle is 2 or more, and neither end is 9.
+  const t = [20, 30, 40];
+  const open = variantCandidates(placed({}), { zippers: [t] });
+  assert.equal(open[30], ALL_DIGITS & ~digitsMask(1));
+  assert.equal(open[20], ALL_DIGITS & ~digitsMask(9));
+  // A 2 at one end and a 5 in the middle leave only a 3 at the other.
+  assert.equal(variantCandidates(placed({ 20: 2, 30: 5 }), { zippers: [t] })[40], digitsMask(3));
+
+  // A pair off the middle's total clashes, with the middle; with no middle,
+  // pairs that disagree do.
+  assert.deepEqual(sorted(clashes(placed({ 20: 2, 30: 5, 40: 4 }), { zippers: [t] })), [20, 30, 40]);
+  assert.equal(clashes(placed({ 20: 2, 40: 3 }), { zippers: [t] }).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 20: 6, 40: 7 }), { zippers: [t] })), [20, 40], "past 9 with a middle cell");
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 2, 2: 3, 3: 5 }), { zippers: [[0, 1, 2, 3]] })), [0, 1, 2, 3]);
+  assert.equal(clashes(placed({ 0: 1, 1: 2, 2: 4, 3: 5 }), { zippers: [[0, 1, 2, 3]] }).size, 0);
+  assert.equal(variantSolutions(placed({ 1: 1 }), { zippers: [[0, 1, 2]] }, 1)?.length, 0, "a middle of 1 has no answer");
+
+  assert.equal(seedVariantName("KOZCFPD-H-BBBB"), "Killer, Palindrome, Zipper, Between, Lockout, Kropki, Diagonal");
+  assert.equal(variantName({ palindromes: [[1]], zippers: made.zippers }), "Palindrome, Zipper");
+});
+
+test("between lines are checked, solved and carried in seeds", () => {
+  assert.equal(betweenProblem([[20, 30, 40]]), null);
+  assert.equal(betweenProblem([[0]]).why, "length");
+
+  const made = betweenPuzzle();
+  for (const t of made.betweens) {
+    const [lo, hi] = [t[0], t.at(-1)].map((c) => made.solution[c]).sort((p, q) => p - q);
+    for (const c of t.slice(1, -1)) assert.ok(made.solution[c] > lo && made.solution[c] < hi, `between along ${t}`);
+  }
+  assert.ok(made.betweens.some((t) => t.length === 4));
+  linesRoundTrip("betweens", "C", made);
+
+  // A cell between two circles is never 1 or 9; circles 2 and 6 leave 3, 4
+  // and 5.
+  const t = [20, 30, 40];
+  assert.equal(variantCandidates(placed({}), { betweens: [t] })[30], ALL_DIGITS & ~digitsMask(1, 9));
+  assert.equal(variantCandidates(placed({ 20: 2, 40: 6 }), { betweens: [t] })[30], digitsMask(3, 4, 5));
+  // With one circle a 1, the other is 3 or more.
+  assert.equal(variantCandidates(placed({ 20: 1 }), { betweens: [t] })[40], ALL_DIGITS & ~digitsMask(1, 2));
+
+  // A digit outside the circles clashes, with them; so does one the same as
+  // a circle's, and circles with no room between.
+  assert.deepEqual(sorted(clashes(placed({ 20: 2, 30: 7, 40: 6 }), { betweens: [t] })), [20, 30, 40]);
+  assert.equal(clashes(placed({ 20: 2, 30: 4, 40: 6 }), { betweens: [t] }).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 20: 2, 30: 2 }), { betweens: [t] })), [20, 30]);
+  assert.deepEqual(sorted(clashes(placed({ 20: 4, 40: 5 }), { betweens: [t] })), [20, 40]);
+  assert.equal(clashes(placed({ 0: 4, 1: 5 }), { betweens: [[0, 1]] }).size, 0, "two circles alone can be anything");
+});
+
+test("lockout lines are checked, solved and carried in seeds", () => {
+  assert.equal(lockoutProblem([[20, 30, 40]]), null);
+  assert.equal(lockoutProblem([[0, 10, 0]]).why, "loop");
+
+  const made = lockoutPuzzle();
+  for (const t of made.lockouts) {
+    const [lo, hi] = [t[0], t.at(-1)].map((c) => made.solution[c]).sort((p, q) => p - q);
+    assert.ok(hi - lo >= LOCKOUT_GAP);
+    for (const c of t.slice(1, -1)) assert.ok(made.solution[c] < lo || made.solution[c] > hi, `lockout along ${t}`);
+  }
+  assert.ok(made.lockouts.some((t) => t.length === 4));
+  linesRoundTrip("lockouts", "F", made);
+
+  // A 3 in one diamond puts 7, 8 or 9 in the other, and leaves the line 1, 2,
+  // 8 and 9; diamonds 3 and 7, the same.
+  const t = [20, 30, 40];
+  const three = variantCandidates(placed({ 20: 3 }), { lockouts: [t] });
+  assert.equal(three[40], digitsMask(7, 8, 9));
+  assert.equal(three[30], digitsMask(1, 2, 8, 9));
+  assert.equal(variantCandidates(placed({ 20: 3, 40: 7 }), { lockouts: [t] })[30], digitsMask(1, 2, 8, 9));
+  assert.equal(variantCandidates(placed({ 0: 1 }), { lockouts: [[0, 1]] })[1], digitsMask(5, 6, 7, 8, 9));
+
+  // Diamonds too close clash, as do a digit between them and one the same as
+  // a diamond's.
+  assert.deepEqual(sorted(clashes(placed({ 20: 3, 40: 5 }), { lockouts: [t] })), [20, 40]);
+  assert.deepEqual(sorted(clashes(placed({ 20: 3, 30: 5, 40: 7 }), { lockouts: [t] })), [20, 30, 40]);
+  assert.equal(clashes(placed({ 20: 3, 30: 9, 40: 7 }), { lockouts: [t] }).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 20: 3, 30: 3 }), { lockouts: [t] })), [20, 30]);
+
+  // With the other new lines on one grid; the letters go O, Z, C, F.
+  const { zippers } = zipperPuzzle();
+  const { betweens } = betweenPuzzle();
+  const all = { zippers, betweens, lockouts: made.lockouts };
+  const seed = madeSeed("H", made.solution.map((d, c) => (c % 2 ? d : 0)), all);
+  assert.match(seed.text, /^ZCF-H-/);
+  const back = parseSeed(seed.text);
+  assert.ok(back, "the three together read back");
+  assert.deepEqual([back.zippers, back.betweens, back.lockouts], [zippers, betweens, made.lockouts]);
+  assert.equal(variantName(all), "Zipper, Between, Lockout");
 });
 
 // Every side two cells share, the first cell first: each cell's right-hand
@@ -1330,6 +1512,10 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const renbans = layLines(solution, rand, fitsRenban, lines);
     // Their own numbers, so the parts laid after come out as before.
     const palindromes = layLines(solution, seeded(23), fitsPalindrome(3), { ...lines, max: 3 });
+    // Two each, in what room the others leave.
+    const zippers = layLines(solution, seeded(29), fitsZipper(3), { ...lines, count: 2, max: 3 });
+    const betweens = layLines(solution, seeded(31), fitsBetween(3), { ...lines, count: 2, max: 3 });
+    const lockouts = layLines(solution, seeded(37), fitsLockout(3), { ...lines, count: 2, max: 3 });
     // A few dots and marks, never two on one side.
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
@@ -1341,9 +1527,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const skyscrapers = layViews(solution, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
     const xsums = layViews(solution, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken);
     const littles = layLittles(solution, rand, 0.1, taken);
-    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
+    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
     const name = keys.join(", ");
-    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -1356,12 +1542,14 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASROPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASROZCFPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) {
+      assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    }
     assert.deepEqual(puzzleFor(back).solution, solution);
   }
 });
@@ -1382,7 +1570,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
+  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

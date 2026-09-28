@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban and palindrome lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between and lockout lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -88,7 +88,7 @@ tooltip on its button, under the buttons once it is on (what it means, and
 while the clues go in, how to draw it), and in a Rules box over the board
 in a variant game or replay. The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Palindrome, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
+Whispers), Renban, Palindrome, Zipper, Between, Lockout, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
@@ -99,10 +99,11 @@ king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, T, A, S, R, O, P, V, B, L, Y, U,
-J, D, N, G and W, always in that order, as in `KD-H-...`; a seed with any
-before D carries that part in its body too: cages, thermometers, arrows,
-whisper lines, renban lines, palindrome lines, dots, XV marks, Sandwich sums, Little Killer
+seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, P, V, B,
+L, Y, U, J, D, N, G and W, always in that order, as in `KD-H-...`; a seed
+with any before D carries that part in its body too: cages, thermometers,
+arrows, whisper lines, renban lines, palindrome lines, zipper lines,
+between lines, lockout lines, dots, XV marks, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums or regions (a line as its length, its first
 cell and each step's direction; dots, marks, Skyscraper counts and X-Sums
 as a list, or every side's or view's value, whichever is shorter; Sandwich
@@ -164,6 +165,33 @@ a pair whose two cells share a row, column or box can never match. A pair
 holding two different digits shows as a clash. A palindrome line is drawn
 as a thick blue line, on the board and in a saved image: often grey
 elsewhere, but here grey is a thermometer's.
+
+**Zipper.** On a zipper line, each two cells the same way in from either
+end add up to the same total, and a line's middle cell, if it has one,
+holds that total: 2 5 9 4 7 is one. The Zippers tool draws one as Whispers
+does, and they may share cells, up to forty, two to nine cells long. The
+solver works out the totals the line could still have, those every pair can
+make and the middle cell can be, then keeps each cell to digits that make
+one of them with a digit its partner can be, and the middle to the totals.
+A full pair off the middle's digit shows as a clash, with the middle; with
+the middle empty, full pairs that make different totals, or a total past 9,
+do. A zipper line is drawn as a thick pink line.
+
+**Between and Lockout.** Each has a shape round the digit at both ends:
+circles for a between line, diamonds for a lockout line. A between line's
+other digits lie strictly between its circles' digits, as in 2 5 4 7. A
+lockout line's diamonds differ by at least 4 (`LOCKOUT_GAP`, as most
+puzzles have it), and its other digits lie outside them, never between or
+equal to either, as in 3 8 1 7. The Betweens and Lockouts tools draw them
+as Whispers does, from one end's circle or diamond to the other's, and
+they may share cells, up to forty, two to nine cells long counting the
+ends. The solver tries every pair of digits the ends could hold, keeps
+those every other cell on the line can go along with, and keeps each cell
+to what those pairs allow. A digit on the wrong side of the ends shows as a
+clash with them, as do a digit the same as an end's, ends a lockout line
+cannot have, and a between line's ends with no room between. They are drawn
+as a thinner line, teal for between and brown for lockout, that stops at the
+ring or diamond round each end, on the board and in a saved image.
 
 **Kropki and XV.** They mark the side two cells share. A white dot's
 digits are consecutive and a black dot's are one double the other; an X's

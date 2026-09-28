@@ -1,13 +1,14 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 36 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 33 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
-**Built so far (18):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
-Renban, Palindrome · Kropki, XV · Sandwich, Little Killer, Skyscrapers,
-X-Sums · Diagonal, Anti-knight, Anti-king, Windoku.
+**Built so far (21):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
+Renban, Palindrome, Zipper, Between, Lockout · Kropki, XV · Sandwich,
+Little Killer, Skyscrapers, X-Sums · Diagonal, Anti-knight, Anti-king,
+Windoku.
 
 ## Every new variant needs an explanation
 
@@ -20,11 +21,12 @@ is there, in the same order as the buttons.
 ## Before building many more: seed letters
 
 Each variant gets one letter at the front of a made puzzle's seed
-(`seed.js`, `PARTS` and `RULES`), and the levels take E, M, H and X. Only
-**C, F, I, Q and Z** are left, five letters for 36 variants. The seed
-format needs a way to name more than 26 parts before many of these go in:
-for example a two-character code after a marker letter, read only when the
-marker is there, so every seed made so far still reads as it did.
+(`seed.js`, `PARTS` and `RULES`), and the levels take E, M, H and X.
+Zipper, Between and Lockout took Z, C and F, so only **I and Q** are left,
+two letters for 33 variants. The seed format needs a way to name more than
+26 parts before any more go in: for example a two-character code after a
+marker letter, Q say, read only when the marker is there, so every seed
+made so far still reads as it did.
 
 ## Cages and regions
 
@@ -43,9 +45,6 @@ marker is there, so every seed made so far still reads as it did.
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Zipper | Pairs of cells the same way in from each end add up to the same total; on an odd line, that total is the middle digit. | Palindrome, almost as is |
-| Between | Digits on the line lie strictly between the two circle digits at its ends. | Line tool, circles at both ends |
-| Lockout | Digits on the line lie outside the two diamond digits at its ends, which differ by at least a set amount (usually 4). | Line tool, diamonds at both ends |
 | Entropic | Every run of three cells has one of 1–3, one of 4–6 and one of 7–9. | Line tool |
 | Modular | Every run of three cells has one of 147, one of 258 and one of 369. | Line tool |
 | Double Arrow | The digits between the two end circles add up to the circles' sum. | Arrow |
@@ -103,10 +102,11 @@ marker is there, so every seed made so far still reads as it did.
 
 ## Suggested order
 
-1. Zipper, Between and Lockout: lines, and the end circles and diamonds share one drawing change.
+1. ~~Zipper, Between and Lockout~~: built. Lockout's gap is fixed at 4.
 2. Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV: whole-grid switches.
 3. Entropic and Modular lines.
 4. Greater Than and Quad: marks.
 5. Hidden Skyscraper and Numbered Room: both reuse the views Skyscrapers and X-Sums use.
 
-The seed letters need sorting out by the second batch at the latest.
+The seed letters need sorting out before the second batch: it has four
+variants and there are two letters left.

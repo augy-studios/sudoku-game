@@ -62,6 +62,12 @@ export const icons = {
   renban: svg(`<path d="M5 12h14" stroke-width="3.2"/><circle cx="6" cy="18.5" r="1" fill="currentColor"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/><circle cx="18" cy="18.5" r="1" fill="currentColor"/>`),
   // A line that is its own mirror image, across a dashed middle.
   palindrome: svg(`<path d="M4 17 8 8l4 7 4-7 4 9" stroke-width="2.6"/><path d="M12 3v18" stroke-width="1.2" stroke-dasharray="2 2"/>`),
+  // A thick line with teeth either side, as a zip has.
+  zipper: svg(`<path d="M4 12h16" stroke-width="2.6"/><path d="M7 12V7.5M10 12v4.5M13 12V7.5M16 12v4.5" stroke-width="1.4"/>`),
+  // A line between two circles.
+  between: svg(`<circle cx="5.5" cy="12" r="3"/><circle cx="18.5" cy="12" r="3"/><path d="M8.5 12h7" stroke-width="2.2"/>`),
+  // A line between two diamonds.
+  lockout: svg(`<path d="M5.5 8.2 9.3 12l-3.8 3.8L1.7 12Z"/><path d="M18.5 8.2l3.8 3.8-3.8 3.8-3.8-3.8Z"/><path d="M9.3 12h5.4" stroke-width="2.2"/>`),
   cage: svg(`<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M7.5 9.5h3" stroke-width="1.6"/>`),
   image: svg(`<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.5" r="1.8"/><path d="m20.5 16-5-5-8.5 8.5"/>`),
   clipboard: svg(`<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v.5M9 4.5V6h6V4.5"/>`),

@@ -2,7 +2,8 @@
 // the API imports it too, to work out a made variant puzzle's answer.
 //
 // A variant is { cages, thermos, arrows, whispers, renbans, palindromes,
-// dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules }:
+// zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers,
+// xsums, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -23,7 +24,18 @@
 //   palindromes  palindrome lines, paths like a thermometer's: a line's
 //            digits read the same from either end, so cells the same way
 //            in from each end hold the same digit. They may share cells.
-//   dots     Kropki dots, [{ cells: [a, b], mark }] on the side two cells
+//   zippers  zipper lines, paths like a thermometer's: each two cells the
+//            same way in from either end add up to the same total, and on a
+//            line with a middle cell, that cell's digit is the total. They
+//            may share cells.
+//   betweens between lines, paths like a thermometer's with a circle at
+//            each end: the digits along the line, the ends left out, lie
+//            strictly between the two circles' digits. They may share cells.
+//   lockouts lockout lines, paths like a thermometer's with a diamond at
+//            each end: the diamonds' digits differ by at least LOCKOUT_GAP,
+//            and the digits along the line, the ends left out, lie outside
+//            them, never between or equal to either. They may share cells.
+//   dots    Kropki dots, [{ cells: [a, b], mark }] on the side two cells
 //            share, a before b in reading order. A "white" dot's digits are
 //            consecutive; a "black" dot's are one double the other.
 //   xvs      XV marks, as dots: an "x" mark's digits add up to 10, a "v"
@@ -72,7 +84,7 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (xsums?.length) names.unshift("X-Sums");
@@ -81,6 +93,9 @@ export function variantName({ cages, thermos, arrows, whispers, renbans, palindr
   if (sandwiches?.length) names.unshift("Sandwich");
   if (xvs?.length) names.unshift("XV");
   if (dots?.length) names.unshift("Kropki");
+  if (lockouts?.length) names.unshift("Lockout");
+  if (betweens?.length) names.unshift("Between");
+  if (zippers?.length) names.unshift("Zipper");
   if (palindromes?.length) names.unshift("Palindrome");
   if (renbans?.length) names.unshift("Renban");
   if (whispers?.length) names.unshift("German Whispers");
@@ -272,6 +287,13 @@ export const arrowProblem = lineProblem;
 export const whisperProblem = lineProblem;
 export const renbanProblem = lineProblem;
 export const palindromeProblem = lineProblem;
+export const zipperProblem = lineProblem;
+export const betweenProblem = lineProblem;
+export const lockoutProblem = lineProblem;
+
+// How far apart a lockout line's diamonds are at least, as most puzzles
+// have it.
+export const LOCKOUT_GAP = 4;
 
 // ABOVE[k]: the digits over k, for k 0 to 9. BELOW[k]: those under it, for
 // k 1 to 10. LOW and HIGH: a mask's least and greatest digit.
@@ -439,6 +461,98 @@ function palindromeBounds(palindromes, g, free) {
   }
   return true;
 }
+
+// The totals a digit of ma and a digit of mb can make, as a mask with bit s
+// for a total of s, 2 to 18.
+function pairTotals(ma, mb) {
+  let out = 0;
+  for (let d = 1; d <= 9; d++) if (ma & (1 << d)) out |= mb << d;
+  return out;
+}
+
+// The digits of ma that make one of `totals` with some digit of mb.
+function totalPartners(ma, mb, totals) {
+  let out = 0;
+  for (let d = 1; d <= 9; d++) if (ma & (1 << d) && (mb << d) & totals) out |= 1 << d;
+  return out;
+}
+
+// Narrows each zipper line to the totals it could still have: those every
+// pair of cells the same way in from either end can make, and on a line with
+// a middle cell, that cell's digits. Each cell of a pair then keeps the
+// digits that make one of them with a digit its partner can be, and the
+// middle cell the totals. Placed digits count as masks of one, and `free` is
+// narrowed in place, as in thermoBounds; false if no total is left.
+function zipperBounds(zippers, g, free) {
+  for (const t of zippers) {
+    const n = t.length;
+    const mid = n % 2 ? t[(n - 1) / 2] : -1;
+    let totals = mid >= 0 ? (g[mid] ? 1 << g[mid] : free[mid]) : -1;
+    for (let i = 0, j = n - 1; i < j; i++, j--) {
+      totals &= pairTotals(g[t[i]] ? 1 << g[t[i]] : free[t[i]], g[t[j]] ? 1 << g[t[j]] : free[t[j]]);
+    }
+    if (!totals) return false;
+    for (let i = 0, j = n - 1; i < j; i++, j--) {
+      const [a, b] = [t[i], t[j]];
+      const ma = g[a] ? 1 << g[a] : free[a];
+      const mb = g[b] ? 1 << g[b] : free[b];
+      if (!g[a]) free[a] = totalPartners(ma, mb, totals);
+      if (!g[b]) free[b] = totalPartners(mb, ma, totals);
+    }
+    if (mid >= 0 && !g[mid]) free[mid] = totals;
+  }
+  return true;
+}
+
+// For each way the ends of a between or lockout line could be filled, what
+// its other cells may hold, from inside(x, y) with x and y at the ends: a
+// mask, or -1 if the ends cannot be those two at all. The ends keep the
+// digits of the ways every other cell can go along with, and each other
+// cell the digits those ways allow it. Placed digits count as masks of one,
+// and `free` is narrowed in place, as in thermoBounds; false if no way is
+// left.
+const endAllow = new Int32Array(9);
+function endBounds(lines, g, free, inside) {
+  for (const t of lines) {
+    const n = t.length;
+    const [a, b] = [t[0], t[n - 1]];
+    const ma = g[a] ? 1 << g[a] : free[a];
+    const mb = g[b] ? 1 << g[b] : free[b];
+    let na = 0;
+    let nb = 0;
+    endAllow.fill(0);
+    for (let x = 1; x <= 9; x++) {
+      if (!(ma & (1 << x))) continue;
+      for (let y = 1; y <= 9; y++) {
+        if (!(mb & (1 << y))) continue;
+        const m = inside(x, y);
+        if (m < 0) continue;
+        let k = 1;
+        while (k < n - 1 && (g[t[k]] ? 1 << g[t[k]] : free[t[k]]) & m) k++;
+        if (k < n - 1) continue;
+        na |= 1 << x;
+        nb |= 1 << y;
+        for (k = 1; k < n - 1; k++) endAllow[k] |= m;
+      }
+    }
+    if (!na) return false;
+    if (!g[a]) free[a] = na;
+    if (!g[b]) free[b] = nb;
+    for (let k = 1; k < n - 1; k++) if (!g[t[k]]) free[t[k]] &= endAllow[k];
+  }
+  return true;
+}
+
+// What the other cells of a between line with x and y at its ends may hold:
+// the digits strictly between, none when x and y are the same or next to
+// each other, so a line with cells between its ends cannot be.
+export const betweenInside = (x, y) => between(Math.min(x, y) + 1, Math.max(x, y) - 1);
+// The same for a lockout line: the digits outside x and y, and neither of
+// them, or -1 when x and y are too close to be its ends.
+export const lockoutOutside = (x, y) => (Math.abs(x - y) >= LOCKOUT_GAP ? ALL & ~between(Math.min(x, y), Math.max(x, y)) : -1);
+
+const betweenBounds = (betweens, g, free) => endBounds(betweens, g, free, betweenInside);
+const lockoutBounds = (lockouts, g, free) => endBounds(lockouts, g, free, lockoutOutside);
 
 /* ---- dots and marks between two cells ---- */
 
@@ -779,6 +893,9 @@ const norm = (v) => ({
   whispers: v?.whispers ?? [],
   renbans: v?.renbans ?? [],
   palindromes: v?.palindromes ?? [],
+  zippers: v?.zippers ?? [],
+  betweens: v?.betweens ?? [],
+  lockouts: v?.lockouts ?? [],
   dots: v?.dots ?? [],
   xvs: v?.xvs ?? [],
   sandwiches: v?.sandwiches ?? [],
@@ -794,7 +911,7 @@ const norm = (v) => ({
 // the clues outside; 0 for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -822,6 +939,9 @@ export function variantCandidates(grid, variant) {
   whisperBounds(whispers, grid, out);
   renbanBounds(renbans, grid, out);
   palindromeBounds(palindromes, grid, out);
+  zipperBounds(zippers, grid, out);
+  betweenBounds(betweens, grid, out);
+  lockoutBounds(lockouts, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
   sandwichBounds(sandwiches, grid, out);
@@ -848,7 +968,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   let steps = 0;
   const hm = new Int32Array(houses.length);
@@ -901,6 +1021,9 @@ function search(grid, variant, found) {
     if (whispers.length && !whisperBounds(whispers, g, free)) return null;
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
     if (palindromes.length && !palindromeBounds(palindromes, g, free)) return null;
+    if (zippers.length && !zipperBounds(zippers, g, free)) return null;
+    if (betweens.length && !betweenBounds(betweens, g, free)) return null;
+    if (lockouts.length && !lockoutBounds(lockouts, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;

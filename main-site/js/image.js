@@ -1,7 +1,8 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
 // and a variant puzzle's cages, thermometers, arrows, German Whispers,
-// renban and palindrome lines, Kropki dots, XV marks, diagonals and windows as on screen.
+// renban, palindrome, zipper, between and lockout lines, Kropki dots, XV
+// marks, diagonals and windows as on screen.
 // Sandwich, Little Killer, Skyscraper and X-Sum clues sit outside the grid,
 // in a margin a cell wide the image grows by. A Jigsaw's regions take the
 // boxes' heavy lines and tint.
@@ -29,11 +30,15 @@ const ARROW_GREY = "#8f9a92";
 const WHISPER_GREEN = "#a8dcb2";
 const RENBAN_PURPLE = "#dac6ee";
 const PALINDROME_BLUE = "#b2cfee";
+const ZIPPER_PINK = "#f0bcd8";
+// Thinner, so darker.
+const BETWEEN_TEAL = "#6cc0cf";
+const LOCKOUT_BROWN = "#c2a07f";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, whispers, renbans, palindromes, dots,
-// xvs, sandwiches, littles, skyscrapers, xsums, regions, rules }
-// (variant.js), or nothing for a classic puzzle.
+// variant: { cages, thermos, arrows, whispers, renbans, palindromes,
+// zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers,
+// xsums, regions, rules } (variant.js), or nothing for a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
@@ -42,6 +47,9 @@ export async function drawPuzzle(grid, variant = null) {
   const whispers = variant?.whispers ?? [];
   const renbans = variant?.renbans ?? [];
   const palindromes = variant?.palindromes ?? [];
+  const zippers = variant?.zippers ?? [];
+  const betweens = variant?.betweens ?? [];
+  const lockouts = variant?.lockouts ?? [];
   const dots = variant?.dots ?? [];
   const xvs = variant?.xvs ?? [];
   const sandwiches = variant?.sandwiches ?? [];
@@ -128,12 +136,13 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.stroke();
   }
   const at = (c) => [PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.5) * CELL];
-  // German Whispers, renban and palindrome lines, under everything else:
-  // solid, through the cells' middles.
+  // German Whispers, renban, palindrome and zipper lines, under everything
+  // else: solid, through the cells' middles.
   for (const [lines, colour] of [
     [whispers, WHISPER_GREEN],
     [renbans, RENBAN_PURPLE],
     [palindromes, PALINDROME_BLUE],
+    [zippers, ZIPPER_PINK],
   ]) {
     for (const t of lines) {
       ctx.strokeStyle = colour;
@@ -183,6 +192,44 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.lineTo(ex, ey);
     ctx.lineTo(ex - ux * h + uy * h, ey - uy * h - ux * h);
     ctx.stroke();
+  }
+  // As on the board: a ring or a diamond round each end, and a line from
+  // the edge of one to the edge of the other.
+  for (const [lines, colour, ring] of [
+    [betweens, BETWEEN_TEAL, true],
+    [lockouts, LOCKOUT_BROWN, false],
+  ]) {
+    const r = CELL * (ring ? 0.4 : 0.46);
+    const edge = ([x0, y0], [x1, y1]) => {
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const ux = (x1 - x0) / len;
+      const uy = (y1 - y0) / len;
+      const k = ring ? r : r / (Math.abs(ux) + Math.abs(uy));
+      return [x0 + ux * k, y0 + uy * k];
+    };
+    ctx.strokeStyle = colour;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    for (const t of lines) {
+      const points = t.map(at);
+      ctx.lineWidth = CELL * 0.05;
+      ctx.beginPath();
+      for (const [x, y] of [points[0], points.at(-1)]) {
+        ctx.moveTo(ring ? x + r : x, ring ? y : y - r);
+        if (ring) ctx.arc(x, y, r, 0, Math.PI * 2);
+        else {
+          ctx.lineTo(x + r, y);
+          ctx.lineTo(x, y + r);
+          ctx.lineTo(x - r, y);
+          ctx.closePath();
+        }
+      }
+      ctx.stroke();
+      ctx.lineWidth = CELL * 0.09;
+      ctx.beginPath();
+      [edge(points[0], points[1]), ...points.slice(1, -1), edge(points.at(-1), points.at(-2))].forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
+      ctx.stroke();
+    }
   }
   if (cages.length) drawCages(ctx, cages);
   // Dots and XV marks at the middle of their side, over the grid lines.
@@ -272,7 +319,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules });
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }

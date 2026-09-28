@@ -5,8 +5,8 @@
 // the same as a cell's notes, so the board can draw one as the other.
 //
 // Each takes a variant, { cages, thermos, arrows, whispers, renbans,
-// palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions,
-// rules }
+// palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles,
+// skyscrapers, xsums, regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -21,6 +21,11 @@ import {
   whisperProblem,
   renbanProblem,
   palindromeProblem,
+  zipperProblem,
+  betweenProblem,
+  lockoutProblem,
+  betweenInside,
+  lockoutOutside,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -37,7 +42,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -77,6 +82,12 @@ export function bitCount(mask) {
 // a German Whispers line less than 5 apart; a renban line's digits that
 // repeat, or all of them once they spread wider than the line is long; two
 // digits the same way in from either end of a palindrome line that differ;
+// a zipper line's pairs that make a total other than its middle digit, or
+// with no middle digit yet, every pair once two make different totals, or
+// a total past 9 where there is a middle cell; a between line's digits not
+// strictly between its circles', and a lockout line's not outside its
+// diamonds', with the ends, and ends that cannot be; a digit on either the
+// same as a filled end's;
 // the two digits either side of a dot or an XV mark they break; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
 // fill it to some other sum; a Little Killer diagonal's digits once they go
@@ -136,6 +147,38 @@ export function clashes(grid, variant = null) {
       if (grid[t[i]] && grid[t[j]] && grid[t[i]] !== grid[t[j]]) {
         out.add(t[i]);
         out.add(t[j]);
+      }
+    }
+  }
+  for (const t of variant?.zippers ?? []) {
+    const n = t.length;
+    const mid = n % 2 ? t[(n - 1) / 2] : -1;
+    const pairs = [];
+    for (let i = 0, j = n - 1; i < j; i++, j--) if (grid[t[i]] && grid[t[j]]) pairs.push([t[i], t[j]]);
+    const total = ([a, b]) => grid[a] + grid[b];
+    const target = mid >= 0 ? grid[mid] : 0;
+    let off;
+    if (target) off = pairs.filter((p) => total(p) !== target);
+    else if (pairs.some((p) => total(p) !== total(pairs[0]))) off = pairs;
+    else off = mid >= 0 ? pairs.filter((p) => total(p) > 9) : [];
+    off.flat().forEach((c) => out.add(c));
+    if (off.length && target) out.add(mid);
+  }
+  for (const [list, inside] of [
+    ["betweens", betweenInside],
+    ["lockouts", lockoutOutside],
+  ]) {
+    for (const t of variant?.[list] ?? []) {
+      const [a, b] = [t[0], t.at(-1)];
+      const filled = t.slice(1, -1).filter((c) => grid[c]);
+      if (grid[a] && grid[b]) {
+        const m = inside(grid[a], grid[b]);
+        const off = m < 0 ? [] : filled.filter((c) => !(m & (1 << grid[c])));
+        if (m < 0 || (!m && t.length > 2) || off.length) [a, b, ...off].forEach((c) => out.add(c));
+      }
+      for (const end of [a, b]) {
+        const same = filled.filter((c) => grid[end] && grid[c] === grid[end]);
+        if (same.length) [end, ...same].forEach((c) => out.add(c));
       }
     }
   }
@@ -244,7 +287,7 @@ export const MIN_CLUES = 17;
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
 // "cages", "thermos", "arrows", "whispers", "renbans", "palindromes",
-// "dots", "xvs",
+// "zippers", "betweens", "lockouts", "dots", "xvs",
 // "sandwiches", "littles", "skyscrapers", "xsums" or "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
@@ -285,6 +328,14 @@ export function checkClues(clues, variant = null) {
   if (variant?.palindromes?.length) {
     const problem = palindromeProblem(variant.palindromes);
     if (problem) return { ok: false, why: "palindromes", problem };
+  }
+  for (const [list, lineProblem] of [
+    ["zippers", zipperProblem],
+    ["betweens", betweenProblem],
+    ["lockouts", lockoutProblem],
+  ]) {
+    const problem = variant?.[list]?.length && lineProblem(variant[list]);
+    if (problem) return { ok: false, why: list, problem };
   }
   if (variant?.dots?.length) {
     const problem = dotProblem(variant.dots);

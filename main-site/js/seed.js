@@ -11,8 +11,9 @@
 // `made: true`, and scores only on its own board. A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
 // T for thermometers, A for arrows, S for German Whispers lines, R for
-// renban lines, O for palindrome lines, P for Kropki dots, V for XV marks, B for Sandwich clues, L
-// for Little Killer clues, Y for Skyscraper clues, U for X-Sum clues and J
+// renban lines, O for palindrome lines, Z for zipper lines, C for between
+// lines, F for lockout lines, P for Kropki dots, V for XV marks, B for
+// Sandwich clues, L for Little Killer clues, Y for Skyscraper clues, U for X-Sum clues and J
 // for a Jigsaw's regions, which the seed then carries too, and D, N, G and
 // W for the switch rules (variant.js).
 
@@ -27,6 +28,9 @@ import {
   whisperProblem,
   renbanProblem,
   palindromeProblem,
+  zipperProblem,
+  betweenProblem,
+  lockoutProblem,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -160,8 +164,8 @@ function decodeGrid(body) {
    order of their first cell. Cages are joined edge to edge, so the shared
    edges give back the cages exactly. Then thermometers: how many, and for
    each its length, its bulb, and which way each step goes. Then arrows, the
-   same way, from the circle, and German Whispers, renban and palindrome
-   lines the same way again. Then Kropki dots, and then XV marks, as whichever is
+   same way, from the circle, and German Whispers, renban, palindrome,
+   zipper, between and lockout lines the same way again. Then Kropki dots, and then XV marks, as whichever is
    shorter: how many, and for each its side and which of the two marks it
    is; or for every side, its mark or none. Then Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
@@ -486,6 +490,9 @@ const PARTS = [
   lines("whispers", "S", "German Whispers", whisperProblem),
   lines("renbans", "R", "Renban", renbanProblem),
   lines("palindromes", "O", "Palindrome", palindromeProblem),
+  lines("zippers", "Z", "Zipper", zipperProblem),
+  lines("betweens", "C", "Between", betweenProblem),
+  lines("lockouts", "F", "Lockout", lockoutProblem),
   edges("dots", "P", "Kropki", dotProblem, DOT_MARKS),
   edges("xvs", "V", "XV", xvProblem, XV_MARKS),
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
@@ -507,8 +514,8 @@ function prefixFor(parts, rules) {
 }
 
 // The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
-// renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions,
-// rules } for a variant puzzle (variant.js), or nothing for a classic one.
+// renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches,
+// littles, skyscrapers, xsums, regions, rules } for a variant puzzle (variant.js), or nothing for a classic one.
 // `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.
