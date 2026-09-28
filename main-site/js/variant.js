@@ -3,7 +3,7 @@
 //
 // A variant is { cages, thermos, arrows, whispers, renbans, palindromes,
 // zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
-// sandwiches, littles, skyscrapers, xsums, regions, rules }:
+// sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -67,6 +67,12 @@
 //   xsums    X-Sum clues outside the grid, [{ view, sum }]: the first digit
 //            from that side, X, and the X digits from there, it included,
 //            add up to the sum.
+//   hiddens  Hidden Skyscraper clues outside the grid, [{ view, height }]:
+//            reading from that side, the first digit lower than one before
+//            it, hidden behind it, is `height`, 1 to 8.
+//   rooms    Numbered Room clues outside the grid, [{ view, digit }]: the
+//            first digit from that side, X, puts `digit` in the X-th cell
+//            from that side.
 //   regions  a Jigsaw puzzle's regions in place of the 3x3 boxes: for each
 //            cell, 0 to 8, which region it is in. Each region is nine cells
 //            joined edge to edge, and holds 1 to 9.
@@ -108,9 +114,11 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
+  if (rooms?.length) names.unshift("Numbered Room");
+  if (hiddens?.length) names.unshift("Hidden Skyscraper");
   if (xsums?.length) names.unshift("X-Sums");
   if (skyscrapers?.length) names.unshift("Skyscrapers");
   if (littles?.length) names.unshift("Little Killer");
@@ -890,6 +898,20 @@ function viewProblem(clues, key, least, most) {
 
 export const skyscraperProblem = (skyscrapers) => viewProblem(skyscrapers, "count", 1, 9);
 export const xsumProblem = (xsums) => viewProblem(xsums, "sum", 1, 45);
+// A 9 is never hidden.
+export const hiddenProblem = (hiddens) => viewProblem(hiddens, "height", 1, 8);
+export const roomProblem = (rooms) => viewProblem(rooms, "digit", 1, 9);
+
+// The first digit of a line lower than one before it, hidden behind it, or 0
+// if none is: as a Hidden Skyscraper clue there would name.
+export function firstHidden(digits) {
+  let top = 0;
+  for (const d of digits) {
+    if (d < top) return d;
+    top = d;
+  }
+  return 0;
+}
 
 // How many digits of a line, read from its first, are taller than every
 // one before them: as many as a Skyscraper clue there would count.
@@ -983,6 +1005,82 @@ function xsumBounds(xsums, g, free) {
       if (g[c]) {
         if (!(allow[k] & (1 << g[c]))) return false;
       } else if (!(free[c] &= allow[k])) return false;
+    }
+  }
+  return true;
+}
+
+// Narrows each Hidden Skyscraper clue's view. For each place k from the
+// clue the hidden digit could be in, the cells before it must rise, the last
+// of them taller than it: squeezed as a thermometer is, from the clue on.
+// Each place that can still be keeps the digits its squeeze leaves; every
+// cell past it may be anything. Placed digits count as masks of one, and
+// `free` is narrowed in place; false if no place is left.
+function hiddenBounds(hiddens, g, free) {
+  const allow = new Int32Array(9);
+  const m = new Int32Array(9);
+  for (const { view, height } of hiddens) {
+    const cells = VIEWS[view];
+    allow.fill(0);
+    let fits = false;
+    for (let k = 1; k < 9; k++) {
+      const c = cells[k];
+      if (!((g[c] ? 1 << g[c] : free[c]) & (1 << height))) continue;
+      // The cells before it: rising, the height itself not among them.
+      let ok = true;
+      let lo = 0;
+      for (let i = 0; i < k && ok; i++) {
+        const x = cells[i];
+        m[i] = (g[x] ? 1 << g[x] : free[x]) & ABOVE[lo] & ~(1 << height) & (i === k - 1 ? ABOVE[height] : ALL);
+        if (!m[i]) ok = false;
+        else lo = LOW[m[i]];
+      }
+      let hi = 10;
+      for (let i = k - 1; i >= 0 && ok; i--) {
+        m[i] &= BELOW[hi];
+        if (!m[i]) ok = false;
+        else hi = HIGH[m[i]];
+      }
+      if (!ok) continue;
+      fits = true;
+      for (let i = 0; i < k; i++) allow[i] |= m[i];
+      allow[k] |= 1 << height;
+      for (let i = k + 1; i < 9; i++) allow[i] = ALL;
+    }
+    if (!fits) return false;
+    for (let k = 0; k < 9; k++) {
+      const c = cells[k];
+      if (g[c]) {
+        if (!(allow[k] & (1 << g[c]))) return false;
+      } else if (!(free[c] &= allow[k])) return false;
+    }
+  }
+  return true;
+}
+
+// Narrows each Numbered Room clue's view. The clue's digit sits in one
+// place, so the first digit, X, is one more than how far in that place is:
+// X may be any digit whose place could hold the clue's (X = 1 only for a
+// clue of 1, the first cell being its own place), and a place no X is left
+// for cannot hold it. Placed digits count as masks of one, and `free` is
+// narrowed in place; false if no X is left.
+function roomBounds(rooms, g, free) {
+  for (const { view, digit } of rooms) {
+    const cells = VIEWS[view];
+    const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
+    let xs = 0;
+    for (let x = 1; x <= 9; x++) {
+      if (!(mask(cells[0]) & (1 << x))) continue;
+      if (x === 1 ? digit === 1 : x !== digit && mask(cells[x - 1]) & (1 << digit)) xs |= 1 << x;
+    }
+    if (!xs) return false;
+    if (!g[cells[0]]) free[cells[0]] = xs;
+    for (let k = 1; k < 9; k++) {
+      const c = cells[k];
+      if (xs & (1 << (k + 1))) {
+        if (xs === 1 << (k + 1) && !g[c] && !(free[c] &= 1 << digit)) return false;
+      } else if (g[c] === digit) return false;
+      else if (!g[c]) free[c] &= ~(1 << digit);
     }
   }
   return true;
@@ -1097,6 +1195,8 @@ const norm = (v) => ({
   littles: v?.littles ?? [],
   skyscrapers: v?.skyscrapers ?? [],
   xsums: v?.xsums ?? [],
+  hiddens: v?.hiddens ?? [],
+  rooms: v?.rooms ?? [],
   regions: v?.regions?.length ? v.regions : null,
   rules: v?.rules ?? 0,
 });
@@ -1106,7 +1206,7 @@ const norm = (v) => ({
 // the clues outside; 0 for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1148,6 +1248,8 @@ export function variantCandidates(grid, variant) {
   littleBounds(littles, grid, out);
   skyscraperBounds(skyscrapers, grid, out);
   xsumBounds(xsums, grid, out);
+  hiddenBounds(hiddens, grid, out);
+  roomBounds(rooms, grid, out);
   return out;
 }
 
@@ -1168,7 +1270,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const barred = barredSides(rules, dots, xvs);
   let steps = 0;
@@ -1236,6 +1338,8 @@ function search(grid, variant, found) {
     if (littles.length && !littleBounds(littles, g, free)) return null;
     if (skyscrapers.length && !skyscraperBounds(skyscrapers, g, free)) return null;
     if (xsums.length && !xsumBounds(xsums, g, free)) return null;
+    if (hiddens.length && !hiddenBounds(hiddens, g, free)) return null;
+    if (rooms.length && !roomBounds(rooms, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

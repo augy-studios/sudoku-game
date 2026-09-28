@@ -42,6 +42,9 @@ import {
   littleProblem,
   skyscraperProblem,
   xsumProblem,
+  hiddenProblem,
+  roomProblem,
+  firstHidden,
   regionProblem,
   sortRegions,
   seen,
@@ -1259,6 +1262,11 @@ function xsumOf(solution, view) {
   const digits = VIEWS[view].map((c) => solution[c]);
   return { view, sum: digits.slice(0, digits[0]).reduce((t, d) => t + d, 0) };
 }
+const hiddenOf = (solution, view) => ({ view, height: firstHidden(VIEWS[view].map((c) => solution[c])) });
+function roomOf(solution, view) {
+  const digits = VIEWS[view].map((c) => solution[c]);
+  return { view, digit: digits[digits[0] - 1] };
+}
 // Some of them, each of `views` with chance `p`, skipping spots in `taken`.
 function layViews(solution, rand, of, p, views = [...VIEWS.keys()], taken = new Set()) {
   return views
@@ -1295,6 +1303,59 @@ function viewCluesAgree(key, letter, of, x) {
   assert.deepEqual(parseSeed(madeSeed("H", solution, { [key]: all }).text)[key], all);
   return { puzzle, solution };
 }
+
+test("Hidden Skyscraper clues are checked, solved and carried in seeds", () => {
+  assert.equal(hiddenProblem([{ view: 0, height: 1 }, { view: 35, height: 8 }]), null);
+  assert.equal(hiddenProblem([{ view: 3, height: 9 }]).why, "height", "a 9 is never hidden");
+  assert.equal(hiddenProblem([{ view: 3, height: 0 }]).why, "height");
+  assert.equal(hiddenProblem([{ view: 3, height: 2 }, { view: 3, height: 4 }]).why, "twice");
+  assert.equal(firstHidden([1, 2, 5, 3, 9]), 3);
+  assert.equal(firstHidden([1, 2, 3, 4, 5, 6, 7, 8, 9]), 0);
+  viewCluesAgree("hiddens", "QHS", hiddenOf, 71);
+
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  // An 8 hidden from the left: the first cell is not the 8, the second not
+  // a 1, as it rises from the first or is the 8. After 3 and 6, a 5 is
+  // hidden or the view rises past 6.
+  const eight = variantCandidates(at({}), { hiddens: [{ view: 0, height: 8 }] });
+  assert.equal(eight[0], 0b1111111110 & ~bits(8));
+  assert.equal(eight[1], 0b1111111110 & ~bits(1));
+  assert.equal(variantCandidates(at({ 0: 3, 1: 6 }), { hiddens: [{ view: 0, height: 5 }] })[2], bits(5, 7, 8, 9));
+  // From the right: row 1's last cell first.
+  assert.equal(variantCandidates(at({ 8: 9 }), { hiddens: [{ view: 18, height: 4 }] })[7], bits(4));
+  // Another height hidden first clashes, as does the height seen.
+  const five = { hiddens: [{ view: 0, height: 5 }] };
+  assert.deepEqual([...clashes(at({ 0: 3, 1: 6, 2: 4 }), five)].sort((p, q) => p - q), [0, 1, 2]);
+  assert.deepEqual([...clashes(at({ 0: 3, 1: 5 }), five)].sort((p, q) => p - q), [0, 1]);
+  assert.equal(clashes(at({ 0: 3, 1: 6, 2: 5 }), five).size, 0);
+});
+
+test("Numbered Room clues are checked, solved and carried in seeds", () => {
+  assert.equal(roomProblem([{ view: 0, digit: 1 }, { view: 35, digit: 9 }]), null);
+  assert.equal(roomProblem([{ view: 3, digit: 10 }]).why, "digit");
+  assert.equal(roomProblem([{ view: 36, digit: 3 }]).why, "view");
+  viewCluesAgree("rooms", "QNR", roomOf, 73);
+
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  // A 7: the first digit is neither 1, which would point at itself, nor 7,
+  // which would be the 7 in the wrong place; a first 4 puts the 7 fourth.
+  assert.equal(variantCandidates(at({}), { rooms: [{ view: 0, digit: 7 }] })[0], 0b1111111110 & ~bits(1, 7));
+  assert.equal(variantCandidates(at({ 0: 4 }), { rooms: [{ view: 0, digit: 7 }] })[3], bits(7));
+  assert.equal(variantCandidates(at({ 0: 4 }), { rooms: [{ view: 0, digit: 7 }] })[5] & bits(7), 0);
+  // A 1 may be anywhere, the first cell too, as a 1 there points at
+  // itself; a first 3 puts it third, down a column from the top.
+  assert.equal(variantCandidates(at({}), { rooms: [{ view: 9, digit: 1 }] })[0], 0b1111111110);
+  assert.equal(variantCandidates(at({ 0: 3 }), { rooms: [{ view: 9, digit: 1 }] })[18], bits(1));
+  // Something else where it points clashes, as does the clue's digit
+  // somewhere else.
+  const seven = { rooms: [{ view: 0, digit: 7 }] };
+  assert.deepEqual([...clashes(at({ 0: 4, 3: 6 }), seven)].sort((p, q) => p - q), [0, 3]);
+  assert.deepEqual([...clashes(at({ 0: 4, 2: 7 }), seven)].sort((p, q) => p - q), [0, 2]);
+  assert.equal(clashes(at({ 0: 4, 3: 7 }), seven).size, 0);
+  assert.equal(seedVariantName("YUQHSQNRJD-H-BBBB"), "Skyscrapers, X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal");
+});
 
 test("Skyscraper clues are checked, solved and carried in seeds", () => {
   assert.equal(skyscraperProblem([{ view: 0, count: 1 }, { view: 35, count: 9 }]), null);
@@ -1755,9 +1816,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const skyscrapers = layViews(solution, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
     const xsums = layViews(solution, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken);
     const littles = layLittles(solution, rand, 0.1, taken);
-    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, rules };
+    // Their own numbers, so the parts laid before come out as they did.
+    const hiddens = layViews(solution, seeded(71), hiddenOf, 0.3, [...VIEWS.keys()], taken).filter((clue) => clue.height);
+    const rooms = layViews(solution, seeded(73), roomOf, 0.3, [...VIEWS.keys()], taken);
+    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
     const name = keys.join(", ");
-    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums"];
+    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -1770,12 +1834,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASROZCFQENQMOPVQGTQQDBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASROZCFQENQMOPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) {
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
       assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     }
     assert.deepEqual(puzzleFor(back).solution, solution);
@@ -1798,7 +1862,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
+  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

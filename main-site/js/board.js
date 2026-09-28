@@ -20,7 +20,8 @@
 // with its digits in it. Sandwich and Little Killer clues sit
 // outside the grid, in a margin a cell wide the board then leaves round it,
 // a Little Killer's with a small arrow along its diagonal; so do Skyscraper
-// counts, in a small square, and X-Sums, in a small circle. A Jigsaw's
+// counts, in a small square, X-Sums, in a small circle, Hidden Skyscraper
+// clues, in a dashed square, and Numbered Room clues, in a diamond. A Jigsaw's
 // regions take the boxes' place: the boxes lose their edges and tint, and
 // each region gets a heavy line round it instead. Anti-knight, anti-king,
 // Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV have
@@ -140,7 +141,7 @@ export class BoardView {
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, thermos, arrows, whispers, renbans,
   // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-  // signs, quads, sandwiches, littles, skyscrapers, xsums and regions are a variant
+  // signs, quads, sandwiches, hiddens, rooms, littles, skyscrapers, xsums and regions are a variant
   // puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, as pathKind says:
@@ -175,6 +176,8 @@ export class BoardView {
     this.littles = view.littles ?? [];
     this.skyscrapers = view.skyscrapers ?? [];
     this.xsums = view.xsums ?? [];
+    this.hiddens = view.hiddens ?? [];
+    this.rooms = view.rooms ?? [];
     this.regions = view.regions ?? null;
     this.root.classList.toggle("jigsaw", Boolean(this.regions));
     // Its box for the peer highlight: a Jigsaw's region, or the 3x3 box.
@@ -261,7 +264,7 @@ export class BoardView {
     const modulars = this.modulars ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? []), ...(this.signs ?? [])];
     const quads = this.quads ?? [];
-    const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.spots ?? [], this.spot];
+    const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.hiddens ?? [], this.rooms ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
@@ -270,7 +273,7 @@ export class BoardView {
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, path, ...outside.slice(0, 5)].some((list) => list.length);
+    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, path, ...outside.slice(0, -1)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -481,13 +484,22 @@ export class BoardView {
       clues.map((clue) => {
         const { x, y, w } = spotAt(viewSpot(clue.view));
         const r = w * 0.27;
-        const frame =
-          shape === "square"
-            ? `<rect class="outside-frame" x="${f(x - r)}" y="${f(y - r)}" width="${f(r * 2)}" height="${f(r * 2)}" rx="${f(w * 0.05)}"/>`
-            : `<circle class="outside-frame" cx="${f(x)}" cy="${f(y)}" r="${f(r * 1.08)}"/>`;
+        const square = (dash) =>
+          `<rect class="outside-frame" x="${f(x - r)}" y="${f(y - r)}" width="${f(r * 2)}" height="${f(r * 2)}" rx="${f(w * 0.05)}"${dash}/>`;
+        const frame = {
+          square: square(""),
+          dashed: square(` stroke-dasharray="${f(w * 0.07)} ${f(w * 0.05)}"`),
+          circle: `<circle class="outside-frame" cx="${f(x)}" cy="${f(y)}" r="${f(r * 1.08)}"/>`,
+          diamond: `<path class="outside-frame" d="M${f(x)} ${f(y - r * 1.3)}L${f(x + r * 1.3)} ${f(y)}L${f(x)} ${f(y + r * 1.3)}L${f(x - r * 1.3)} ${f(y)}Z"/>`,
+        }[shape];
         return `${frame}<text class="outside-sum" x="${f(x)}" y="${f(y)}" font-size="${f(w * 0.34)}">${clue[value]}</text>`;
       });
-    const viewClues = [...framed(this.skyscrapers ?? [], "count", "square"), ...framed(this.xsums ?? [], "sum", "circle")];
+    const viewClues = [
+      ...framed(this.skyscrapers ?? [], "count", "square"),
+      ...framed(this.xsums ?? [], "sum", "circle"),
+      ...framed(this.hiddens ?? [], "height", "dashed"),
+      ...framed(this.rooms ?? [], "digit", "diamond"),
+    ];
     const outsides = [...open, picked, ...sandwichSums, ...littleSums, ...viewClues].join("");
     // A Jigsaw's regions: a heavy line along each side between two regions.
     let walls = "";

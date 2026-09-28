@@ -42,7 +42,7 @@ const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 // variant: { cages, thermos, arrows, whispers, renbans, palindromes,
 // zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
 // sandwiches,
-// littles, skyscrapers, xsums, regions, rules } (variant.js), or nothing for
+// littles, skyscrapers, xsums, hiddens, rooms, regions, rules } (variant.js), or nothing for
 // a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
@@ -65,9 +65,11 @@ export async function drawPuzzle(grid, variant = null) {
   const littles = variant?.littles ?? [];
   const skyscrapers = variant?.skyscrapers ?? [];
   const xsums = variant?.xsums ?? [];
+  const hiddens = variant?.hiddens ?? [];
+  const rooms = variant?.rooms ?? [];
   const regions = variant?.regions?.length ? variant.regions : null;
   // Room round the grid for clues outside it; the grid is drawn as without.
-  const margin = sandwiches.length || littles.length || skyscrapers.length || xsums.length ? CELL : 0;
+  const margin = [sandwiches, littles, skyscrapers, xsums, hiddens, rooms].some((list) => list.length) ? CELL : 0;
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -352,24 +354,37 @@ export async function drawPuzzle(grid, variant = null) {
   };
   ctx.font = `${Math.round(CELL * 0.34)}px ${FONT}`;
   ctx.lineWidth = 3;
-  for (const [clues, value, square] of [
-    [skyscrapers, "count", true],
-    [xsums, "sum", false],
+  // Hidden Skyscraper clues in a dashed square, Numbered Room clues in a
+  // diamond.
+  for (const [clues, value, shape] of [
+    [skyscrapers, "count", "square"],
+    [xsums, "sum", "circle"],
+    [hiddens, "height", "dashed"],
+    [rooms, "digit", "diamond"],
   ]) {
     for (const clue of clues) {
       const [x, y] = viewAt(clue.view);
       const r = CELL * 0.27;
       ctx.beginPath();
-      if (square) ctx.roundRect(x - r, y - r, r * 2, r * 2, CELL * 0.05);
-      else ctx.arc(x, y, r * 1.08, 0, Math.PI * 2);
+      ctx.setLineDash(shape === "dashed" ? [CELL * 0.07, CELL * 0.05] : []);
+      if (shape === "square" || shape === "dashed") ctx.roundRect(x - r, y - r, r * 2, r * 2, CELL * 0.05);
+      else if (shape === "circle") ctx.arc(x, y, r * 1.08, 0, Math.PI * 2);
+      else {
+        ctx.moveTo(x, y - r * 1.3);
+        ctx.lineTo(x + r * 1.3, y);
+        ctx.lineTo(x, y + r * 1.3);
+        ctx.lineTo(x - r * 1.3, y);
+        ctx.closePath();
+      }
       ctx.stroke();
+      ctx.setLineDash([]);
       ctx.fillText(String(clue[value]), x, y);
     }
   }
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules });
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }

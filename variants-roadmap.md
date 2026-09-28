@@ -1,14 +1,15 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 25 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 23 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
-**Built so far (29):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
+**Built so far (31):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
 Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular · Kropki,
 XV, Greater Than, Quad · Sandwich,
-Little Killer, Skyscrapers, X-Sums · Diagonal, Anti-knight, Anti-king,
+Little Killer, Skyscrapers, X-Sums, Hidden Skyscraper, Numbered Room ·
+Diagonal, Anti-knight, Anti-king,
 Windoku, Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV.
 
 ## Every new variant needs an explanation
@@ -63,8 +64,6 @@ easily misread; best left.
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Hidden Skyscraper | The clue is the first building hidden from view, looking in from that side. | Skyscrapers' views |
-| Numbered Room | The first digit from the clue's side, X, puts the clue's digit X cells in. | X-Sums' views |
 | Full Rank | Rows and columns read as numbers and ranked; the clue is that one's place. | Views, and a whole-grid option for ties |
 | Row/Column Indexing | A cell's digit says where in its row the cell's own column number sits (or the other way). | New |
 
@@ -100,6 +99,4 @@ easily misread; best left.
 2. ~~Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV~~: built, the rules about sides as barred sides (`barredSides`).
 3. ~~Entropic and Modular lines~~: built, as QEN and QMO, three cells at least.
 4. ~~Greater Than and Quad~~: built, as QGT and QQD, on the Marks tool (a quad on a tap near a corner).
-5. Hidden Skyscraper and Numbered Room: both reuse the views Skyscrapers and X-Sums use.
-
-
+5. ~~Hidden Skyscraper and Numbered Room~~: built, as QHS and QNR, on the Outside tool.

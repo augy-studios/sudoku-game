@@ -62,6 +62,8 @@ import {
   littleProblem,
   skyscraperProblem,
   xsumProblem,
+  hiddenProblem,
+  roomProblem,
   regionProblem,
   diagonalFrom,
   SANDWICH_MAX,
@@ -124,6 +126,8 @@ const fresh = () => ({
   little: false,
   skyscraper: false,
   xsum: false,
+  hiddensky: false,
+  room: false,
   jigsaw: false,
   rules: 0,
   cages: [],
@@ -145,6 +149,8 @@ const fresh = () => ({
   littles: [],
   skyscrapers: [],
   xsums: [],
+  hiddens: [],
+  rooms: [],
   // A Jigsaw's regions, from the boxes until the maker cuts them.
   regions: Array.from(BOX),
 });
@@ -214,9 +220,11 @@ const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : nul
 const littles = () => (s.little && s.littles.length ? s.littles : null);
 const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers : null);
 const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
+const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
+const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums());
+  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -240,6 +248,8 @@ const variant = () =>
         littles: littles() ?? [],
         skyscrapers: skyscrapers() ?? [],
         xsums: xsums() ?? [],
+        hiddens: hiddens() ?? [],
+        rooms: rooms() ?? [],
         regions: regions(),
         rules: s.rules,
       }
@@ -343,6 +353,8 @@ function hintText(step, reveal) {
       ...(littles() ? ["Little Killer sums"] : []),
       ...(skyscrapers() ? ["Skyscraper counts"] : []),
       ...(xsums() ? ["X-Sums"] : []),
+      ...(hiddens() ? ["Hidden Skyscraper clues"] : []),
+      ...(rooms() ? ["Numbered Room clues"] : []),
     ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
@@ -377,6 +389,8 @@ function problemText(check) {
   if (why === "littles") return LITTLE_PROBLEMS[check.problem.why];
   if (why === "skyscrapers") return SKYSCRAPER_PROBLEMS[check.problem.why];
   if (why === "xsums") return XSUM_PROBLEMS[check.problem.why];
+  if (why === "hiddens") return HIDDEN_PROBLEMS[check.problem.why];
+  if (why === "rooms") return ROOM_PROBLEMS[check.problem.why];
   if (why === "regions") return regionText(check.problem);
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
@@ -417,6 +431,8 @@ function clashText() {
   if (littles()) extra.push("not adding up to a Little Killer sum");
   if (skyscrapers()) extra.push("showing more or fewer than a Skyscraper count");
   if (xsums()) extra.push("not adding up to an X-Sum");
+  if (hiddens()) extra.push("hiding some other height first than a Hidden Skyscraper clue");
+  if (rooms()) extra.push("putting some other digit where a Numbered Room's first digit points");
   return `The red digits clash: the same digit twice in a row, column or ${regions() ? "region" : "box"}${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -530,6 +546,18 @@ const XSUM_PROBLEMS = {
   view: "An X-Sum goes beside a row or a column.",
   sum: "An X-Sum is 1 to 45.",
   twice: "That side of that row or column has an X-Sum already.",
+};
+
+const HIDDEN_PROBLEMS = {
+  view: "A Hidden Skyscraper clue goes beside a row or a column.",
+  height: "A Hidden Skyscraper clue is 1 to 8: a 9 is never hidden.",
+  twice: "That side of that row or column has a Hidden Skyscraper clue already.",
+};
+
+const ROOM_PROBLEMS = {
+  view: "A Numbered Room clue goes beside a row or a column.",
+  digit: "A Numbered Room clue is a digit, 1 to 9.",
+  twice: "That side of that row or column has a Numbered Room clue already.",
 };
 
 // What is wrong with a Jigsaw's regions, from regionProblem, naming each
@@ -885,6 +913,8 @@ function onGo() {
   if (s.little && !s.littles.length) return say("Put a Little Killer sum down first: tap Outside, then a spot round the edge.");
   if (s.skyscraper && !s.skyscrapers.length) return say("Put a Skyscraper count down first: tap Outside, then a spot beside a row or column.");
   if (s.xsum && !s.xsums.length) return say("Put an X-Sum down first: tap Outside, then a spot beside a row or column.");
+  if (s.hiddensky && !s.hiddens.length) return say("Put a Hidden Skyscraper clue down first: tap Outside, then a spot beside a row or column.");
+  if (s.room && !s.rooms.length) return say("Put a Numbered Room clue down first: tap Outside, then a spot beside a row or column.");
   if (s.jigsaw && boxesStill()) return say("Cut the regions first: tap Regions, then a cell to pick its region, then cells to move into it.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
@@ -1556,6 +1586,30 @@ const OUTSIDE = {
     place: "beside a row or column for an X-Sum",
     means: "an X-Sum, the first X digits from that side, X being the first",
   },
+  hiddensky: {
+    list: "hiddens",
+    key: "height",
+    problem: hiddenProblem,
+    problems: HIDDEN_PROBLEMS,
+    spotOf: ({ view }) => viewSpot(view),
+    at: (spot) => (viewAt(spot) >= 0 ? [{ view: viewAt(spot) }] : []),
+    words: ({ view }) => `Hidden Skyscraper clue for ${viewWords(view)}`,
+    turn: () => "Hidden Skyscraper",
+    place: "beside a row or column for a Hidden Skyscraper clue",
+    means: "a Hidden Skyscraper clue, the first digit from that side hidden behind a taller one",
+  },
+  room: {
+    list: "rooms",
+    key: "digit",
+    problem: roomProblem,
+    problems: ROOM_PROBLEMS,
+    spotOf: ({ view }) => viewSpot(view),
+    at: (spot) => (viewAt(spot) >= 0 ? [{ view: viewAt(spot) }] : []),
+    words: ({ view }) => `Numbered Room clue for ${viewWords(view)}`,
+    turn: () => "Numbered Room",
+    place: "beside a row or column for a Numbered Room clue",
+    means: "a Numbered Room clue, the digit in the cell the first digit from that side counts to",
+  },
 };
 const outsideOn = () => Object.keys(OUTSIDE).some((kind) => s[kind]);
 
@@ -1615,7 +1669,7 @@ function pickSpot(at) {
   const kinds = spotKinds(at);
   if (!kinds.length) {
     clearSpot();
-    const beside = s.skyscraper || s.xsum ? "beside a row or column" : s.sandwich ? "left of a row or above a column" : "";
+    const beside = s.skyscraper || s.xsum || s.hiddensky || s.room ? "beside a row or column" : s.sandwich ? "left of a row or above a column" : "";
     const round = s.little ? "round the edge with a diagonal into the grid" : "";
     return say(`No clue goes there. Tap a spot ${[beside, round].filter(Boolean).join(", or ")}.`);
   }
@@ -1788,6 +1842,12 @@ function defaultStatus() {
     if (s.xsum && !s.xsums.length) {
       return "An X-Sums puzzle: tap Outside, then a spot beside a row or column, and type the sum of the first X digits from there, X being the first.";
     }
+    if (s.hiddensky && !s.hiddens.length) {
+      return "A Hidden Skyscraper puzzle: tap Outside, then a spot beside a row or column, and type the height of the first digit from there hidden behind a taller one.";
+    }
+    if (s.room && !s.rooms.length) {
+      return "A Numbered Room puzzle: tap Outside, then a spot beside a row or column, and type the digit in the cell the first digit from there counts to.";
+    }
     if (s.jigsaw && boxesStill()) return "A Jigsaw puzzle: tap Regions to cut the grid into nine regions of nine cells, in place of the boxes.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
@@ -1870,6 +1930,8 @@ function render() {
     littles: s.little ? s.littles : null,
     skyscrapers: s.skyscraper ? s.skyscrapers : null,
     xsums: s.xsum ? s.xsums : null,
+    hiddens: s.hiddensky ? s.hiddens : null,
+    rooms: s.room ? s.rooms : null,
     regions: regions(),
     margin: outsideOn(),
     spots: outMode ? openSpots() : [],

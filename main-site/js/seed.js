@@ -14,10 +14,11 @@
 // renban lines, O for palindrome lines, Z for zipper lines, C for between
 // lines, F for lockout lines, QEN for entropic lines, QMO for modular
 // lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
-// for quads, B for
-// Sandwich clues, L for Little Killer clues, Y for Skyscraper clues, U for X-Sum clues and J
-// for a Jigsaw's regions, which the seed then carries too, and D, N, G, W,
-// QDG, QAC, QSK and QSX for the switch rules (variant.js). Once the single
+// for quads, B for Sandwich clues, L for Little Killer clues, Y for
+// Skyscraper clues, U for X-Sum clues, QHS for Hidden Skyscraper clues, QNR
+// for Numbered Room clues and J for a Jigsaw's regions, which the seed then
+// carries too, and D, N, G, W, QDG, QAC, QSK and QSX for the switch rules
+// (variant.js). Once the single
 // letters ran out, a new one became Q and two more: Q is read with the two
 // after it, and never alone, so a seed from before reads as it did.
 
@@ -45,6 +46,8 @@ import {
   littleProblem,
   skyscraperProblem,
   xsumProblem,
+  hiddenProblem,
+  roomProblem,
   regionProblem,
   sortRegions,
   VIEWS,
@@ -181,9 +184,9 @@ function decodeGrid(body) {
    each digit. Then Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
    many, and for each its first cell, which way it runs and its sum. Then
-   Skyscraper clues, and then X-Sum clues, as whichever is shorter: how
-   many, and for each its view and its value; or for every view, its value
-   or none. Then a Jigsaw's regions: for each pair of neighbours, whether
+   Skyscraper clues, then X-Sum clues, then Hidden Skyscraper clues, then
+   Numbered Room clues, each as whichever is shorter: how many, and for each
+   its view and its value; or for every view, its value or none. Then a Jigsaw's regions: for each pair of neighbours, whether
    they share a region, which gives back the regions as the shared edges
    give back cages. Each part is there only when the seed's letters say
    so, so a seed from before a part came reads as it did. */
@@ -540,6 +543,8 @@ const PARTS = [
   { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
   views("skyscrapers", "Y", "Skyscrapers", skyscraperProblem, "count", 9),
   views("xsums", "U", "X-Sums", xsumProblem, "sum", 45),
+  views("hiddens", "QHS", "Hidden Skyscraper", hiddenProblem, "height", 8),
+  views("rooms", "QNR", "Numbered Room", roomProblem, "digit", 9),
   { list: "regions", letter: "J", name: "Jigsaw", problem: regionProblem, write: writeRegions, read: readRegions, sort: sortRegions },
 ];
 
@@ -571,7 +576,9 @@ function prefixFor(parts, rules) {
 
 // The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
 // renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
-// dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } for a variant puzzle (variant.js), or nothing for a classic one.
+// dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens,
+// rooms, regions, rules } for a variant puzzle (variant.js), or nothing for
+// a classic one.
 // `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.

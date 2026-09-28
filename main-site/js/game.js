@@ -527,8 +527,10 @@ function update({ fresh = false } = {}) {
       littles: g.seed.littles ?? null,
       skyscrapers: g.seed.skyscrapers ?? null,
       xsums: g.seed.xsums ?? null,
+      hiddens: g.seed.hiddens ?? null,
+      rooms: g.seed.rooms ?? null,
       regions: g.seed.regions ?? null,
-      margin: Boolean(g.seed.sandwiches || g.seed.littles || g.seed.skyscrapers || g.seed.xsums),
+      margin: Boolean(g.seed.sandwiches || g.seed.littles || g.seed.skyscrapers || g.seed.xsums || g.seed.hiddens || g.seed.rooms),
     });
   }
   renderChips(over);
@@ -772,6 +774,8 @@ function finish(fresh) {
       littles: g.seed.littles,
       skyscrapers: g.seed.skyscrapers,
       xsums: g.seed.xsums,
+      hiddens: g.seed.hiddens,
+      rooms: g.seed.rooms,
       regions: g.seed.regions,
       rules: g.seed.rules,
     },
@@ -1018,6 +1022,8 @@ function watch(link) {
       littles: link.seed.littles,
       skyscrapers: link.seed.skyscrapers,
       xsums: link.seed.xsums,
+      hiddens: link.seed.hiddens,
+      rooms: link.seed.rooms,
       regions: link.seed.regions,
       rules: link.seed.rules,
     },

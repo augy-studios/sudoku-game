@@ -71,7 +71,7 @@ export class Replay {
 
   // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
   // whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
-  // entropics?, modulars?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, regions?,
+  // entropics?, modulars?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
   // rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
@@ -141,8 +141,10 @@ export class Replay {
       littles: this.game.littles ?? null,
       skyscrapers: this.game.skyscrapers ?? null,
       xsums: this.game.xsums ?? null,
+      hiddens: this.game.hiddens ?? null,
+      rooms: this.game.rooms ?? null,
       regions: this.game.regions ?? null,
-      margin: Boolean(this.game.sandwiches || this.game.littles || this.game.skyscrapers || this.game.xsums),
+      margin: Boolean(this.game.sandwiches || this.game.littles || this.game.skyscrapers || this.game.xsums || this.game.hiddens || this.game.rooms),
     });
     $("rpScrub").value = String(i);
     const total = this.frames.length - 1;

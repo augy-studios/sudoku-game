@@ -6,7 +6,8 @@
 //
 // Each takes a variant, { cages, thermos, arrows, whispers, renbans,
 // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-// signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules }
+// signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
+// regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -39,6 +40,8 @@ import {
   littleProblem,
   skyscraperProblem,
   xsumProblem,
+  hiddenProblem,
+  roomProblem,
   regionProblem,
   markKeeps,
   barredSides,
@@ -50,7 +53,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums"];
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -106,8 +109,12 @@ export function bitCount(mask) {
 // fill it to some other sum; a Little Killer diagonal's digits once they go
 // past its sum, or fill it to some other sum; the digits of a Skyscraper
 // view, from the clue on, once more can be seen than it counts, or once
-// they reach its 9 and some other number can; and an X-Sum's first X
-// digits once they go past its sum, or fill it to some other.
+// they reach its 9 and some other number can; an X-Sum's first X digits
+// once they go past its sum, or fill it to some other; a Hidden Skyscraper
+// view's digits from the clue on, once the first hidden one is some other
+// height, or its height shows; and a Numbered Room's first digit, with the
+// digit it points at when that is some other, or with the clue's digit when
+// that sits somewhere else.
 export function clashes(grid, variant = null) {
   const peers = peersOf(variant);
   const out = new Set();
@@ -265,6 +272,26 @@ export function clashes(grid, variant = null) {
     const total = filled.reduce((t, c) => t + grid[c], 0);
     if (total > sum || (filled.length === x && total !== sum)) filled.forEach((c) => out.add(c));
   }
+  for (const { view, height } of variant?.hiddens ?? []) {
+    const cells = VIEWS[view];
+    let top = 0;
+    for (let k = 0; k < 9 && grid[cells[k]]; k++) {
+      const d = grid[cells[k]];
+      const hidden = d < top;
+      if (hidden ? d !== height : d === height) cells.slice(0, k + 1).forEach((c) => out.add(c));
+      if (hidden) break;
+      top = d;
+    }
+  }
+  for (const { view, digit } of variant?.rooms ?? []) {
+    const cells = VIEWS[view];
+    const x = grid[cells[0]];
+    if (!x) continue;
+    const pointed = cells[x - 1];
+    if (grid[pointed] && grid[pointed] !== digit) [cells[0], pointed].forEach((c) => out.add(c));
+    const at = cells.findIndex((c) => grid[c] === digit);
+    if (at >= 0 && at !== x - 1) [cells[0], cells[at]].forEach((c) => out.add(c));
+  }
   return out;
 }
 
@@ -333,7 +360,8 @@ export const MIN_CLUES = 17;
 // "cages", "thermos", "arrows", "whispers", "renbans", "palindromes",
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs",
 // "signs", "quads",
-// "sandwiches", "littles", "skyscrapers", "xsums" or "regions" (and
+// "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms" or
+// "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
@@ -415,6 +443,13 @@ export function checkClues(clues, variant = null) {
     const problem = xsumProblem(variant.xsums);
     if (problem) return { ok: false, why: "xsums", problem };
   }
+  for (const [list, clueProblem] of [
+    ["hiddens", hiddenProblem],
+    ["rooms", roomProblem],
+  ]) {
+    const problem = variant?.[list]?.length && clueProblem(variant[list]);
+    if (problem) return { ok: false, why: list, problem };
+  }
   const found = isVariant(variant) ? variantSolutions(clues, variant, 2) : countSolutions(clues, 2) ? findSolutions(clues, 2) : [];
   if (!found) return { ok: false, why: "hard" };
   if (!found.length) return { ok: false, why: "none" };
@@ -434,7 +469,7 @@ export function rateLevel(clues, variant = null) {
   // A killer puzzle, or one with clues outside the grid, usually has few
   // clues or none, so blanks say little: what counts is how far singles get
   // with the cages and the sums.
-  if (["cages", "sandwiches", "littles", "skyscrapers", "xsums"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
+  if (["cages", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
   if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
   return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

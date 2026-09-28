@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -98,7 +98,7 @@ Solo and Network settings (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
 Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
-X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
+X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
 same place in each 3x3 box hold 1 to 9), Anti-consecutive (cells sharing a
@@ -116,7 +116,7 @@ every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, QEN, QMO,
-P, V, QGT, QQD, B, L, Y, U, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that
+P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
@@ -124,9 +124,9 @@ the Expert level. A seed
 with any before D carries that part in its body too: cages, thermometers,
 arrows, whisper lines, renban lines, palindrome lines, zipper lines,
 between lines, lockout lines, entropic lines, modular lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
-sums, Skyscraper counts, X-Sums or regions (a line as its length, its first
-cell and each step's direction; dots, marks, Skyscraper counts and X-Sums
-as a list, or every side's or view's value, whichever is shorter; Sandwich
+sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
+clues or regions (a line as its length, its first cell and each step's
+direction; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Sandwich
 sums as every row's and column's sum or none; Little Killer sums as each
 one's first cell, way and sum; regions as which neighbours share one). The
 others' carry the clues only.
@@ -284,6 +284,21 @@ the count allows (the cell k places in at most 10 minus the count plus k),
 and checks the digits placed from the clue on against it; X-Sums it treats
 as a Sandwich, trying each X. Too many seen, or the 9 in with some other
 number seen, or an X-Sum past its sum or full at another, show as clashes.
+
+**Hidden Skyscraper and Numbered Room.** Clues beside a row or column too,
+on the same spots, Turn stepping through what a spot can take. A Hidden
+Skyscraper clue, in a dashed square, is the height of the first digit from
+that side lower than one before it, hidden behind it: 1 to 8, as a 9 is
+never hidden. The solver tries each place that digit could be, the cells
+before it rising as on a thermometer and the last of them taller, and keeps
+what those places allow. A Numbered Room clue, in a diamond, is the digit
+in the cell the first digit from that side counts to, the first cell
+counting as one (so a first 1 points at itself). The clue's digit sits in
+one place, so the first digit is one more than how far in that is: the
+solver keeps the first cell to digits whose place could hold the clue's,
+and a place none points to never holds it. The wrong height hidden first,
+or the height seen, and a first digit pointing at some other digit, or the
+clue's digit somewhere it does not point, show as clashes.
 
 **Jigsaw.** Nine regions of nine cells take the boxes' place: each holds 1
 to 9, and the boxes are no houses. In variant.js a Jigsaw's regions are

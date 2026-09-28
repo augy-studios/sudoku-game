@@ -135,6 +135,18 @@ export const RULE_HELP = {
     rule: "A number beside a row or column is the sum of the first X digits from that side, where X is the first digit itself.",
     draw: "Tap Outside, then a spot beside a row or column, type the sum, and tap Add.",
   },
+  hiddensky: {
+    name: "Hidden Skyscraper",
+    list: "hiddens",
+    rule: "Digits are buildings that high. A number in a dashed square beside a row or column is the height of the first building seen from that side that is hidden behind a taller one.",
+    draw: "Tap Outside, then a spot beside a row or column, type the height, and tap Add. Turn switches between the clues that can go there.",
+  },
+  room: {
+    name: "Numbered Room",
+    list: "rooms",
+    rule: "The first digit from a diamond's side, X, counts X cells in from that side, first cell included: the digit in the diamond goes there.",
+    draw: "Tap Outside, then a spot beside a row or column, type the digit, and tap Add. Turn switches between the clues that can go there.",
+  },
   diagonal: {
     name: "Diagonal",
     rule: "Both long diagonals, drawn as faint lines, hold 1 to 9 once, like a row.",
