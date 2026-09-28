@@ -80,7 +80,10 @@ its own (mode `made`, from migration 002), without time bonuses, and in a
 network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
-board, on or off in any mix: Killer, Thermo, Arrow, Whispers (German
+board, on or off in any mix, grouped as Cages & regions, Lines, Marks,
+Outside the grid and Whole grid (the same groups as
+[variants-roadmap.md](../variants-roadmap.md), which lists those still to
+build): Killer, Thermo, Arrow, Whispers (German
 Whispers), Renban, Palindrome, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and

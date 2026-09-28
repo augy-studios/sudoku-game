@@ -205,24 +205,50 @@
             <section id="solver" class="panel solver hidden" aria-labelledby="solverTitle">
                 <h3 id="solverTitle" class="panel-title">Type in a puzzle</h3>
 
+                <!-- Grouped by what each rule adds, as in variants-roadmap.md, so a new one has a place. -->
                 <div class="rule-pick" id="solverRules" role="group" aria-label="Rules, on top of the classic ones">
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="killer">Killer</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="thermo">Thermo</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="arrow">Arrow</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="whisper">Whispers</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="renban">Renban</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="palindrome">Palindrome</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="kropki">Kropki</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="xv">XV</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="sandwich">Sandwich</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="little">Little Killer</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="skyscraper">Skyscrapers</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="xsum">X-Sums</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="jigsaw">Jigsaw</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="diagonal">Diagonal</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiknight">Anti-knight</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiking">Anti-king</button>
-                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="windoku">Windoku</button>
+                    <div class="rule-group" role="group" aria-labelledby="ruleGroupCages">
+                        <span id="ruleGroupCages" class="rule-group-label">Cages &amp; regions</span>
+                        <div class="rule-group-btns">
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="killer">Killer</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="jigsaw">Jigsaw</button>
+                        </div>
+                    </div>
+                    <div class="rule-group" role="group" aria-labelledby="ruleGroupLines">
+                        <span id="ruleGroupLines" class="rule-group-label">Lines</span>
+                        <div class="rule-group-btns">
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="thermo">Thermo</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="arrow">Arrow</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="whisper">Whispers</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="renban">Renban</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="palindrome">Palindrome</button>
+                        </div>
+                    </div>
+                    <div class="rule-group" role="group" aria-labelledby="ruleGroupMarks">
+                        <span id="ruleGroupMarks" class="rule-group-label">Marks</span>
+                        <div class="rule-group-btns">
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="kropki">Kropki</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="xv">XV</button>
+                        </div>
+                    </div>
+                    <div class="rule-group" role="group" aria-labelledby="ruleGroupOutside">
+                        <span id="ruleGroupOutside" class="rule-group-label">Outside the grid</span>
+                        <div class="rule-group-btns">
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="sandwich">Sandwich</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="little">Little Killer</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="skyscraper">Skyscrapers</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="xsum">X-Sums</button>
+                        </div>
+                    </div>
+                    <div class="rule-group" role="group" aria-labelledby="ruleGroupGrid">
+                        <span id="ruleGroupGrid" class="rule-group-label">Whole grid</span>
+                        <div class="rule-group-btns">
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="diagonal">Diagonal</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiknight">Anti-knight</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiking">Anti-king</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="windoku">Windoku</button>
+                        </div>
+                    </div>
                 </div>
                 <p id="solverRuleLine" class="field-note rule-line hidden"></p>
 

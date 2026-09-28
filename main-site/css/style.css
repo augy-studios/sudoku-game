@@ -657,13 +657,31 @@ body {
   max-width: 460px;
   line-height: 1.4;
 }
-/* The variant's rule buttons: on or off, any mix. */
+/* The variant's rule buttons: on or off, any mix. A row to each group,
+   named on the left, the names lined up in one column. */
 .rule-pick {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-direction: column;
   gap: 6px;
-  max-width: 480px;
+  width: 100%;
+  max-width: 560px;
+}
+.rule-group {
+  display: grid;
+  grid-template-columns: 7.2rem 1fr;
+  align-items: baseline;
+  gap: 10px;
+}
+.card .rule-group-label {
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: right;
+}
+.rule-group-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .rule-btn {
   padding: 6px 12px;
@@ -1092,6 +1110,15 @@ body {
   .mode-toggle.quarters .mode-btn svg,
   .mode-toggle.fifths .mode-btn svg { display: none; }
   .level-pick .mode-btn { font-size: 0.78rem; padding: 8px 2px; }
+  /* A phone has no room for the names beside the buttons: each goes over
+     its group instead. */
+  .rule-pick { gap: 8px; }
+  .rule-group {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .card .rule-group-label { text-align: center; }
+  .rule-group-btns { justify-content: center; }
   .result-title { font-size: 1.45rem; }
   .code-big { font-size: 2rem; }
   .update-notice-inner { flex-wrap: wrap; }
