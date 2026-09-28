@@ -20,6 +20,9 @@
 // entropic lines a gold one and modular lines an orange one.
 // Between lines are a thinner teal line from a ring round one end's digit to
 // a ring round the other's, and lockout lines a brown one between diamonds.
+// Sum lines are a dashed olive line with their sum in the first cell's
+// corner, region sum lines an indigo one, and value indexing lines a thin
+// dashed grey arrow from a faint disc.
 // Kropki dots sit on the side two cells share, white or black, XV marks
 // there as a letter, and Greater Than signs as a chevron pointing at the
 // smaller digit. A quad is a circle on the corner where four cells meet,
@@ -147,13 +150,14 @@ export class BoardView {
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, relliks, lunchboxes, looksays,
   // equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
-  // modulars, dots, xvs, signs, quads, sandwiches, hiddens, rooms, littles,
+  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, hiddens, rooms, littles,
   // skyscrapers, xsums and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, as pathKind says:
   // "thermo", "arrow", "doublearrow", "pillarrow" (its first pathPill cells
   // the pill), "whisper", "renban", "palindrome", "zipper",
-  // "between", "lockout", "entropic" or "modular". margin leaves room round the
+  // "between", "lockout", "entropic", "modular", "sumline", "regionsum" or
+  // "valueindex". margin leaves room round the
   // grid for clues outside it; spots, margin spots [r, c] to show as open
   // for a clue, and spot the one picked.
   set(view) {
@@ -178,6 +182,9 @@ export class BoardView {
     this.lockouts = view.lockouts ?? [];
     this.entropics = view.entropics ?? [];
     this.modulars = view.modulars ?? [];
+    this.sumlines = view.sumlines ?? [];
+    this.regionsums = view.regionsums ?? [];
+    this.indexes = view.indexes ?? [];
     this.dots = view.dots ?? [];
     this.xvs = view.xvs ?? [];
     this.signs = view.signs ?? [];
@@ -201,8 +208,9 @@ export class BoardView {
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
-    // Each cage's first cell carries its sum, so its notes make room.
-    const heads = new Set(this.cages.map((cage) => Math.min(...cage.cells)));
+    // Each cage's first cell carries its sum, as a sum line's does, so its
+    // notes make room.
+    const heads = new Set([...this.cages.map((cage) => Math.min(...cage.cells)), ...this.sumlines.map((t) => t.cells[0])]);
     this.drawCages();
 
     for (let c = 0; c < 81; c++) {
@@ -275,6 +283,9 @@ export class BoardView {
     const lockouts = this.lockouts ?? [];
     const entropics = this.entropics ?? [];
     const modulars = this.modulars ?? [];
+    const sumlines = this.sumlines ?? [];
+    const regionsums = this.regionsums ?? [];
+    const indexes = this.indexes ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? []), ...(this.signs ?? [])];
     const quads = this.quads ?? [];
     const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.hiddens ?? [], this.rooms ?? [], this.spots ?? [], this.spot];
@@ -282,11 +293,12 @@ export class BoardView {
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, outside, margin, regions, path, this.pathKind, this.pathPill]);
+    const lines = [thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes];
+    const key = JSON.stringify([cages, diagonal, lines, edges, quads, outside, margin, regions, path, this.pathKind, this.pathPill]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, path, ...outside.slice(0, -1)].some((list) => list.length);
+    const drawn = [cages, ...lines, edges, quads, path, ...outside.slice(0, -1)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -468,7 +480,52 @@ export class BoardView {
       const n = this.pathPill;
       return pillArrow({ pill: t.slice(0, n).sort((p, q) => p - q), arrow: t.slice(n) }, cls);
     };
-    const draw = { thermo, arrow, doublearrow: doubleArrow, pillarrow: pathPill, whisper: line, renban: line, palindrome: line, zipper: line, entropic: line, modular: line, between: ring, lockout: diamond };
+    // Sum lines: as thick as a whisper line, dashed, square-ended so the
+    // gaps show. Their sums go in the first cell's corner, as a cage's does.
+    const dashedLine = (t, cls) => {
+      if (!t.length) return "";
+      const points = t.map(centre);
+      const w = points[0].w;
+      const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("") + (t.length === 1 ? "h0" : "");
+      return `<path class="${cls}" d="${d}" stroke-width="${f(w * 0.22)}" stroke-dasharray="${f(w * 0.3)} ${f(w * 0.16)}"/>`;
+    };
+    const lineSums = sumlines
+      .map(({ sum, cells }) => {
+        const r = rect(cells[0]);
+        return `<text class="cage-sum" x="${f(r.x + r.w * 0.06)}" y="${f(r.y + r.w * 0.27)}" font-size="${f(r.w * 0.24)}">${sum}</text>`;
+      })
+      .join("");
+    // Value indexing lines: a faint disc round the first digit, and a thin
+    // dashed line on through the cells' middles to a head at the last.
+    const indexArrow = (t, cls) => {
+      if (!t.length) return "";
+      const points = t.map(centre);
+      const w = points[0].w;
+      const disc = `<circle cx="${f(points[0].x)}" cy="${f(points[0].y)}" r="${f(w * 0.32)}"/>`;
+      if (points.length < 2) return `<g class="${cls}">${disc}</g>`;
+      const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("");
+      return (
+        `<g class="${cls}" stroke-width="${f(w * 0.06)}">${disc}` +
+        `<path d="${d}" stroke-dasharray="${f(w * 0.14)} ${f(w * 0.1)}"/><path d="${head(points.at(-2), points.at(-1), w)}"/></g>`
+      );
+    };
+    const draw = {
+      thermo,
+      arrow,
+      doublearrow: doubleArrow,
+      pillarrow: pathPill,
+      whisper: line,
+      renban: line,
+      palindrome: line,
+      zipper: line,
+      entropic: line,
+      modular: line,
+      between: ring,
+      lockout: diamond,
+      sumline: dashedLine,
+      regionsum: line,
+      valueindex: indexArrow,
+    };
     const kind = this.pathKind;
     const pending = draw[kind](path, `${kind} ${kind}-pending`);
     const marks =
@@ -478,6 +535,9 @@ export class BoardView {
       zippers.map((t) => line(t, "zipper")).join("") +
       entropics.map((t) => line(t, "entropic")).join("") +
       modulars.map((t) => line(t, "modular")).join("") +
+      regionsums.map((t) => line(t, "regionsum")).join("") +
+      sumlines.map((t) => dashedLine(t.cells, "sumline")).join("") +
+      indexes.map((t) => indexArrow(t, "valueindex")).join("") +
       betweens.map((t) => ring(t, "between")).join("") +
       lockouts.map((t) => diamond(t, "lockout")).join("") +
       thermos.map((t) => thermo(t, "thermo")).join("") +
@@ -588,6 +648,6 @@ export class BoardView {
         return `<circle class="quad-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.27)}"/>${text}`;
       })
       .join("");
-    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${onSides}${onCorners}${outsides}`;
+    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${lineSums}${onSides}${onCorners}${outsides}`;
   }
 }

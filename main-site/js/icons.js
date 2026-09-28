@@ -80,6 +80,12 @@ export const icons = {
   entropic: svg(`<path d="M4 9h16" stroke-width="2.6"/><path d="M6 20v-2M12 20v-4.5M18 20v-7" stroke-width="2"/>`),
   // A thick line over three different marks, one of each kind.
   modular: svg(`<path d="M4 9h16" stroke-width="2.6"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="12" cy="17.5" r="1.8" fill="currentColor"/><path d="M16.3 15.7h3.4v3.6h-3.4z" stroke-width="1.4"/>`),
+  // A sum sign over a dashed line.
+  sumline: svg(`<path d="M3 17h18" stroke-width="2.6" stroke-dasharray="3.5 2.2" stroke-linecap="butt"/><path d="M15 4H8.5l3.5 3.5L8.5 11H15" stroke-width="1.6"/>`),
+  // A thick line crossing a box's edge, under an equals sign.
+  regionsum: svg(`<path d="M12 3v18" stroke-width="1.2" stroke-dasharray="2 2"/><path d="M3 18l6-5 6 3 6-6" stroke-width="2.6"/><path d="M4 5h5M4 8.5h5" stroke-width="1.5"/>`),
+  // A dot, and a dashed arrow on from it.
+  valueindex: svg(`<circle cx="5" cy="12" r="2.6" fill="currentColor"/><path d="M9 12h10" stroke-width="1.8" stroke-dasharray="2.4 2.2" stroke-linecap="butt"/><path d="M16 8.5l3.5 3.5-3.5 3.5" stroke-width="1.8"/>`),
   // A line between two diamonds.
   lockout: svg(`<path d="M5.5 8.2 9.3 12l-3.8 3.8L1.7 12Z"/><path d="M18.5 8.2l3.8 3.8-3.8 3.8-3.8-3.8Z"/><path d="M9.3 12h5.4" stroke-width="2.2"/>`),
   cage: svg(`<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M7.5 9.5h3" stroke-width="1.6"/>`),

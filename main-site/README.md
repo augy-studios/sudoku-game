@@ -38,13 +38,14 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say and Equality cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say and Equality cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
 ## The game
 
-**Modes.** Solo; the daily puzzle, the same for everyone on a date; or two
+**Modes.** Solo; the daily puzzles, the same for everyone on a date, a
+classic one and a killer one; or two
 devices on one network, one hosting with a six character code, a link or a
 QR code, and the other joining. A network game is a **race** (the same
 puzzle, each on your own board, with the other player's progress shown
@@ -61,6 +62,19 @@ those are the streak, counted to today, or to yesterday while today is
 still to play; filling in a missed day mends a run, as the new-game screen
 says. The streak shows under the calendar and after a daily goes on the
 board.
+
+**Classic or killer.** Each day has two puzzles at the day's level: the
+classic one, and a killer one, picked with Classic or Killer over the
+calendar (kept in the setup). Either finished keeps the day, and the
+streak, going; each has its own board, and a name can have one of each on a
+day. The killer is made on the server from the day's secret, as the classic
+one is (`killerSeed` in `seed.js`): a full grid, cages of two to four cells
+over every cell with no digit twice, then clues taken out while its answer
+stays the only one, down to about 19 left at Easy and none or one or two at
+Expert. It is sent as a made killer puzzle's seed, `K-...`, so the page
+reads it as any made seed, checking its one answer, and a replay link
+carries it whole. Tutorial explains its cages over the board, as for any
+variant.
 
 **Solver.** The fourth tab is for a puzzle from somewhere else. Type or
 paste it in (81 cells, 0 or . for blanks); typing moves on a cell at a time,
@@ -107,10 +121,10 @@ build). Each rule is explained in a line or two from `rule-help.js`: as a
 tooltip on its button, under the buttons once it is on (what it means, and
 while the clues go in, how to draw it), and in a Rules box over the board
 in a variant game or replay, while Tutorial is on in the new-game screen's
-Solo and Network settings (it is on to begin with; off, the level chip
+Solo and Network settings, and the Daily's with Killer picked (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
-Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
+Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
@@ -137,7 +151,7 @@ and a cell with no 1 possible above it and no 9 below cannot be 5. So one solver
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO,
+seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
 P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
@@ -145,10 +159,11 @@ so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages of each kind, thermometers,
 arrows, double arrows, pill arrows, whisper lines, renban lines, palindrome lines, zipper lines,
-between lines, lockout lines, entropic lines, modular lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
+between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
 clues or regions (a line as its length, its first cell and each step's
-direction; a pill arrow as its pill's size, first cell and way, then its
+direction, a sum line with its sum first, and sum and region sum lines'
+lengths, up to 27, and value indexing lines', up to 11, in a wider digit; a pill arrow as its pill's size, first cell and way, then its
 arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Sandwich
 sums as every row's and column's sum or none; Little Killer sums as each
 one's first cell, way and sum; regions, and each kind of cage, as which
@@ -277,6 +292,30 @@ with, and keeps each cell to its place's kinds in them. Two digits of one
 kind in different places, or of different kinds in the same place, show as
 a clash. They are drawn as a thick line, gold for entropic and orange for
 modular, on the board and in a saved image.
+
+**Sum Line, Region Sum and Value Indexing.** From the Interactive Sudoku
+Solver's lines. A sum line cuts into runs of cells one after another, each
+adding up to its sum, 1 to 30, shown in its first cell's corner: with 10,
+3 7 1 9 is 3 7 and then 1 9. The Sum lines tool draws one as Whispers does,
+two to 27 cells, with its sum typed in the bar's box (0 too, from the
+keyboard), which stays for the next line. Going along, the solver keeps at
+each gap between cells the totals the run there can have reached, starting
+again at 0 on the sum, and coming back, those it can still finish; a cell
+keeps the digits that link the two. A run past the sum, read from either
+end, and a full line's last run left short, show as a clash. A region sum
+line adds up to the same total in each box it passes through, a run for
+each visit, or with a Jigsaw in each region (`regionRuns`); each run's
+digits are different, as its box's are, so the solver keeps the totals
+every run can make with some set of different digits its cells can hold,
+and each cell to those sets. Full runs with different totals clash, and so
+does a run already past the total they agree on. A value indexing line runs
+from a dot: the dot's digit, X, turns up again K cells past the second
+cell, whose digit is K, so 4 2 7 4. Three to eleven cells; the solver keeps
+the Ks whose cell could hold an X, and the Xs those cells could hold. Sum
+lines are a dashed olive line, region sum lines an indigo one, and value
+indexing lines a thin dashed grey arrow from a faint disc, on the board and
+in a saved image. Sum lines here cannot close in a loop, as the other
+solver's can.
 
 **Kropki and XV.** They mark the side two cells share. A white dot's
 digits are consecutive and a black dot's are one double the other; an X's
@@ -488,7 +527,7 @@ beforehand, so it scores everything else.
 ## The leaderboard and anti-cheat
 
 Three boards: each name's best game, each name's total, and a day's daily
-(today's, or the day of the daily just played).
+(today's, or the day of the daily just played), Classic or Killer.
 Solo games, dailies and both sides of a race count. Co-op games and games
 finished with Solve do not. Made puzzles have a board each instead, under
 Puzzles, where they are listed most played first and found by searching
@@ -515,14 +554,17 @@ The database then refuses a submission that:
 | `same_device` | is a race's guest side, sent from the host's own browser |
 | `overlap` | was played at the same time as another game under the same name |
 | `seed_used` | repeats a seed already on the board under that name |
-| `daily_done` | repeats a day's daily under a name that already has it |
+| `daily_done` | repeats a day's daily of one kind under a name that already has it |
 | `same_name` | puts both sides of one race under one name |
 
 The daily's seed comes from `DAILY_SECRET` and the date, so it cannot be
 worked out in advance. Start takes any date from `DAILY_FIRST` to tomorrow
 in UTC, which is today somewhere; the calendar offers up to the player's
-own today. A second daily ticket from the same browser for the same day
-plays without the time bonuses, since it could follow a first look.
+own today, and a `kind`, `classic` (the default) or `killer`. A second
+daily ticket from the same browser for the same day's puzzle of one kind
+plays without the time bonuses, since it could follow a first look. The
+kind is read from the seed in the database (`daily_kind`, from
+`migrations/004_daily_killer.sql`): a killer's starts `K-`.
 
 What this cannot stop: somebody using a solver in another tab, or faking
 the times of each turn. Turn times come from the browser, and the server
@@ -559,19 +601,19 @@ if a visitor still has it, is replaced the same way, and its cache deleted.
 
 | Endpoint | Body | Returns |
 | --- | --- | --- |
-| `POST /api/game/start` | `client_key, mode, level?, seed?, max_hints?, date?` | `game_id, seed, server_seed, created_at, date` |
+| `POST /api/game/start` | `client_key, mode, level?, seed?, max_hints?, date?, kind?` | `game_id, seed, server_seed, created_at, date, kind` |
 | `POST /api/game/finish` | `game_id, client_key, side, log` | `elapsed_ms, server_seed` |
 | `POST /api/game/submit` | `game_id, client_key, name, side, log` | `name, score, time_bonus, elapsed_ms, mistakes, hints, rank, best_score, total, games, total_rank, daily_rank` |
 | `POST /api/leaderboard/name` | `name` | `name`, cleaned, or a `400` saying why not |
-| `GET /api/leaderboard` | `?board=best`, `?board=total`, or `?board=daily&date=YYYY-MM-DD` | `board, entries`, cached 30 s |
-| `GET /api/leaderboard` | `?board=days&name=...` | `board, name, dates`: the days whose daily the name has on the board, oldest first, for the calendar; cached 30 s |
+| `GET /api/leaderboard` | `?board=best`, `?board=total`, or `?board=daily&date=YYYY-MM-DD&kind=classic` (or `killer`) | `board, entries`, and a daily's `date, kind`, cached 30 s |
+| `GET /api/leaderboard` | `?board=days&name=...` | `board, name, dates`: the days whose daily, of either kind, the name has on the board, oldest first, for the calendar; cached 30 s |
 | `GET /api/leaderboard` | `?board=made&seed=...`, or `?board=made&q=...` | `board, seed, code, entries` for one made puzzle's board; `board, q, puzzles` (each with its `code`) for the list or a search, which also matches short codes; cached 30 s |
 | `POST /api/seed/shorten` | `seed` | `seed, code`: a made seed longer than 20 characters, checked as any seed is, and its short code, the same one every time |
 | `GET /api/seed/lookup` | `?code=H-B7K4Q-M9TRZ` | `seed`, the whole seed the code stands for; cached for good, or a `404` |
 
 `mode` is `solo`, `daily` or `race`. With no `seed`, start picks one at
 `level` (`E`, `M`, `H` or `X`); a daily takes the picked day's `date`
-instead, from `DAILY_FIRST` to tomorrow in UTC.
+instead, from `DAILY_FIRST` to tomorrow in UTC, and its `kind`.
 `max_hints` is 0 to 81, or null for no limit. `side` is 0, or 1 for a race's
 guest. `log` is the game's moves as `[kind, cell, digit, ms]` arrays; see
 `js/record.js`. Errors are `{ error, message? }` with a matching status.

@@ -1,7 +1,8 @@
-// GET /api/leaderboard?board=best|total|daily|made[&date=YYYY-MM-DD][&seed=...][&q=...]
+// GET /api/leaderboard?board=best|total|daily|made[&date=YYYY-MM-DD][&kind=classic|killer][&seed=...][&q=...]
 //   best  (default) -> { board, entries: [{ rank, name, score, mode, level, elapsed_ms }] }
 //   total           -> { board, entries: [{ rank, name, total, games }] }
-//   daily           -> { board, date, entries: [{ rank, name, score, elapsed_ms, mistakes, hints }] }
+//   daily           -> { board, date, kind, entries: [{ rank, name, score, elapsed_ms, mistakes, hints }] },
+//                      the day's classic puzzle's board, or its killer's
 //   made, seed      -> { board, seed, code, entries: [{ rank, name, score, elapsed_ms, mistakes, hints }] },
 //                      one made puzzle's own board, and its short code or null
 //   made            -> { board, q, puzzles: [{ seed, code, level, players, top_score }] },
@@ -9,13 +10,14 @@
 //                      whose seed holds q, or whose short code is q or holds
 //                      it, if there is one
 //   days, name      -> { board, name, dates: ["YYYY-MM-DD", ...] }, the days
-//                      whose daily a name has on the board, oldest first,
-//                      for the calendar and its streak
+//                      whose daily, of either kind, a name has on the board,
+//                      oldest first, for the calendar and its streak
 // Public, no login, one row per name, cached briefly at the edge.
 
 import { endpoint, HttpError } from "../_lib/http.js";
 import { rest } from "../_lib/supabase.js";
 import { cleanName } from "../_lib/names.js";
+import { dailyKind } from "../_lib/daily.js";
 import { parseSeed, parseCode, codeText } from "../../js/seed.js";
 
 // A name's days. Names are matched without case, as the boards match them;
@@ -45,8 +47,8 @@ const BOARDS = {
     row: (r) => ({ name: r.name, score: r.score, elapsed_ms: r.elapsed_ms, mistakes: r.mistakes, hints: r.hints }),
   },
   daily: {
-    query: (date) =>
-      `sudoku_leaderboard_daily?select=name,score,elapsed_ms,mistakes,hints&daily_date=eq.${date}` +
+    query: (date, kind) =>
+      `sudoku_leaderboard_daily?select=name,score,elapsed_ms,mistakes,hints&daily_date=eq.${date}&daily_kind=eq.${kind}` +
       `&order=score.desc,created_at.asc&limit=${LIMIT}`,
     row: (r) => ({ name: r.name, score: r.score, elapsed_ms: r.elapsed_ms, mistakes: r.mistakes, hints: r.hints }),
   },
@@ -99,10 +101,11 @@ export default endpoint("GET", async ({ req, res }) => {
   }
   const date = String(req.query?.date ?? "");
   if (board === "daily" && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpError(400, "bad_date");
+  const kind = board === "daily" ? dailyKind(req.query?.kind ?? null) : null;
 
-  const [rows, code] = await Promise.all([rest(spec.query(board === "made" ? seed.text : date)), board === "made" ? codeOf(seed) : null]);
+  const [rows, code] = await Promise.all([rest(spec.query(board === "made" ? seed.text : date, kind)), board === "made" ? codeOf(seed) : null]);
   res.setHeader("Cache-Control", "public, max-age=0, s-maxage=30, stale-while-revalidate=60");
   const entries = (rows ?? []).map((r, i) => ({ rank: i + 1, ...spec.row(r) }));
   if (board === "made") return { board, seed: seed.text, code, entries };
-  return board === "daily" ? { board, date, entries } : { board, entries };
+  return board === "daily" ? { board, date, kind, entries } : { board, entries };
 });

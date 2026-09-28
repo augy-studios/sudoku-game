@@ -574,6 +574,30 @@ body {
 }
 .between { stroke: #1a9fb5; }
 .lockout { stroke: #9b6a3c; }
+/* Sum lines olive and dashed, square-ended so the gaps show; region sum
+   lines indigo; both as faint as a whisper line. */
+.sumline,
+.regionsum {
+  fill: none;
+  stroke-linejoin: round;
+  opacity: 0.4;
+}
+.sumline { stroke: #7a9a12; stroke-linecap: butt; }
+.regionsum { stroke: #5a5fd0; stroke-linecap: round; }
+/* Value indexing lines: thin and dashed like an arrow's line, from a faint
+   disc under the first digit. */
+.valueindex {
+  fill: none;
+  stroke: var(--muted-strong);
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+  opacity: 0.6;
+}
+.valueindex circle {
+  fill: var(--muted-strong);
+  stroke: none;
+  opacity: 0.4;
+}
 .whisper-pending,
 .renban-pending,
 .palindrome-pending,
@@ -581,10 +605,14 @@ body {
 .entropic-pending,
 .modular-pending,
 .between-pending,
-.lockout-pending {
+.lockout-pending,
+.sumline-pending,
+.regionsum-pending,
+.valueindex-pending {
   stroke: var(--warn);
   opacity: 0.45;
 }
+.valueindex-pending circle { fill: var(--warn); }
 /* Clues outside the grid, and the spots that can take one while the
    Outside tool is on: open ones a faint dot, the picked one ringed. */
 .outside-sum {
@@ -1151,6 +1179,10 @@ body {
 
 /* Made puzzles: a search, a list of them, and each one's board. */
 .made-search { margin: 10px 0 2px; }
+/* The Daily tab's Classic and Killer boards, under the tabs. */
+.daily-kinds { margin: 10px 0 2px; }
+/* The daily's kind, over its calendar. */
+#dailyKindPick { margin-bottom: 12px; }
 .made-list {
   list-style: none;
   display: flex;

@@ -3,8 +3,9 @@
 //
 // A variant is { cages, relliks, lunchboxes, looksays, equalities, thermos,
 // arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens,
-// lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches,
-// littles, skyscrapers, xsums, hiddens, rooms, regions, rules }:
+// lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs,
+// signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
+// regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -65,6 +66,19 @@
 //            share cells.
 //   modulars modular lines, as entropic lines with the digits sorted by
 //            what is left over dividing by 3: 1 4 7, 2 5 8 and 3 6 9.
+//   sumlines sum lines, [{ sum, cells }], cells a path like a thermometer's
+//            of up to LONG_LINE_MOST cells: the line cuts into runs of
+//            cells one after another, each adding up to the sum, 1 to
+//            SUM_LINE_MAX. Digits may repeat where the rules allow. They
+//            may share cells.
+//   regionsums  region sum lines, paths like a sum line's: each run of the
+//            line within one box, or a Jigsaw's region, adds up to the same
+//            total, a line that leaves a box and comes back making two runs
+//            there. They may share cells.
+//   indexes  value indexing lines, paths like a thermometer's of three to
+//            INDEX_LINE_MOST cells: the first cell's digit, X, is also in
+//            the cell the second cell's digit counts to past it, 1 the cell
+//            just after. They may share cells.
 //   dots    Kropki dots, [{ cells: [a, b], mark }] on the side two cells
 //            share, a before b in reading order. A "white" dot's digits are
 //            consecutive; a "black" dot's are one double the other.
@@ -119,7 +133,9 @@
 // columns and boxes; the knight's and king's moves are extra pairs of cells
 // that must differ. Killer cages are worked into the search itself, and the
 // other kinds of cage each narrow their cells as lines do. Double arrows and
-// pill arrows are sums that balance (scales below). A Jigsaw's regions are houses in the boxes' place, and
+// pill arrows are sums that balance (scales below), and a region sum line's
+// runs are cut by the boxes or regions (regionRuns below). A Jigsaw's
+// regions are houses in the boxes' place, and
 // disjoint groups still go by the 3x3 boxes. The rules about sides are
 // sides barred from some marks' relations (barredSides below), the rules
 // about 2x2 squares sort each square's digits into kinds as entropic and
@@ -155,7 +171,7 @@ export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key =
 const has = hasRule;
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (rooms?.length) names.unshift("Numbered Room");
@@ -168,6 +184,9 @@ export function variantName({ cages, relliks, lunchboxes, looksays, equalities, 
   if (signs?.length) names.unshift("Greater Than");
   if (xvs?.length) names.unshift("XV");
   if (dots?.length) names.unshift("Kropki");
+  if (indexes?.length) names.unshift("Value Indexing");
+  if (regionsums?.length) names.unshift("Region Sum Line");
+  if (sumlines?.length) names.unshift("Sum Line");
   if (modulars?.length) names.unshift("Modular");
   if (entropics?.length) names.unshift("Entropic");
   if (lockouts?.length) names.unshift("Lockout");
@@ -443,15 +462,15 @@ export function cageOf(cages) {
 export const touching = (a, b) => a !== b && Math.abs(ROW[a] - ROW[b]) <= 1 && Math.abs(COL[a] - COL[b]) <= 1;
 
 // Whether lines, thermometers, arrows or the others, are well formed: forty at most,
-// each `least` (two, unless a kind says) to nine cells on the board, each
-// touching the one before, none twice. null if so, or what is wrong:
-// { why, line }.
-function lineProblem(lines, least = 2) {
+// each `least` (two, unless a kind says) to `most` (nine, likewise) cells on
+// the board, each touching the one before, none twice. null if so, or what
+// is wrong: { why, line }.
+function lineProblem(lines, least = 2, most = 9) {
   // A seed has room for forty.
   if (lines.length > 40) return { why: "count", line: 40 };
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i];
-    if (!Array.isArray(t) || t.length < least || t.length > 9) return { why: "length", line: i };
+    if (!Array.isArray(t) || t.length < least || t.length > most) return { why: "length", line: i };
     const seen = new Set();
     for (let j = 0; j < t.length; j++) {
       const c = t[j];
@@ -477,6 +496,40 @@ export const lockoutProblem = lineProblem;
 // A run of three is what their rule is about.
 export const entropicProblem = (lines) => lineProblem(lines, 3);
 export const modularProblem = (lines) => lineProblem(lines, 3);
+
+// The most cells a sum line or a region sum line has: they wind through
+// several boxes, so more than the other lines' nine.
+export const LONG_LINE_MOST = 27;
+// The largest sum a sum line takes, as the solver it comes from has it.
+export const SUM_LINE_MAX = 30;
+// The most cells a value indexing line has: its second cell counts at most
+// nine cells on.
+export const INDEX_LINE_MOST = 11;
+
+// Sum lines: each a line of two to LONG_LINE_MOST cells, and a sum 1 to
+// SUM_LINE_MAX. null if so, or what is wrong: { why, line }, why "sum" for
+// the sum or as lineProblem says.
+export function sumLineProblem(lines) {
+  const problem = lineProblem(lines.map((t) => t?.cells), 2, LONG_LINE_MOST);
+  if (problem) return problem;
+  const i = lines.findIndex(({ sum }) => !Number.isInteger(sum) || sum < 1 || sum > SUM_LINE_MAX);
+  return i >= 0 ? { why: "sum", line: i } : null;
+}
+export const regionSumProblem = (lines) => lineProblem(lines, 2, LONG_LINE_MOST);
+// A value, a count and one cell to count to, at least.
+export const indexProblem = (lines) => lineProblem(lines, 3, INDEX_LINE_MOST);
+
+// Region sum lines cut into their runs, each the cells one after another in
+// one box, or with a Jigsaw's `regions` in one region: for each line, its
+// runs in order.
+export function regionRuns(lines = [], regions = null) {
+  const of = regions ?? BOX;
+  return lines.map((t) => {
+    const runs = [];
+    t.forEach((c, i) => (i && of[c] === of[t[i - 1]] ? runs.at(-1).push(c) : runs.push([c])));
+    return runs;
+  });
+}
 
 // How far apart a lockout line's diamonds are at least, as most puzzles
 // have it.
@@ -868,6 +921,131 @@ function kindBounds(lines, g, free, kinds) {
 }
 const entropicBounds = (entropics, g, free) => kindBounds(entropics, g, free, ENTROPIC_KINDS);
 const modularBounds = (modulars, g, free) => kindBounds(modulars, g, free, MODULAR_KINDS);
+
+// Scratch for sumLineBounds: at each gap between two cells of a line, the
+// running totals of the run it is in, as bits 0 to sum - 1, that the cells
+// before it can reach (ahead) and the cells after it can finish (behind).
+const ahead = new Int32Array(LONG_LINE_MOST + 1);
+const behind = new Int32Array(LONG_LINE_MOST + 1);
+
+// Narrows each sum line to the ways it can still be cut into runs that each
+// make its sum. Going along, each gap keeps the running totals some digits
+// before it reach, a run starting again at 0 once it makes the sum; coming
+// back, those some digits after it finish. A cell keeps the digits that
+// take a total at the gap before it to one at the gap after that both ways
+// allow. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if the line cannot be cut so.
+function sumLineBounds(sumlines, g, free) {
+  for (const { sum, cells } of sumlines) {
+    const n = cells.length;
+    // Totals under the sum; a sum of at most 30 keeps them in 32 bits.
+    const under = (1 << sum) - 1;
+    ahead[0] = 1;
+    for (let i = 0; i < n; i++) {
+      const m = g[cells[i]] ? 1 << g[cells[i]] : free[cells[i]];
+      let next = 0;
+      for (let d = 1; d <= 9 && d <= sum; d++) {
+        if (!(m & (1 << d))) continue;
+        next |= (ahead[i] << d) & under;
+        if ((ahead[i] >> (sum - d)) & 1) next |= 1;
+      }
+      if (!next) return false;
+      ahead[i + 1] = next;
+    }
+    // The line ends as a run does, on the sum.
+    if (!(ahead[n] & 1)) return false;
+    behind[n] = 1;
+    for (let i = n - 1; i >= 0; i--) {
+      const m = g[cells[i]] ? 1 << g[cells[i]] : free[cells[i]];
+      let back = 0;
+      let keep = 0;
+      for (let d = 1; d <= 9 && d <= sum; d++) {
+        if (!(m & (1 << d))) continue;
+        const ends = behind[i + 1] & 1 ? 1 << (sum - d) : 0;
+        back |= (behind[i + 1] >> d) | ends;
+        if (((ahead[i] << d) & under & behind[i + 1]) || ahead[i] & ends) keep |= 1 << d;
+      }
+      if (!keep) return false;
+      behind[i] = back;
+      if (!g[cells[i]]) free[cells[i]] = keep;
+    }
+  }
+  return true;
+}
+
+// Scratch for regionSumBounds: which totals every run so far can make, and
+// which this run can.
+const RUN_ALL = new Uint8Array(46);
+const RUN_ONE = new Uint8Array(46);
+
+// Calls `fits` with each total and set of digits a run of a region sum line
+// could hold: as many different digits as it has cells, as its box has them,
+// each cell able to take one of them and every one of them in reach of some
+// cell. Placed digits count as masks of one.
+function runSets(run, g, free, fits) {
+  let room = 0;
+  for (const c of run) room |= g[c] ? 1 << g[c] : free[c];
+  for (let total = 0; total <= 45; total++) {
+    for (const set of COMBOS[run.length][total]) {
+      if (set & ~room || run.some((c) => !((g[c] ? 1 << g[c] : free[c]) & set))) continue;
+      fits(total, set);
+    }
+  }
+}
+
+// Narrows each region sum line, cut into runs (regionRuns above), to the
+// totals every run can make, and each run's empty cells to the digits of
+// the sets that make one of those. A line in one run is free. Placed digits
+// count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if the runs share no total.
+function regionSumBounds(lines, g, free) {
+  for (const runs of lines) {
+    if (runs.length < 2) continue;
+    RUN_ALL.fill(1);
+    for (const run of runs) {
+      RUN_ONE.fill(0);
+      runSets(run, g, free, (total) => (RUN_ONE[total] = 1));
+      for (let total = 0; total <= 45; total++) RUN_ALL[total] &= RUN_ONE[total];
+    }
+    if (!RUN_ALL.includes(1)) return false;
+    for (const run of runs) {
+      let allow = 0;
+      runSets(run, g, free, (total, set) => RUN_ALL[total] && (allow |= set));
+      for (const c of run) if (!g[c] && !(free[c] &= allow)) return false;
+    }
+  }
+  return true;
+}
+
+// Narrows each value indexing line. Its second cell counts K cells on, to a
+// cell holding the first cell's digit, X: K may be any count, up to the
+// cells there are, whose cell could share a digit with the first; X any
+// digit one of those cells could hold. Once only one K is left, its cell
+// holds one of those Xs. Placed digits count as masks of one, and `free` is
+// narrowed in place, as in thermoBounds; false if no K is left.
+function indexBounds(indexes, g, free) {
+  const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
+  for (const t of indexes) {
+    const [v, k] = t;
+    const xm = mask(v);
+    const km = mask(k) & between(1, t.length - 2);
+    let xs = 0;
+    let ks = 0;
+    for (let i = 1; i <= 9 && i <= t.length - 2; i++) {
+      if (!(km & (1 << i))) continue;
+      const shared = mask(t[i + 1]) & xm;
+      if (!shared) continue;
+      xs |= shared;
+      ks |= 1 << i;
+    }
+    if (!ks) return false;
+    if (!g[v]) free[v] = xs;
+    if (!g[k]) free[k] = ks;
+    const only = t[LOW[ks] + 1];
+    if (POP[ks] === 1 && !g[only] && !(free[only] &= xs)) return false;
+  }
+  return true;
+}
 
 // Global Entropy and Global Mod: every 2x2 square holds a digit of each of
 // the kinds an entropic or a modular line sorts digits into, so one kind
@@ -1724,6 +1902,9 @@ const norm = (v) => ({
   lockouts: v?.lockouts ?? [],
   entropics: v?.entropics ?? [],
   modulars: v?.modulars ?? [],
+  sumlines: v?.sumlines ?? [],
+  regionsums: v?.regionsums ?? [],
+  indexes: v?.indexes ?? [],
   dots: v?.dots ?? [],
   xvs: v?.xvs ?? [],
   signs: v?.signs ?? [],
@@ -1745,7 +1926,7 @@ const norm = (v) => ({
 // 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1783,6 +1964,9 @@ export function variantCandidates(grid, variant) {
   lockoutBounds(lockouts, grid, out);
   entropicBounds(entropics, grid, out);
   modularBounds(modulars, grid, out);
+  sumLineBounds(sumlines, grid, out);
+  regionSumBounds(regionRuns(regionsums, regions), grid, out);
+  indexBounds(indexes, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
   edgeBounds(signs, grid, out);
@@ -1819,10 +2003,11 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const says = sayCages(looksays);
   const balances = scales(doubles, pills);
+  const runs = regionRuns(regionsums, regions);
   const barred = barredSides(rules, dots, xvs);
   const sorts = squareKinds(rules);
   const taxicab = has(rules, "antitaxicab");
@@ -1888,6 +2073,9 @@ function search(grid, variant, found) {
     if (lockouts.length && !lockoutBounds(lockouts, g, free)) return null;
     if (entropics.length && !entropicBounds(entropics, g, free)) return null;
     if (modulars.length && !modularBounds(modulars, g, free)) return null;
+    if (sumlines.length && !sumLineBounds(sumlines, g, free)) return null;
+    if (runs.length && !regionSumBounds(runs, g, free)) return null;
+    if (indexes.length && !indexBounds(indexes, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
     if (signs.length && !edgeBounds(signs, g, free)) return null;

@@ -6,8 +6,9 @@
 //
 // Each takes a variant, { cages, relliks, lunchboxes, looksays, equalities,
 // thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers,
-// betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
-// sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules }
+// betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes,
+// dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums,
+// hiddens, rooms, regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -38,6 +39,10 @@ import {
   modularProblem,
   ENTROPIC_KINDS,
   MODULAR_KINDS,
+  sumLineProblem,
+  regionSumProblem,
+  indexProblem,
+  regionRuns,
   betweenInside,
   lockoutOutside,
   dotProblem,
@@ -66,7 +71,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -123,7 +128,13 @@ export function bitCount(mask) {
 // diamonds', with the ends, and ends that cannot be; a digit on either the
 // same as a filled end's; two digits on an entropic or a modular line of
 // one kind where their places differ, or of different kinds where their
-// places are the same, counted in threes;
+// places are the same, counted in threes; a sum line's digits, read from
+// either end up to its first empty cell, in the run that goes past its sum,
+// or at a full end, the run left short of it; the digits of a region sum
+// line's full runs once they make different totals, or of a run that goes
+// past the total they agree on; a value indexing line's count when it
+// counts past the line's end, or with the first cell's digit and the one
+// counted to when those differ;
 // the two digits either side of a dot, an XV mark or a Greater Than sign
 // they break; a quad's digits, once the digits it still needs outnumber
 // its empty cells; the two digits either side of a
@@ -300,6 +311,44 @@ export function clashes(grid, variant = null) {
       }
     }
   }
+  for (const { sum, cells } of variant?.sumlines ?? []) {
+    for (const t of [cells, cells.slice().reverse()]) {
+      let run = [];
+      let total = 0;
+      let i = 0;
+      for (; i < t.length && grid[t[i]]; i++) {
+        run.push(t[i]);
+        total += grid[t[i]];
+        if (total > sum) break;
+        if (total === sum) {
+          run = [];
+          total = 0;
+        }
+      }
+      // Only a full line's last run can be short: it has nothing to go on.
+      if (total > sum || (i === t.length && total)) run.forEach((c) => out.add(c));
+    }
+  }
+  for (const runs of regionRuns(variant?.regionsums, regionsOf(variant))) {
+    const full = runs.filter((run) => run.every((c) => grid[c]));
+    const totals = full.map((run) => run.reduce((t, c) => t + grid[c], 0));
+    if (new Set(totals).size > 1) {
+      full.flat().forEach((c) => out.add(c));
+      continue;
+    }
+    if (!full.length) continue;
+    // Each empty cell of a run adds 1 at least.
+    for (const run of runs) {
+      const filled = run.filter((c) => grid[c]);
+      if (filled.reduce((t, c) => t + grid[c], 0) + run.length - filled.length > totals[0]) filled.forEach((c) => out.add(c));
+    }
+  }
+  for (const t of variant?.indexes ?? []) {
+    const [v, k] = t;
+    if (!grid[k]) continue;
+    if (grid[k] > t.length - 2) out.add(k);
+    else if (grid[v] && grid[t[grid[k] + 1]] && grid[t[grid[k] + 1]] !== grid[v]) [v, k, t[grid[k] + 1]].forEach((c) => out.add(c));
+  }
   for (const { cell, digits } of variant?.quads ?? []) {
     const cells = quadCells(cell);
     const empty = cells.filter((c) => !grid[c]).length;
@@ -466,7 +515,8 @@ export const MIN_CLUES = 17;
 // "cages" (also for two cages of different kinds sharing a cell),
 // "relliks", "lunchboxes", "looksays", "equalities", "thermos", "arrows",
 // "doubles", "pills", "whispers", "renbans", "palindromes",
-// "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs",
+// "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines",
+// "regionsums", "indexes", "dots", "xvs",
 // "signs", "quads",
 // "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms" or
 // "regions" (and
@@ -535,6 +585,9 @@ export function checkClues(clues, variant = null) {
     ["lockouts", lockoutProblem],
     ["entropics", entropicProblem],
     ["modulars", modularProblem],
+    ["sumlines", sumLineProblem],
+    ["regionsums", regionSumProblem],
+    ["indexes", indexProblem],
   ]) {
     const problem = variant?.[list]?.length && lineProblem(variant[list]);
     if (problem) return { ok: false, why: list, problem };

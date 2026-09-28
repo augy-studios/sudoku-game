@@ -72,7 +72,7 @@ export class Replay {
   // game: { puzzle, solution, log, players, cages?, relliks?, lunchboxes?,
   // looksays?, equalities?, thermos?, arrows?,
   // doubles?, pills?, whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
-  // entropics?, modulars?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
+  // entropics?, modulars?, sumlines?, regionsums?, indexes?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
   // rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
@@ -140,6 +140,9 @@ export class Replay {
       lockouts: this.game.lockouts ?? null,
       entropics: this.game.entropics ?? null,
       modulars: this.game.modulars ?? null,
+      sumlines: this.game.sumlines ?? null,
+      regionsums: this.game.regionsums ?? null,
+      indexes: this.game.indexes ?? null,
       dots: this.game.dots ?? null,
       xvs: this.game.xvs ?? null,
       signs: this.game.signs ?? null,

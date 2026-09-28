@@ -10,7 +10,7 @@ import { longSeed, newCode } from "../main-site/api/_lib/codes.js";
 import { play } from "../main-site/js/record.js";
 import { readLog, settle, verify } from "../main-site/api/_lib/verify.js";
 import { tally, finalScore, timeBonus } from "../main-site/js/score.js";
-import { dailyDate } from "../main-site/api/_lib/daily.js";
+import { dailyDate, dailyKind, dailySeed } from "../main-site/api/_lib/daily.js";
 import { DAILY_FIRST, addDays } from "../main-site/js/calendar.js";
 
 let passed = 0;
@@ -96,6 +96,35 @@ test("a daily's date is any day from the first daily on", () => {
   refused("bad_date", () => dailyDate(addDays(DAILY_FIRST, -1)));
   refused("bad_date", () => dailyDate("2026-02-30"));
   refused("bad_date", () => dailyDate(20260101));
+});
+
+// Each day has a classic puzzle and a killer one at the same level, each
+// the same every time it is asked for, and different on another day. The
+// killer's seed is a made killer puzzle's, "K-" first, as the database
+// reads its kind from, and scores as any server-picked game does.
+test("a day has a classic daily and a killer daily", () => {
+  process.env.DAILY_SECRET ??= "test secret";
+  refused("bad_kind", () => dailyKind("sandwich"));
+  assert.equal(dailyKind(null), "classic");
+  assert.equal(dailyKind("killer"), "killer");
+  const day = "2026-09-29";
+  const classic = dailySeed(day);
+  const killer = dailySeed(day, "killer");
+  assert.equal(dailySeed(day, "classic").text, classic.text);
+  assert.ok(!classic.made && !classic.text.startsWith("K-"));
+  assert.match(killer.text, /^K-[EMHX]-/);
+  assert.equal(killer.level, classic.level, "the day's level for both");
+  assert.ok(killer.cages.length && killer.cages.flatMap((k) => k.cells).length === 81, "cages over every cell");
+  const again = parseSeed(killer.text);
+  assert.ok(again, "the page reads it back, one answer and all");
+  assert.equal(again.text, killer.text);
+  assert.notEqual(dailySeed(addDays(day, 1), "killer").text, killer.text);
+
+  // A finished killer daily scores, time bonuses and all.
+  const { puzzle: kp, solution: ks } = puzzleFor(killer);
+  const log = readLog(kp.map((d, c) => (d ? null : c)).filter((c) => c != null).map((c, i) => ["p", c, ks[c], (i + 1) * 2000]));
+  const r = verify({ seed: killer.text, mode: "daily", server_seed: true, max_hints: null }, log, log.at(-1).t + 1000);
+  assert.ok(r.score > 0 && r.timeBonus > 0);
 });
 
 test("only a long made seed gets a short code, and codes are fresh", () => {

@@ -3,6 +3,7 @@
 // and a variant puzzle's cages of every kind, thermometers, arrows, double and pill
 // arrows, German Whispers,
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
+// sum lines, region sum lines, value indexing lines,
 // Kropki dots, Greater Than signs, quads, XV
 // marks, diagonals and windows as on screen.
 // Sandwich, Little Killer, Skyscraper and X-Sum clues sit outside the grid,
@@ -35,6 +36,8 @@ const PALINDROME_BLUE = "#b2cfee";
 const ZIPPER_PINK = "#f0bcd8";
 const ENTROPIC_GOLD = "#f0d98c";
 const MODULAR_ORANGE = "#f5c19f";
+const SUM_OLIVE = "#c9d79b";
+const REGION_INDIGO = "#bdbfee";
 // Thinner, so darker.
 const BETWEEN_TEAL = "#6cc0cf";
 const LOCKOUT_BROWN = "#c2a07f";
@@ -42,7 +45,8 @@ const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
 // variant: { cages, relliks, lunchboxes, looksays, equalities, thermos,
 // arrows, doubles, pills, whispers, renbans,
-// palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
+// palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines,
+// regionsums, indexes, dots, xvs, signs, quads,
 // sandwiches,
 // littles, skyscrapers, xsums, hiddens, rooms, regions, rules } (variant.js), or nothing for
 // a classic puzzle.
@@ -61,6 +65,9 @@ export async function drawPuzzle(grid, variant = null) {
   const lockouts = variant?.lockouts ?? [];
   const entropics = variant?.entropics ?? [];
   const modulars = variant?.modulars ?? [];
+  const sumlines = variant?.sumlines ?? [];
+  const regionsums = variant?.regionsums ?? [];
+  const indexes = variant?.indexes ?? [];
   const dots = variant?.dots ?? [];
   const xvs = variant?.xvs ?? [];
   const signs = variant?.signs ?? [];
@@ -160,6 +167,7 @@ export async function drawPuzzle(grid, variant = null) {
     [zippers, ZIPPER_PINK],
     [entropics, ENTROPIC_GOLD],
     [modulars, MODULAR_ORANGE],
+    [regionsums, REGION_INDIGO],
   ]) {
     for (const t of lines) {
       ctx.strokeStyle = colour;
@@ -171,6 +179,18 @@ export async function drawPuzzle(grid, variant = null) {
       ctx.stroke();
     }
   }
+  // Sum lines: dashed, square-ended so the gaps show. Their sums go in with
+  // the cages' clues, below.
+  ctx.strokeStyle = SUM_OLIVE;
+  ctx.lineWidth = CELL * 0.22;
+  ctx.lineCap = "butt";
+  ctx.setLineDash([CELL * 0.3, CELL * 0.16]);
+  for (const { cells } of sumlines) {
+    ctx.beginPath();
+    cells.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
   // Grey, solid, with a round bulb.
   for (const t of thermos) {
     ctx.strokeStyle = THERMO_GREY;
@@ -260,6 +280,24 @@ export async function drawPuzzle(grid, variant = null) {
     head(arrow.length > 1 ? at(arrow.at(-2)) : [px, py], at(arrow.at(-1)));
     ctx.stroke();
   }
+  // Value indexing lines, as on the board: a faint disc round the first
+  // digit, and a thin dashed line on to a head at the last.
+  for (const t of indexes) {
+    ctx.fillStyle = THERMO_GREY;
+    ctx.beginPath();
+    ctx.arc(...at(t[0]), CELL * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineCap = "butt";
+    ctx.setLineDash([CELL * 0.14, CELL * 0.1]);
+    ctx.beginPath();
+    t.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    head(at(t.at(-2)), at(t.at(-1)));
+    ctx.stroke();
+  }
   // As on the board: a ring or a diamond round each end, and a line from
   // the edge of one to the edge of the other.
   for (const [lines, colour, ring] of [
@@ -300,6 +338,7 @@ export async function drawPuzzle(grid, variant = null) {
   }
   const boxes = cagesOf(variant);
   if (boxes.length) drawCages(ctx, boxes);
+  for (const { sum, cells } of sumlines) cornerLabel(ctx, cells[0], String(sum));
   // Signs at the middle of their side, as on the board: a chevron pointing
   // at the smaller digit.
   ctx.strokeStyle = INK;
@@ -439,7 +478,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
+  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
   const caption = `${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`;
   // A long list of rules shrinks to fit across the image.
   const room = canvas.width - PAD * 2;
@@ -491,23 +530,24 @@ function drawCages(ctx, cages) {
     ctx.stroke();
   }
   ctx.setLineDash([]);
+  for (const cage of cages) cornerLabel(ctx, Math.min(...cage.cells), cage.label);
+}
 
+// A cage's clue, or a sum line's sum, in the top left corner of cell c.
+function cornerLabel(ctx, c, label) {
+  const x = PAD + (c % 9) * CELL + CELL * 0.06;
+  const y = PAD + Math.floor(c / 9) * CELL + CELL * 0.27;
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.lineJoin = "round";
-  for (const cage of cages) {
-    const c = Math.min(...cage.cells);
-    const x = PAD + (c % 9) * CELL + CELL * 0.06;
-    const y = PAD + Math.floor(c / 9) * CELL + CELL * 0.27;
-    // A long Look and Say clue a little smaller, as on the board.
-    ctx.font = `${Math.round(CELL * (cage.label.length > 4 ? 0.2 : 0.24))}px ${FONT}`;
-    // A white halo, so the dashed line stops short of the clue.
-    ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 8;
-    ctx.strokeText(cage.label, x, y);
-    ctx.fillStyle = INK;
-    ctx.fillText(cage.label, x, y);
-  }
+  // A long Look and Say clue a little smaller, as on the board.
+  ctx.font = `${Math.round(CELL * (label.length > 4 ? 0.2 : 0.24))}px ${FONT}`;
+  // A white halo, so the dashed line stops short of the clue.
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 8;
+  ctx.strokeText(label, x, y);
+  ctx.fillStyle = INK;
+  ctx.fillText(label, x, y);
 }
 
 // Saves the grid as a PNG through the browser's download. True if it went.

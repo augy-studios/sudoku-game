@@ -23,7 +23,9 @@
 // Zipper, Between, Lockout, Entropic and Modular add German Whispers,
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // drawn the same way again with their own tools, a between line from one circle to the other and a lockout line from
-// one diamond to the other;
+// one diamond to the other; Sum Line, Region Sum and Value Indexing add sum
+// lines, with a sum typed as a cage's is, region sum lines and value
+// indexing lines, from the dot;
 // Kropki, XV and Greater Than add dots, X and V marks and signs on the
 // sides between cells, and Quad circles on the corners where four meet, put
 // down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
@@ -65,6 +67,12 @@ import {
   lockoutProblem,
   entropicProblem,
   modularProblem,
+  sumLineProblem,
+  regionSumProblem,
+  indexProblem,
+  LONG_LINE_MOST,
+  SUM_LINE_MAX,
+  INDEX_LINE_MOST,
   LOCKOUT_GAP,
   dotProblem,
   xvProblem,
@@ -111,7 +119,7 @@ let board = null;
 // the clues go in; then "solve" in the solver, or "made" in the maker.
 // killer, rellik, lunchbox, looksay, equality, thermo, arrow, doublearrow,
 // pillarrow, whisper, renban, palindrome, zipper, between,
-// lockout, entropic, modular, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
+// lockout, entropic, modular, sumline, regionsum, valueindex, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each other kind of cage, line, dot, mark and
 // outside clue likewise.
@@ -138,6 +146,9 @@ const fresh = () => ({
   lockout: false,
   entropic: false,
   modular: false,
+  sumline: false,
+  regionsum: false,
+  valueindex: false,
   kropki: false,
   xv: false,
   greater: false,
@@ -167,6 +178,9 @@ const fresh = () => ({
   lockouts: [],
   entropics: [],
   modulars: [],
+  sumlines: [],
+  regionsums: [],
+  indexes: [],
   dots: [],
   xvs: [],
   signs: [],
@@ -249,6 +263,9 @@ const betweens = () => (s.between && s.betweens.length ? s.betweens : null);
 const lockouts = () => (s.lockout && s.lockouts.length ? s.lockouts : null);
 const entropics = () => (s.entropic && s.entropics.length ? s.entropics : null);
 const modulars = () => (s.modular && s.modulars.length ? s.modulars : null);
+const sumlines = () => (s.sumline && s.sumlines.length ? s.sumlines : null);
+const regionsums = () => (s.regionsum && s.regionsums.length ? s.regionsums : null);
+const indexes = () => (s.valueindex && s.indexes.length ? s.indexes : null);
 const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
 const signs = () => (s.greater && s.signs.length ? s.signs : null);
@@ -261,7 +278,7 @@ const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
 const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
+  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -283,6 +300,9 @@ const variant = () =>
         lockouts: lockouts() ?? [],
         entropics: entropics() ?? [],
         modulars: modulars() ?? [],
+        sumlines: sumlines() ?? [],
+        regionsums: regionsums() ?? [],
+        indexes: indexes() ?? [],
         dots: dots() ?? [],
         xvs: xvs() ?? [],
         signs: signs() ?? [],
@@ -395,6 +415,9 @@ function hintText(step, reveal) {
       ...(lockouts() ? ["lockout lines"] : []),
       ...(entropics() ? ["entropic lines"] : []),
       ...(modulars() ? ["modular lines"] : []),
+      ...(sumlines() ? ["sum lines"] : []),
+      ...(regionsums() ? ["region sum lines"] : []),
+      ...(indexes() ? ["value indexing lines"] : []),
       ...(dots() ? ["dots"] : []),
       ...(xvs() ? ["X and V marks"] : []),
       ...(signs() ? ["Greater Than signs"] : []),
@@ -435,6 +458,9 @@ function problemText(check) {
   if (why === "lockouts") return LOCKOUT_PROBLEMS[check.problem.why];
   if (why === "entropics") return ENTROPIC_PROBLEMS[check.problem.why];
   if (why === "modulars") return MODULAR_PROBLEMS[check.problem.why];
+  if (why === "sumlines") return SUM_LINE_PROBLEMS[check.problem.why];
+  if (why === "regionsums") return REGION_SUM_PROBLEMS[check.problem.why];
+  if (why === "indexes") return INDEX_PROBLEMS[check.problem.why];
   if (why === "dots") return DOT_PROBLEMS[check.problem.why];
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
   if (why === "signs") return SIGN_PROBLEMS[check.problem.why];
@@ -483,6 +509,9 @@ function clashText() {
   if (lockouts()) extra.push(`not outside a lockout line's diamonds, or diamonds less than ${LOCKOUT_GAP} apart`);
   if (entropics()) extra.push("not one low, one middle and one high in three cells in a row on an entropic line");
   if (modulars()) extra.push("not one each of 1 4 7, 2 5 8 and 3 6 9 in three cells in a row on a modular line");
+  if (sumlines()) extra.push("not cutting a sum line into runs that each make its sum");
+  if (regionsums()) extra.push(`not making the same total in each ${regions() ? "region" : "box"} along a region sum line`);
+  if (indexes()) extra.push("not the dot's digit where a value indexing line's count points");
   if (dots()) extra.push("breaking a dot");
   if (xvs()) extra.push("not adding up to an X or a V");
   if (signs()) extra.push("not larger on the open side of a sign");
@@ -591,6 +620,31 @@ const MODULAR_PROBLEMS = {
   cell: "A modular line has a cell off the board.",
   loop: "A modular line cannot cross itself.",
   apart: "Each cell of a modular line must touch the one before it.",
+};
+
+const SUM_LINE_PROBLEMS = {
+  count: "There is room for forty sum lines.",
+  length: `A sum line needs two to ${LONG_LINE_MOST} cells.`,
+  cell: "A sum line has a cell off the board.",
+  loop: "A sum line cannot cross itself.",
+  apart: "Each cell of a sum line must touch the one before it.",
+  sum: `A sum line's sum is 1 to ${SUM_LINE_MAX}.`,
+};
+
+const REGION_SUM_PROBLEMS = {
+  count: "There is room for forty region sum lines.",
+  length: `A region sum line needs two to ${LONG_LINE_MOST} cells.`,
+  cell: "A region sum line has a cell off the board.",
+  loop: "A region sum line cannot cross itself.",
+  apart: "Each cell of a region sum line must touch the one before it.",
+};
+
+const INDEX_PROBLEMS = {
+  count: "There is room for forty value indexing lines.",
+  length: `A value indexing line needs three to ${INDEX_LINE_MOST} cells: the dot, the counting cell, and a cell to count to at least.`,
+  cell: "A value indexing line has a cell off the board.",
+  loop: "A value indexing line cannot cross itself.",
+  apart: "Each cell of a value indexing line must touch the one before it.",
 };
 
 const DOT_PROBLEMS = {
@@ -800,6 +854,7 @@ function advance() {
 function inputDigit(d) {
   if (!canEdit()) return;
   if (cageMode) return typeSum(String(d));
+  if (lineKind && LINES[lineKind].sum) return typeLineSum(String(d));
   if (lineKind) {
     const L = LINES[lineKind];
     return say(`Digits wait until the ${L.name} is done: tap its cells, ${L.start} first, then ${addLabel()}.`);
@@ -1036,6 +1091,9 @@ function onGo() {
   if (s.lockout && !s.lockouts.length) return say("Draw a lockout line first: tap Lockouts, then a diamond, each cell along it, and the other diamond.");
   if (s.entropic && !s.entropics.length) return say("Draw an entropic line first: tap Entropics, then each cell along it.");
   if (s.modular && !s.modulars.length) return say("Draw a modular line first: tap Modulars, then each cell along it.");
+  if (s.sumline && !s.sumlines.length) return say("Draw a sum line first: tap Sum lines, then each cell along it, and type its sum.");
+  if (s.regionsum && !s.regionsums.length) return say("Draw a region sum line first: tap Region sums, then each cell along it.");
+  if (s.valueindex && !s.indexes.length) return say("Draw a value indexing line first: tap Indexing, then the dot, the counting cell and each cell after it.");
   if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.greater && !s.signs.length) return say("Put a sign down first: tap Marks, then near the side between two cells.");
@@ -1534,6 +1592,46 @@ const LINES = {
     problem: modularProblem,
     problems: MODULAR_PROBLEMS,
   },
+  // Kept as { sum, cells }, the sum typed in the bar's box: pathOf and
+  // copyLine below.
+  sumline: {
+    list: "sumlines",
+    short: "sum line",
+    name: "sum line",
+    title: "Sum line",
+    a: "A sum line",
+    start: "end",
+    sum: true,
+    most: LONG_LINE_MOST,
+    started: "One end placed. Tap the next cell, and type the line's sum: it cuts into runs of cells that each add up to it.",
+    problem: sumLineProblem,
+    problems: SUM_LINE_PROBLEMS,
+  },
+  regionsum: {
+    list: "regionsums",
+    short: "region sum",
+    name: "region sum line",
+    title: "Region sum line",
+    a: "A region sum line",
+    start: "end",
+    most: LONG_LINE_MOST,
+    started: "One end placed. Tap the next cell: the line's digits in each box it passes through add up to the same total.",
+    problem: regionSumProblem,
+    problems: REGION_SUM_PROBLEMS,
+  },
+  valueindex: {
+    list: "indexes",
+    short: "indexing line",
+    name: "value indexing line",
+    title: "Value indexing line",
+    a: "A value indexing line",
+    start: "dot",
+    least: 3,
+    most: INDEX_LINE_MOST,
+    started: "Dot placed. Tap the counting cell next: its digit says how many cells on past it the dot's digit sits again.",
+    problem: indexProblem,
+    problems: INDEX_PROBLEMS,
+  },
 };
 
 const addLabel = () => `${editingLine >= 0 ? "Change" : "Add"} ${LINES[lineKind].short}`;
@@ -1550,16 +1648,28 @@ function toggleLineMode(kind) {
 }
 
 // A line as the tool draws it, a path from its first cell: a pill arrow's
-// pill and then its arrow, any other the line itself. copyLine copies one.
-const pathOf = (t) => (t.pill ? [...t.pill, ...t.arrow] : t);
-const copyLine = (t) => (t.pill ? { pill: t.pill.slice(), arrow: t.arrow.slice() } : t.slice());
+// pill and then its arrow, a sum line's cells, any other the line itself.
+// copyLine copies one.
+const pathOf = (t) => (t.pill ? [...t.pill, ...t.arrow] : t.cells ?? t);
+const copyLine = (t) => (t.pill ? { pill: t.pill.slice(), arrow: t.arrow.slice() } : t.cells ? { sum: t.sum, cells: t.cells.slice() } : t.slice());
 
-// Leaves the line tool, dropping any path not added.
+// Leaves the line tool, dropping any path not added. The sum typed for a
+// sum line goes too.
 function endLine() {
   lineKind = null;
   path = [];
   editingLine = -1;
+  $("lineSum").value = "";
 }
+
+// Digits typed in the Sum lines tool go to the sum; "back" takes one off.
+function typeLineSum(key) {
+  const box = $("lineSum");
+  box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-2);
+  note = "";
+  render();
+}
+const lineSumTyped = () => /^\d+$/.test($("lineSum").value.trim());
 
 // A tap in a line tool: with no path, a cell of a line picks it up, and
 // then its first cell (any of a pill's) starts another line there, for
@@ -1574,6 +1684,7 @@ function pickLineCell(c) {
       editingLine = i;
       path = pathOf(lines[i]).slice();
       if (L.pill) pillSize = lines[i].pill.length;
+      if (L.sum) $("lineSum").value = String(lines[i].sum);
       note = "";
       return render();
     }
@@ -1636,13 +1747,14 @@ function lineStatus() {
   if (!path.length) return `Tap the ${L.start}, then each next cell in order. Tap ${L.a.toLowerCase()} already drawn to change it.`;
   if (path.length === 1) return L.started;
   const again = editingLine >= 0 ? ` Tap its ${L.start} to start another from it.` : "";
-  return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}. Tapping the last cell takes it back.${again}`;
+  const sum = L.sum && !lineSumTyped() ? " Type its sum too." : "";
+  return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}.${sum} Tapping the last cell takes it back.${again}`;
 }
 
 // The fewest and the most cells a kind of line has, a pill arrow's pill
 // included.
 const least = (L) => (L.pill ? pillSize + 1 : L.least ?? 2);
-const most = (L) => (L.pill ? pillSize + PILL_ARROW_MOST : 9);
+const most = (L) => (L.pill ? pillSize + PILL_ARROW_MOST : L.most ?? 9);
 
 function onLineAdd() {
   const L = LINES[lineKind];
@@ -1650,7 +1762,9 @@ function onLineAdd() {
     if (L.pill) return say(`A pill arrow needs its pill of ${pillSize} cells and one cell of arrow at least.`);
     return say(least(L) === 2 ? `${L.a} needs two cells at least: the ${L.start} and one more.` : `${L.a} needs ${least(L) === 3 ? "three" : least(L)} cells at least.`);
   }
-  const line = L.pill ? { pill: path.slice(0, pillSize).sort((a, b) => a - b), arrow: path.slice(pillSize) } : path.slice();
+  if (L.sum && !lineSumTyped()) return say("Type the line's sum first.");
+  const sum = Number($("lineSum").value.trim());
+  const line = L.pill ? { pill: path.slice(0, pillSize).sort((a, b) => a - b), arrow: path.slice(pillSize) } : L.sum ? { sum, cells: path.slice() } : path.slice();
   const next = s[L.list].filter((_, i) => i !== editingLine).concat([line]);
   const problem = L.problem(next);
   if (problem) return say(L.problems[problem.why]);
@@ -1658,7 +1772,10 @@ function onLineAdd() {
   change(s.clues, { [L.list]: next });
   path = [];
   editingLine = -1;
-  say(`${L.title} of ${plural(n, "cell")} added. Tap the ${L.start} of the next one, or Done.`);
+  // The sum stays typed for the next line, as puzzles often give every
+  // line the same.
+  const runs = L.sum ? `, its runs adding up to ${sum}` : "";
+  say(`${L.title} of ${plural(n, "cell")} added${runs}. Tap the ${L.start} of the next one, or Done.`);
 }
 
 function onLineRemove() {
@@ -2146,6 +2263,15 @@ function defaultStatus() {
     if (s.modular && !s.modulars.length) {
       return "A modular puzzle: tap Modulars, then each cell along a line. Any three in a row hold one each of 1 4 7, 2 5 8 and 3 6 9, like 1 5 9.";
     }
+    if (s.sumline && !s.sumlines.length) {
+      return "A sum line puzzle: tap Sum lines, then each cell along a line, and type its sum. The line cuts into runs of cells that each add up to it, like 3 7 and then 1 9 for 10.";
+    }
+    if (s.regionsum && !s.regionsums.length) {
+      return `A region sum puzzle: tap Region sums, then each cell along a line. Its digits in each ${regions() ? "region" : "box"} it passes through add up to the same total.`;
+    }
+    if (s.valueindex && !s.indexes.length) {
+      return "A value indexing puzzle: tap Indexing, then the dot and each cell along the line. The second cell's digit counts how many cells on past it the dot's digit sits again.";
+    }
     if (s.kropki && !s.dots.length) {
       return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
     }
@@ -2253,6 +2379,9 @@ function render() {
     lockouts: shownLines("lockout"),
     entropics: shownLines("entropic"),
     modulars: shownLines("modular"),
+    sumlines: shownLines("sumline"),
+    regionsums: shownLines("regionsum"),
+    indexes: shownLines("valueindex"),
     dots: s.kropki ? s.dots : null,
     xvs: s.xv ? s.xvs : null,
     signs: s.greater ? s.signs : null,
@@ -2333,6 +2462,9 @@ function render() {
     solverLockouts: enter && s.lockout,
     solverEntropics: enter && s.entropic,
     solverModulars: enter && s.modular,
+    solverSumLines: enter && s.sumline,
+    solverRegionSums: enter && s.regionsum,
+    solverIndexes: enter && s.valueindex,
     lineBar: Boolean(lineKind),
     solverMarks: enter && (s.kropki || s.xv || s.greater || s.quad),
     markBar: markMode,
@@ -2379,6 +2511,9 @@ function render() {
   $("solverLockouts").setAttribute("aria-pressed", String(lineKind === "lockout"));
   $("solverEntropics").setAttribute("aria-pressed", String(lineKind === "entropic"));
   $("solverModulars").setAttribute("aria-pressed", String(lineKind === "modular"));
+  $("solverSumLines").setAttribute("aria-pressed", String(lineKind === "sumline"));
+  $("solverRegionSums").setAttribute("aria-pressed", String(lineKind === "regionsum"));
+  $("solverIndexes").setAttribute("aria-pressed", String(lineKind === "valueindex"));
   $("solverMarks").setAttribute("aria-pressed", String(markMode));
   $("solverOutside").setAttribute("aria-pressed", String(outMode));
   $("solverRegions").setAttribute("aria-pressed", String(regionMode));
@@ -2402,6 +2537,7 @@ function render() {
     $("lineAdd").disabled = path.length < least(LINES[lineKind]);
     $("linePill").classList.toggle("hidden", !LINES[lineKind].pill);
     $("linePillLabel").textContent = `Pill of ${pillSize}`;
+    for (const id of ["lineSum", "lineSumLabel"]) $(id).classList.toggle("hidden", !LINES[lineKind].sum);
   }
   if (cageMode) {
     const K = CAGES[cageKind];
@@ -2460,6 +2596,10 @@ function onKey(e) {
   if (cageMode && /^[0-9]$/.test(e.key)) typeSum(e.key);
   else if (cageMode && e.key === "Enter") onCageAdd();
   else if (cageMode && e.key === "Escape") endCage(true);
+  // A sum line's sum can be 10 or more, so 0 is typed too; Backspace takes
+  // the sum's last digit, then steps the path back.
+  else if (lineKind && LINES[lineKind].sum && /^[0-9]$/.test(e.key)) typeLineSum(e.key);
+  else if (lineKind && LINES[lineKind].sum && e.key === "Backspace" && $("lineSum").value) typeLineSum("back");
   else if (lineKind && e.key === "Enter") onLineAdd();
   else if (lineKind && e.key === "Escape") endCage(true);
   else if (markMode && e.key === "Escape") endCage(true);
@@ -2530,6 +2670,9 @@ export function initSolver({ reopen = true } = {}) {
   $("solverLockouts").addEventListener("click", () => toggleLineMode("lockout"));
   $("solverEntropics").addEventListener("click", () => toggleLineMode("entropic"));
   $("solverModulars").addEventListener("click", () => toggleLineMode("modular"));
+  $("solverSumLines").addEventListener("click", () => toggleLineMode("sumline"));
+  $("solverRegionSums").addEventListener("click", () => toggleLineMode("regionsum"));
+  $("solverIndexes").addEventListener("click", () => toggleLineMode("valueindex"));
   $("solverMarks").addEventListener("click", toggleMarkMode);
   $("markDone").addEventListener("click", () => endCage(true));
   $("solverOutside").addEventListener("click", toggleOutMode);
@@ -2545,6 +2688,10 @@ export function initSolver({ reopen = true } = {}) {
     if (e.key === "Enter") onOutAdd();
   });
   $("lineAdd").addEventListener("click", onLineAdd);
+  $("lineSum").addEventListener("input", () => render());
+  $("lineSum").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onLineAdd();
+  });
   $("linePill").addEventListener("click", turnPill);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));

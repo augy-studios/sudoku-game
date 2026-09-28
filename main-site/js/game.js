@@ -52,7 +52,8 @@ let watching = null; // a shared replay being watched
 // hints, how many are free: a preset number, "all" for every one, or
 // "custom" for `custom`. Hints past the free ones cost points. tutorial:
 // whether a variant puzzle's rules are explained over the board in a game.
-const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10, tutorial: true };
+// daily: which of a day's two puzzles to play, "classic" or "killer".
+const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10, tutorial: true, daily: "classic" };
 
 function loadSetup() {
   const saved = store.getJSON(SETUP_STORAGE) ?? {};
@@ -62,6 +63,7 @@ function loadSetup() {
   if (HINT_PRESETS.includes(saved.hints) || saved.hints === "all" || saved.hints === "custom") setup.hints = saved.hints;
   if (Number.isInteger(saved.custom) && saved.custom >= 0 && saved.custom <= 81) setup.custom = saved.custom;
   if (typeof saved.tutorial === "boolean") setup.tutorial = saved.tutorial;
+  if (["classic", "killer"].includes(saved.daily)) setup.daily = saved.daily;
 }
 
 function saveSetup() {
@@ -71,7 +73,7 @@ function saveSetup() {
 function modeNote() {
   if (setup.mode === "solo") return "Scored on the leaderboard when the game starts while you are online.";
   if (setup.mode === "daily") {
-    return `The same puzzle for everyone on a day, with a board for each day. Pick today or any day since ${dayName(DAILY_FIRST, true)}: each scores in full, and filling in a missed day mends your streak. Starting one needs a connection.`;
+    return `The same puzzles for everyone on a day, a classic one and a killer one, each with a board for each day. Pick today or any day since ${dayName(DAILY_FIRST, true)}: each scores in full, either kind keeps your streak going, and filling in a missed day mends it. Starting one needs a connection.`;
   }
   if (setup.mode === "create") return "Make your own puzzle: put the clues in, check it has exactly one answer, then share it as a seed, copy it, or save it as an image.";
   if (setup.mode === "solver") return "Stuck on a puzzle from a book, a newspaper or another app? Type it in for hints that say why, a check of your digits, or the whole answer. Not scored.";
@@ -110,6 +112,7 @@ function renderSetup() {
   check("#kindPick [data-kind]", "kind", setup.kind);
   check("#hintPick [data-hints]", "hints", setup.hints);
   check("#tutorialPick [data-tutorial]", "tutorial", setup.tutorial ? "on" : "off");
+  check("#dailyKindPick [data-daily]", "daily", setup.daily);
   // The solver and the maker open their own screen, and need none of this.
   const tool = setup.mode === "solver" || setup.mode === "create";
   $("levelGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
@@ -121,9 +124,10 @@ function renderSetup() {
   $("kindGroup").classList.toggle("hidden", setup.mode !== "network");
   $("hintGroup").classList.toggle("hidden", tool);
   $("seedGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
-  // Only solo and network games can be a seed's variant; a daily is classic,
-  // and the solver and the maker explain their own rules.
-  $("tutorialGroup").classList.toggle("hidden", setup.mode !== "solo" && setup.mode !== "network");
+  // Solo and network games can be a seed's variant, and a daily can be a
+  // killer; the solver and the maker explain their own rules.
+  const variants = setup.mode === "solo" || setup.mode === "network" || (setup.mode === "daily" && setup.daily === "killer");
+  $("tutorialGroup").classList.toggle("hidden", !variants);
   $("tutorialNote").textContent = tutorialNote();
   $("joinForm").classList.toggle("hidden", setup.mode !== "network");
   $("startLabel").textContent = launching
@@ -131,9 +135,7 @@ function renderSetup() {
     : setup.mode === "network"
       ? "Host a game"
       : setup.mode === "daily"
-        ? pickedDate() === localDate()
-          ? "Start today's puzzle"
-          : `Start the puzzle for ${dayName(pickedDate())}`
+        ? `Start ${dailyLabel(pickedDate(), setup.daily)}`
         : setup.mode === "solver"
           ? "Open the solver"
           : setup.mode === "create"
@@ -278,9 +280,18 @@ function initCalendar() {
   });
 }
 
-// How a daily is named on its chip and in its result: "today's puzzle", or
-// "the puzzle for 12 Sep".
-const dailyLabel = (date) => (!date || date === localDate() ? "today's puzzle" : `the puzzle for ${dayName(date)}`);
+// How a daily is named on the start button and in its result: "today's
+// puzzle", "today's killer puzzle", or "the puzzle for 12 Sep".
+const dailyLabel = (date, kind = "classic") => {
+  const what = kind === "killer" ? "killer puzzle" : "puzzle";
+  return !date || date === localDate() ? `today's ${what}` : `the ${what} for ${dayName(date)}`;
+};
+// A daily game's kind, from its seed: a killer's has cages.
+const dailyKindOf = (seed) => (seed.cages ? "killer" : "classic");
+// Whether a game is of a made puzzle someone put together, which scores on
+// its own board only. A killer daily's seed is a made one too, but the
+// server picked it, so it scores as a daily.
+const madeBySomeone = (game) => Boolean(game.seed.made) && game.mode !== "daily";
 
 function shake(input) {
   input.classList.remove("shake");
@@ -373,7 +384,7 @@ async function launchDaily(maxHints) {
   let t = null;
   let problem = "";
   try {
-    t = await withTimeout(api.start({ mode: "daily", date: pickedDate(), maxHints }), START_WAIT_MS * 2);
+    t = await withTimeout(api.start({ mode: "daily", date: pickedDate(), kind: setup.daily, maxHints }), START_WAIT_MS * 2);
   } catch (err) {
     problem =
       err.code === "offline" || err.message === "timeout"
@@ -415,7 +426,7 @@ export function startGame(opts) {
     maxHints: opts.maxHints ?? null,
     gameId: opts.gameId ?? null,
     // A made puzzle scores only solo, on its own board.
-    ticket: opts.seed.made && opts.mode !== "solo" ? "none" : (opts.ticket ?? (opts.mode === "coop" || role === "guest" ? "none" : "pending")),
+    ticket: madeBySomeone(opts) && opts.mode !== "solo" ? "none" : (opts.ticket ?? (opts.mode === "coop" || role === "guest" ? "none" : "pending")),
     serverSeed: opts.serverSeed ?? false,
     date: opts.date ?? null,
     submitted: opts.submitted ?? false,
@@ -478,7 +489,7 @@ export function isOver() {
 }
 
 // A made puzzle's own board is the only one it goes on.
-const madeOffBoard = () => g.seed.made && g.mode !== "solo";
+const madeOffBoard = () => madeBySomeone(g) && g.mode !== "solo";
 
 function scoring() {
   return g.mode !== "coop" && !res.solved && !madeOffBoard();
@@ -696,6 +707,9 @@ function update({ fresh = false } = {}) {
       lockouts: g.seed.lockouts ?? null,
       entropics: g.seed.entropics ?? null,
       modulars: g.seed.modulars ?? null,
+      sumlines: g.seed.sumlines ?? null,
+      regionsums: g.seed.regionsums ?? null,
+      indexes: g.seed.indexes ?? null,
       dots: g.seed.dots ?? null,
       xvs: g.seed.xvs ?? null,
       signs: g.seed.signs ?? null,
@@ -735,7 +749,8 @@ function currentTally() {
 
 function renderChips(over) {
   const level = LEVELS[g.seed.level].name;
-  const daily = g.date && g.date !== localDate() ? `Daily ${dayName(g.date)}` : "Daily";
+  const killer = dailyKindOf(g.seed) === "killer" ? " killer" : "";
+  const daily = g.date && g.date !== localDate() ? `Daily${killer} ${dayName(g.date)}` : `Daily${killer}`;
   const kind = { daily, race: "Race", coop: "Co-op" }[g.mode] ?? (variantName(g.seed) || (g.seed.made ? "Made" : ""));
   $("levelChip").textContent = kind ? `${kind}, ${level}` : level;
   renderTimer();
@@ -811,7 +826,7 @@ function renderActions(over) {
     note = "Undo as often as you like. Mistakes cost points, and undo does not give them back.";
     if (g.mode === "coop") note += " Co-op games are not scored.";
     else if (madeOffBoard()) note += " Made puzzles only score when played solo.";
-    else if (g.seed.made && g.ticket !== "offline") note += " A made puzzle scores on its own board only.";
+    else if (madeBySomeone(g) && g.ticket !== "offline") note += " A made puzzle scores on its own board only.";
     else if (g.ticket === "offline") note += " This game started offline, so it is not scored.";
   }
   $("playNote").textContent = note;
@@ -892,7 +907,7 @@ function renderScoreLine() {
   const parts = [`${score} ${score === 1 ? "point" : "points"}`];
   if (bonus) parts.push(`+${bonus}% for time`);
   let line = `${parts.join(", ")}.`;
-  if (g.seed.made) {
+  if (madeBySomeone(g)) {
     line += " On this puzzle's own board, without time bonuses.";
   } else if (!g.serverSeed && g.gameId) {
     line += " No time bonuses: the seed was chosen, not picked by the server.";
@@ -952,6 +967,9 @@ function finish(fresh) {
       lockouts: g.seed.lockouts,
       entropics: g.seed.entropics,
       modulars: g.seed.modulars,
+      sumlines: g.seed.sumlines,
+      regionsums: g.seed.regionsums,
+      indexes: g.seed.indexes,
       dots: g.seed.dots,
       xvs: g.seed.xvs,
       signs: g.seed.signs,
@@ -1053,7 +1071,7 @@ async function submitAs(name, auto = false) {
     g.elapsed = r.elapsed_ms;
     const games = r.games === 1 ? "1 game" : `${r.games} games`;
     const bonus = r.time_bonus ? `, with +${r.time_bonus}% for time` : "";
-    let daily = r.daily_rank ? ` Ranked ${r.daily_rank} on ${dailyLabel(game.date)}.` : "";
+    let daily = r.daily_rank ? ` Ranked ${r.daily_rank} on ${dailyLabel(game.date, dailyKindOf(game.seed))}.` : "";
     if (game.mode === "daily" && game.date) {
       // The name's days, which the board may not show this one in yet.
       await fetchBoardDays(r.name, true);
@@ -1062,7 +1080,7 @@ async function submitAs(name, auto = false) {
       const { current } = streaks(finishedDays(), localDate());
       if (current) daily += ` Daily streak: ${current} ${current === 1 ? "day" : "days"}.`;
     }
-    g.submittedText = game.seed.made
+    g.submittedText = madeBySomeone(game)
       ? `Added as ${r.name} for ${r.score} points. Ranked ${r.seed_rank} on this puzzle's board.`
       : `Added as ${r.name} for ${r.score} points${bonus}. Best ${r.best_score}, ranked ${r.rank}. ` +
         `Total ${r.total} over ${games}, ranked ${r.total_rank}.${daily}`;
@@ -1215,6 +1233,9 @@ function watch(link) {
       lockouts: link.seed.lockouts,
       entropics: link.seed.entropics,
       modulars: link.seed.modulars,
+      sumlines: link.seed.sumlines,
+      regionsums: link.seed.regionsums,
+      indexes: link.seed.indexes,
       dots: link.seed.dots,
       xvs: link.seed.xvs,
       signs: link.seed.signs,
@@ -1450,6 +1471,7 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   pick("kindPick", "kind", "kind");
   pick("hintPick", "hints", "hints", (v) => (v === "all" || v === "custom" ? v : Number(v)));
   pick("tutorialPick", "tutorial", "tutorial", (v) => v === "on");
+  pick("dailyKindPick", "daily", "daily");
   $("customHints").addEventListener("input", (e) => {
     const n = Number(e.target.value);
     if (Number.isInteger(n) && n >= 0 && n <= 81) {
@@ -1497,8 +1519,9 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   $("newGameBtn").addEventListener("click", () => (watching ? closeWatch() : endGame()));
   $("resultBoardBtn").addEventListener("click", () => {
     const seed = (watching ?? g)?.seed;
-    if (seed?.made) openLeaderboard("made", seed.text);
-    else if (g?.mode === "daily") openLeaderboard("daily", g.date);
+    const daily = watching ? watching.meta === "d" : g?.mode === "daily";
+    if (seed?.made && !daily) openLeaderboard("made", seed.text);
+    else if (daily) openLeaderboard("daily", watching ? null : g.date, dailyKindOf(seed));
     else openLeaderboard();
   });
   $("shareBtn").addEventListener("click", onShare);

@@ -18,7 +18,8 @@
 // arrows, S for German Whispers lines, R for renban lines, O for
 // palindrome lines, Z for zipper lines, C for between lines, F for
 // lockout lines, QEN for entropic lines, QMO for modular
-// lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
+// lines, QSL for sum lines, QRS for region sum lines, QVX for value
+// indexing lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
 // for quads, B for Sandwich clues, L for Little Killer clues, Y for
 // Skyscraper clues, U for X-Sum clues, QHS for Hidden Skyscraper clues, QNR
 // for Numbered Room clues and J for a Jigsaw's regions, which the seed then
@@ -28,7 +29,7 @@
 // after it, and never alone, so a seed from before reads as it did.
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
-import { generate, solve, countSolutions, COL } from "./sudoku.js";
+import { generate, solve, countSolutions, randomSolution, shuffled, COL } from "./sudoku.js";
 import {
   variantSolve,
   variantSolutions,
@@ -52,6 +53,12 @@ import {
   lockoutProblem,
   entropicProblem,
   modularProblem,
+  sumLineProblem,
+  regionSumProblem,
+  indexProblem,
+  LONG_LINE_MOST,
+  SUM_LINE_MAX,
+  INDEX_LINE_MOST,
   dotProblem,
   xvProblem,
   signProblem,
@@ -199,7 +206,9 @@ function decodeGrid(body) {
    it runs, then its arrow's length, the pill cell it starts beside, which
    way it steps from there and each step after. Then German Whispers,
    renban, palindrome, zipper, between, lockout, entropic and modular lines
-   as thermometers are. Then Kropki dots, and then XV marks, as whichever is
+   as thermometers are. Then sum lines, each its sum and then as a
+   thermometer, region sum lines and value indexing lines as thermometers,
+   their lengths in a wider digit for their longer lines. Then Kropki dots, and then XV marks, as whichever is
    shorter: how many, and for each its side and which of the two marks it
    is; or for every side, its mark or none; and Greater Than signs the same
    way. Then quads: how many, and for each its corner, how many digits and
@@ -297,12 +306,15 @@ function readSay(take) {
 }
 
 // Lines of one kind: how many, then each one's length, first cell and
-// steps.
-function writeLines(digits, lines) {
+// steps, `line` writing each line's clue before it if it has one. A kind
+// with lines longer than nine cells says how long they get, `most`.
+function writeLines(digits, lines, most = 9, line = () => {}) {
   digits.push([lines.length, MAX_LINES + 1]);
   for (const t of lines) {
-    digits.push([t.length - 2, 8], [t[0], 81]);
-    for (let i = 1; i < t.length; i++) digits.push([stepOf(t[i - 1], t[i]), 8]);
+    line(t);
+    const cells = t.cells ?? t;
+    digits.push([cells.length - 2, most - 1], [cells[0], 81]);
+    for (let i = 1; i < cells.length; i++) digits.push([stepOf(cells[i - 1], cells[i]), 8]);
   }
 }
 
@@ -321,20 +333,22 @@ function stepFrom(a, k) {
   return r < 0 || r > 8 || c < 0 || c > 8 ? -1 : r * 9 + c;
 }
 
-// The other way, from `take`, which reads the next digit; null if a line
-// steps off the board.
-function readLines(take) {
+// The other way, from `take`, which reads the next digit, `line` reading a
+// line's clue and giving back the line with it; null if a line steps off
+// the board.
+function readLines(take, most = 9, line = null) {
   const lines = [];
   const count = take(MAX_LINES + 1);
   for (let i = 0; i < count; i++) {
-    const length = take(8) + 2;
+    const clue = line?.();
+    const length = take(most - 1) + 2;
     const t = [take(81)];
     for (let j = 1; j < length; j++) {
       const c = stepFrom(t[j - 1], take(8));
       if (c < 0) return null;
       t.push(c);
     }
-    lines.push(t);
+    lines.push(clue ? { ...clue, cells: t } : t);
   }
   return lines;
 }
@@ -618,7 +632,25 @@ const cageKind = (list, letter, name, problem, write, read) => ({
 // start a seed and their parts go in its body: how each is written, read,
 // checked, and put in the one order a seed keeps it in.
 const copyLines = (lines) => lines.map((t) => t.slice());
-const lines = (list, letter, name, problem) => ({ list, letter, name, problem, write: writeLines, read: readLines, sort: copyLines });
+const lines = (list, letter, name, problem, most = 9) => ({
+  list,
+  letter,
+  name,
+  problem,
+  write: (digits, found) => writeLines(digits, found, most),
+  read: (take) => readLines(take, most),
+  sort: copyLines,
+});
+// Sum lines, each with its sum before its cells.
+const sumLines = {
+  list: "sumlines",
+  letter: "QSL",
+  name: "Sum Line",
+  problem: sumLineProblem,
+  write: (digits, found) => writeLines(digits, found, LONG_LINE_MOST, ({ sum }) => digits.push([sum - 1, SUM_LINE_MAX])),
+  read: (take) => readLines(take, LONG_LINE_MOST, () => ({ sum: take(SUM_LINE_MAX) + 1 })),
+  sort: (found) => found.map(({ sum, cells }) => ({ sum, cells: cells.slice() })),
+};
 const edges = (list, letter, name, problem, marks) => ({
   list,
   letter,
@@ -646,6 +678,9 @@ const PARTS = [
   lines("lockouts", "F", "Lockout", lockoutProblem),
   lines("entropics", "QEN", "Entropic", entropicProblem),
   lines("modulars", "QMO", "Modular", modularProblem),
+  sumLines,
+  lines("regionsums", "QRS", "Region Sum Line", regionSumProblem, LONG_LINE_MOST),
+  lines("indexes", "QVX", "Value Indexing", indexProblem, INDEX_LINE_MOST),
   edges("dots", "P", "Kropki", dotProblem, DOT_MARKS),
   edges("xvs", "V", "XV", xvProblem, XV_MARKS),
   edges("signs", "QGT", "Greater Than", signProblem, SIGN_MARKS),
@@ -687,7 +722,7 @@ function prefixFor(parts, rules) {
 
 // The seed of a made puzzle. variant: { cages, relliks, lunchboxes,
 // looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
-// dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens,
+// sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens,
 // rooms, regions, rules } for a variant puzzle (variant.js), or nothing for
 // a classic one.
 // `level` is
@@ -705,6 +740,53 @@ export function madeSeed(level, grid, variant = null) {
   const seed = { level, body, text, made: true, grid: grid.slice(), rules };
   for (const { list } of PARTS) if (parts[list].length) seed[list] = parts[list];
   return seed;
+}
+
+/* ---- killer puzzles ---- */
+
+// How many clues a killer puzzle at each level tries to take out, as
+// generate does with LEVELS' blanks. Cages do most of the clues' work, so
+// Expert tries every one.
+export const KILLER_BLANKS = { E: 62, M: 70, H: 76, X: 81 };
+
+// A killer puzzle picked by `rand` (unsigned 32 bit integers, as generate
+// takes), as a made seed at `level`: a full grid, cages grown over every
+// cell from random ones, edge to edge, two to four cells with no digit
+// twice (fewer where a cage has no room to grow), then clues taken out in an
+// order drawn from `rand`, each only if the puzzle keeps its one answer,
+// until KILLER_BLANKS[level] are gone or none more can go. A clue the
+// checker gives up on stays. The daily killer is made this way (api/_lib/daily.js).
+export function killerSeed(rand, level) {
+  const solution = randomSolution(rand);
+  const of = new Array(81).fill(-1);
+  const cages = [];
+  const beside = (c) => [c - 9, c + 9, COL[c] > 0 ? c - 1 : -1, COL[c] < 8 ? c + 1 : -1].filter((o) => o >= 0 && o < 81);
+  for (const start of shuffled([...Array(81).keys()], rand)) {
+    if (of[start] >= 0) continue;
+    const want = 2 + (rand() % 3);
+    const cells = [start];
+    of[start] = cages.length;
+    while (cells.length < want) {
+      const next = [...new Set(cells.flatMap(beside))].filter((o) => of[o] < 0 && !cells.some((c) => solution[c] === solution[o]));
+      if (!next.length) break;
+      const o = next[rand() % next.length];
+      of[o] = cages.length;
+      cells.push(o);
+    }
+    cells.sort((a, b) => a - b);
+    cages.push({ sum: cells.reduce((t, c) => t + solution[c], 0), cells });
+  }
+  const variant = { cages: cages.sort((a, b) => a.cells[0] - b.cells[0]) };
+  const puzzle = solution.slice();
+  let removed = 0;
+  for (const c of shuffled([...Array(81).keys()], rand)) {
+    if (removed >= KILLER_BLANKS[level]) break;
+    const keep = puzzle[c];
+    puzzle[c] = 0;
+    if (variantSolutions(puzzle, variant, 2)?.length === 1) removed++;
+    else puzzle[c] = keep;
+  }
+  return madeSeed(level, puzzle, variant);
 }
 
 // The variant a seed's text names, from its letters alone, without

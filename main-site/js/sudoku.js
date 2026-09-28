@@ -124,7 +124,7 @@ export function findSolutions(grid, limit = 2) {
 }
 
 // A shuffled copy. `rand` returns unsigned 32 bit integers.
-function shuffled(items, rand) {
+export function shuffled(items, rand) {
   const a = items.slice();
   for (let i = a.length - 1; i > 0; i--) {
     const j = rand() % (i + 1);
@@ -134,7 +134,7 @@ function shuffled(items, rand) {
 }
 
 // A full, valid grid, picked by `rand`.
-function randomSolution(rand) {
+export function randomSolution(rand) {
   let out = null;
   search(new Array(81).fill(0), () => shuffled(DIGITS, rand), (g) => {
     out = g.slice();

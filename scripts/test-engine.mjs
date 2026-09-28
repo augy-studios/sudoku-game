@@ -10,8 +10,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { RULE_HELP, rulesOf } from "../main-site/js/rule-help.js";
 import { LEVEL_IDS } from "../main-site/js/levels.js";
-import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName, parseCode, codeText, needsCode, bodyFromBytes, CODE_LENGTH } from "../main-site/js/seed.js";
-import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
+import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName, parseCode, codeText, needsCode, bodyFromBytes, CODE_LENGTH, killerSeed, randomSource, KILLER_BLANKS } from "../main-site/js/seed.js";
+import { countSolutions, PEERS, BOX } from "../main-site/js/sudoku.js";
 import { DAILY_FIRST, isDate, addDays, addMonths, monthWeeks, monthName, dayName, streaks } from "../main-site/js/calendar.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
@@ -41,6 +41,13 @@ import {
   lockoutProblem,
   entropicProblem,
   modularProblem,
+  sumLineProblem,
+  regionSumProblem,
+  indexProblem,
+  regionRuns,
+  LONG_LINE_MOST,
+  SUM_LINE_MAX,
+  INDEX_LINE_MOST,
   ENTROPIC_KINDS,
   MODULAR_KINDS,
   LOCKOUT_GAP,
@@ -1219,6 +1226,243 @@ test("pill arrows are checked, solved and carried in seeds", () => {
   assert.equal(seedVariantName("KAQDAQPASD-H-BBBB"), "Killer, Arrow, Double Arrow, Pill Arrow, German Whispers, Diagonal");
 });
 
+// A path of 27 cells, snaking along the top three rows.
+const SNAKE = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 16, 15, 14, 13, 12, 11, 10, 9, 18, 19, 20, 21, 22, 23, 24, 25, 26];
+
+// Sum lines laid through a solved grid: walked from a random cell while the
+// run so far stays within `sum`, then cut back to the end of its last full
+// run, `min` to `max` cells.
+function laySumLines(solution, rand, sum, { count = 8, min = 4, max = 8, used = new Set() } = {}) {
+  const out = [];
+  for (let tries = 0; out.length < count && tries < 5000; tries++) {
+    const start = Math.floor(rand() * 81);
+    if (used.has(start) || solution[start] > sum) continue;
+    const line = [start];
+    let run = solution[start] % sum;
+    let end = run ? 0 : 1;
+    while (line.length < max) {
+      const next = [...Array(81).keys()].filter((o) => touching(line.at(-1), o) && !line.includes(o) && !used.has(o) && run + solution[o] <= sum);
+      if (!next.length) break;
+      const o = next[Math.floor(rand() * next.length)];
+      line.push(o);
+      run = (run + solution[o]) % sum;
+      if (!run) end = line.length;
+    }
+    const cells = line.slice(0, end);
+    if (cells.length < min) continue;
+    cells.forEach((c) => used.add(c));
+    out.push({ sum, cells });
+  }
+  return out;
+}
+
+// Region sum lines laid through a solved grid: walked from a random cell,
+// leaving a box only once the run in it makes the first run's total, then
+// cut back to the end of its last full run, two runs and `min` to `max`
+// cells.
+function layRegionSums(solution, rand, { count = 8, min = 3, max = 8, used = new Set() } = {}) {
+  const out = [];
+  for (let tries = 0; out.length < count && tries < 5000; tries++) {
+    const start = Math.floor(rand() * 81);
+    if (used.has(start)) continue;
+    const line = [start];
+    let target = 0;
+    let run = solution[start];
+    let end = 0;
+    while (line.length < max) {
+      const last = line.at(-1);
+      const next = [...Array(81).keys()].filter((o) => {
+        if (!touching(last, o) || line.includes(o) || used.has(o)) return false;
+        return BOX[o] === BOX[last] ? !target || run + solution[o] <= target : !target || run === target;
+      });
+      if (!next.length) break;
+      const o = next[Math.floor(rand() * next.length)];
+      if (BOX[o] === BOX[last]) run += solution[o];
+      else {
+        target ||= run;
+        run = solution[o];
+      }
+      line.push(o);
+      if (run === target) end = line.length;
+    }
+    const cells = line.slice(0, end);
+    if (cells.length < min) continue;
+    cells.forEach((c) => used.add(c));
+    out.push(cells);
+  }
+  return out;
+}
+
+// Value indexing lines laid through a solved grid: a random cell, one
+// touching it whose digit K counts on, and a walk to a cell K past that one
+// holding the first cell's digit.
+function layIndexes(solution, rand, { count = 8, used = new Set() } = {}) {
+  const out = [];
+  for (let tries = 0; out.length < count && tries < 5000; tries++) {
+    const start = Math.floor(rand() * 81);
+    if (used.has(start)) continue;
+    const line = [start];
+    // Once the count is known, the cells the line needs.
+    let length = 0;
+    while (!length || line.length < length) {
+      const last = line.length === length - 1;
+      const next = [...Array(81).keys()].filter((o) => touching(line.at(-1), o) && !line.includes(o) && !used.has(o) && (!last || solution[o] === solution[start]));
+      if (!next.length) break;
+      line.push(next[Math.floor(rand() * next.length)]);
+      if (line.length === 2) length = solution[line[1]] + 2;
+    }
+    if (line.length !== length) continue;
+    line.forEach((c) => used.add(c));
+    out.push(line);
+  }
+  return out;
+}
+
+// A puzzle of one of these kinds on the thermo and arrow puzzles' grid.
+function laidPuzzle(key, x, lay) {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(x);
+  const lines = lay(solution, rand);
+  return { puzzle: thinOut(solution, { [key]: lines }, rand), solution, [key]: lines };
+}
+const sumLinePuzzle = () => laidPuzzle("sumlines", 191, (solution, rand) => laySumLines(solution, rand, 10));
+const regionSumPuzzle = () => laidPuzzle("regionsums", 193, (solution, rand) => layRegionSums(solution, rand));
+const indexPuzzle = () => laidPuzzle("indexes", 197, (solution, rand) => layIndexes(solution, rand));
+
+test("sum lines are checked, solved and carried in seeds", () => {
+  assert.equal(sumLineProblem([{ sum: 10, cells: [20, 30, 40] }]), null);
+  assert.equal(sumLineProblem([{ sum: 10, cells: SNAKE }]), null, `${LONG_LINE_MOST} cells`);
+  assert.equal(sumLineProblem([{ sum: 10, cells: [...SNAKE, 35] }]).why, "length");
+  assert.equal(sumLineProblem([{ sum: 10, cells: [0] }]).why, "length");
+  assert.equal(sumLineProblem([{ sum: 10, cells: [0, 2] }]).why, "apart");
+  assert.equal(sumLineProblem([{ sum: 0, cells: [0, 1] }]).why, "sum");
+  assert.equal(sumLineProblem([{ sum: SUM_LINE_MAX + 1, cells: [0, 1] }]).why, "sum");
+  assert.equal(sumLineProblem([{ sum: SUM_LINE_MAX, cells: [0, 1] }]), null);
+
+  const made = sumLinePuzzle();
+  for (const { sum, cells } of made.sumlines) {
+    let run = 0;
+    for (const c of cells) run = (run + made.solution[c]) % sum;
+    assert.equal(run, 0, `runs of ${sum} along ${cells}`);
+  }
+  assert.ok(made.sumlines.some(({ cells }) => cells.length > 4), "some of more than one run");
+  linesRoundTrip("sumlines", "QSL", made);
+
+  // Row 3, column 3 and row 4, column 4 share no house. Cut into runs of 3,
+  // two cells are 1 2 either way round, or 3 and 3.
+  const two = (sum) => ({ sumlines: [{ sum, cells: [20, 30] }] });
+  assert.equal(variantCandidates(placed({}), two(3))[20], digitsMask(1, 2, 3));
+  assert.equal(variantCandidates(placed({ 20: 1 }), two(3))[30], digitsMask(2));
+  assert.equal(variantCandidates(placed({ 20: 3 }), two(3))[30], digitsMask(3));
+  // Two cells can make 18 only as one run of 9 and 9, which the line allows.
+  assert.equal(variantCandidates(placed({}), two(18))[20], digitsMask(9));
+  assert.equal(variantSolutions(placed({ 20: 2 }), two(12), 1)?.length, 0, "a 2 leaves 10 for one run of 12, and is no run of its own");
+
+  // A run past the sum clashes, read from either end, and so does a full
+  // line's last run short of it.
+  const t = { sumlines: [{ sum: 10, cells: [20, 30, 40] }] };
+  assert.deepEqual(sorted(clashes(placed({ 20: 6, 30: 5 }), t)), [20, 30]);
+  assert.deepEqual(sorted(clashes(placed({ 40: 9, 30: 3 }), t)), [30, 40]);
+  assert.ok(clashes(placed({ 20: 6, 30: 4, 40: 2 }), t).has(40));
+  assert.equal(clashes(placed({ 20: 6, 30: 4 }), t).size, 0, "not yet full");
+  assert.equal(clashes(placed({ 20: 6, 30: 4, 40: 1 }), { sumlines: [{ sum: 10, cells: [20, 30] }] }).size, 0);
+
+  // A line longer than nine cells, and a sum over 9, go through a seed.
+  let run = 0;
+  let end = 0;
+  const sum = made.solution[0] + made.solution[1] + made.solution[2];
+  SNAKE.forEach((c, i) => {
+    run += made.solution[c];
+    if (run === sum) [run, end] = [0, i + 1];
+    else if (run > sum) run = sum * 100;
+  });
+  const snake = { sum, cells: SNAKE.slice(0, end) };
+  const full = parseSeed(madeSeed("H", made.solution, { sumlines: [snake] }).text);
+  assert.deepEqual(full?.sumlines, [snake]);
+});
+
+test("region sum lines are checked, solved and carried in seeds", () => {
+  assert.equal(regionSumProblem([[0, 1, 2, 3]]), null);
+  assert.equal(regionSumProblem([SNAKE]), null, `${LONG_LINE_MOST} cells`);
+  assert.equal(regionSumProblem([[...SNAKE, 35]]).why, "length");
+  assert.equal(regionSumProblem([[0, 10, 0]]).why, "loop");
+
+  // Cut where the line changes box, a box it comes back to cut again; with
+  // a Jigsaw's regions, where it changes region.
+  assert.deepEqual(regionRuns([[0, 1, 2, 3, 12, 11]]), [[[0, 1, 2], [3, 12], [11]]]);
+  assert.deepEqual(regionRuns([[2, 3, 2 + 9]]), [[[2], [3], [11]]]);
+  const cut = Array.from(BOX);
+  cut[3] = 0;
+  assert.deepEqual(regionRuns([[0, 1, 2, 3]], cut), [[[0, 1, 2, 3]]]);
+
+  const made = regionSumPuzzle();
+  for (const runs of regionRuns(made.regionsums)) {
+    assert.ok(runs.length >= 2, "two runs at least");
+    assert.equal(new Set(runs.map((run) => run.reduce((s, c) => s + made.solution[c], 0))).size, 1, `one total along ${runs}`);
+  }
+  linesRoundTrip("regionsums", "QRS", made);
+
+  // Three cells in the top left box and one beside it in the next: three
+  // different digits make 6 at least, so the one cell is 6 to 9, and the
+  // three from 1 to 6. A line within one box, or one region, is free.
+  const t = { regionsums: [[0, 1, 2, 3]] };
+  const cand = variantCandidates(placed({}), t);
+  assert.equal(cand[0], digitsMask(1, 2, 3, 4, 5, 6));
+  assert.equal(cand[3], digitsMask(6, 7, 8, 9));
+  assert.equal(variantCandidates(placed({ 3: 6 }), t)[0], digitsMask(1, 2, 3));
+  assert.equal(variantCandidates(placed({}), { regionsums: [[0, 1, 2]] })[0], ALL_DIGITS);
+  assert.equal(variantCandidates(placed({}), { ...t, regions: cut })[3], ALL_DIGITS);
+
+  // Full runs that differ clash; so does a run already past the total the
+  // full ones agree on, counting 1 for each empty cell.
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 2, 2: 3, 3: 7 }), t)), [0, 1, 2, 3]);
+  assert.equal(clashes(placed({ 0: 1, 1: 2, 2: 3, 3: 6 }), t).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 0: 4, 1: 2, 3: 6 }), t)), [0, 1]);
+  assert.equal(clashes(placed({ 0: 3, 1: 2, 3: 6 }), t).size, 0, "the last cell could be 1");
+
+  // A line longer than nine cells goes through a seed.
+  const long = layRegionSums(made.solution, seeded(199), { count: 1, min: 10, max: 16 });
+  assert.equal(long.length, 1, "a long line laid");
+  const full = parseSeed(madeSeed("H", made.solution, { regionsums: long }).text);
+  assert.deepEqual(full?.regionsums, long);
+});
+
+test("value indexing lines are checked, solved and carried in seeds", () => {
+  assert.equal(indexProblem([[20, 30, 40]]), null);
+  assert.equal(indexProblem([[20, 30]]).why, "length", "a cell to count to at least");
+  assert.equal(indexProblem([SNAKE.slice(0, INDEX_LINE_MOST)]), null);
+  assert.equal(indexProblem([SNAKE.slice(0, INDEX_LINE_MOST + 1)]).why, "length");
+
+  const made = indexPuzzle();
+  for (const t of made.indexes) assert.equal(made.solution[t[made.solution[t[1]] + 1]], made.solution[t[0]], `the dot's digit counted to along ${t}`);
+  linesRoundTrip("indexes", "QVX", made);
+
+  // Two cells past the count: it is 1 or 2. Counting 2 puts the dot's digit
+  // in the last cell.
+  const t = { indexes: [[20, 30, 40, 50]] };
+  assert.equal(variantCandidates(placed({}), t)[30], digitsMask(1, 2));
+  assert.equal(variantCandidates(placed({ 20: 7, 30: 2 }), t)[50], digitsMask(7));
+  assert.equal(variantCandidates(placed({ 20: 7, 40: 3 }), t)[30], digitsMask(2), "not 1, with a 3 there");
+  assert.equal(variantSolutions(placed({}), { indexes: [[0, 1, 2]] }, 1)?.length, 0, "one row cannot hold the digit twice");
+
+  // A count past the line's end clashes, and so does the digit it points at
+  // when it is not the dot's.
+  assert.deepEqual(sorted(clashes(placed({ 30: 3 }), t)), [30]);
+  assert.deepEqual(sorted(clashes(placed({ 20: 7, 30: 1, 40: 3 }), t)), [20, 30, 40]);
+  assert.equal(clashes(placed({ 20: 7, 30: 1, 40: 7 }), t).size, 0);
+
+  // With the other two, on one grid: QSL, then QRS, then QVX.
+  const { sumlines } = sumLinePuzzle();
+  const { regionsums } = regionSumPuzzle();
+  const all = { sumlines, regionsums, indexes: made.indexes };
+  const mixed = parseSeed(madeSeed("H", made.solution.map((d, c) => (c % 2 ? d : 0)), all).text);
+  assert.ok(mixed, "the three together read back");
+  assert.match(mixed.text, /^QSLQRSQVX-H-/);
+  assert.deepEqual([mixed.sumlines, mixed.regionsums, mixed.indexes], [sumlines, regionsums, made.indexes]);
+  assert.equal(variantName(all), "Sum Line, Region Sum Line, Value Indexing");
+  assert.equal(seedVariantName("KQMOQSLQRSQVXPD-H-BBBB"), "Killer, Modular, Sum Line, Region Sum Line, Value Indexing, Kropki, Diagonal");
+});
+
 // Groups of cells laid through a solved grid: as many as `count`, each
 // grown edge to edge from a random cell to one of `sizes` cells, or for
 // `straight` along a row or down a column, none sharing a cell with another
@@ -2282,6 +2526,31 @@ test("modular lines are checked, solved and carried in seeds", () => {
 // Every drawn part at once, on a grid that keeps the switch rules, made,
 // checked, solved by steps and carried in a seed, as the maker, the solver
 // and a made game do.
+// Killer puzzles as the daily killer is made: the same from the same
+// numbers, cages over every cell with no digit twice and the right sums, one
+// answer, and fewer clues the harder the level.
+test("killer puzzles are made from a random source", () => {
+  const clues = {};
+  for (const level of LEVEL_IDS) {
+    const seed = killerSeed(randomSource(4242), level);
+    assert.equal(killerSeed(randomSource(4242), level).text, seed.text, `${level}: the same each time`);
+    assert.match(seed.text, new RegExp(`^K-${level}-`));
+    const { solution } = puzzleFor(seed);
+    assert.deepEqual(sorted(new Set(seed.cages.flatMap((k) => k.cells))), [...Array(81).keys()], `${level}: every cell caged once`);
+    for (const { sum, cells } of seed.cages) {
+      assert.ok(cells.length <= 4);
+      assert.equal(new Set(cells.map((c) => solution[c])).size, cells.length);
+      assert.equal(cells.reduce((t, c) => t + solution[c], 0), sum);
+    }
+    assert.equal(variantSolutions(seed.grid, { cages: seed.cages }, 2)?.length, 1, `${level}: one answer`);
+    clues[level] = seed.grid.filter(Boolean).length;
+    assert.ok(clues[level] >= 81 - KILLER_BLANKS[level], `${level}: ${clues[level]} clues`);
+    assert.equal(parseSeed(seed.text)?.text, seed.text);
+  }
+  assert.ok(clues.E > clues.M && clues.M > clues.H && clues.H >= clues.X, JSON.stringify(clues));
+  assert.notEqual(killerSeed(randomSource(4243), "H").text, killerSeed(randomSource(4242), "H").text);
+});
+
 test("every drawn part at once, with each widest mix of switch rules", () => {
   for (const { keys, rules, grid: solution } of WIDEST) {
     const rand = seeded(17);
@@ -2308,6 +2577,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const modulars = layLines(solution, seeded(47), fitsKinds(MODULAR_KINDS)(), crossing);
     const doubles = layLines(solution, seeded(79), fitsDouble(3), { ...crossing, min: 3 });
     const pills = layPills(solution, seeded(83), { count: 2, used: crossing.used });
+    const sumlines = laySumLines(solution, seeded(173), 10, { count: 2, min: 2, max: 5, used: crossing.used });
+    const regionsums = layRegionSums(solution, seeded(179), { count: 2, max: 6, used: crossing.used });
+    const indexes = layIndexes(solution, seeded(181), { count: 2, used: crossing.used });
     // A few dots and marks, never two on one side.
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
@@ -2331,9 +2603,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const lunchboxes = layGroups(solution, seeded(157), lunchboxOf, { ...caged, sizes: [3, 4], straight: true });
     const looksays = layGroups(solution, seeded(163), lookSayOf, caged);
     const equalities = layGroups(solution, seeded(167), equalityOf, { ...caged, sizes: [2, 4] });
-    const variant = { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
+    const variant = { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
     const name = keys.join(", ");
-    const lists = ["relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+    const lists = ["relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -2346,12 +2618,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KQRCQLBQLSQECTAQDAQPASROZCFQENQMOPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KQRCQLBQLSQECTAQDAQPASROZCFQENQMOQSLQRSQVXPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
+    for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
       assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     }
     assert.deepEqual(puzzleFor(back).solution, solution);
@@ -2374,7 +2646,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
+  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

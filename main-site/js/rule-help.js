@@ -12,7 +12,7 @@
 // rule  what it means, for someone solving.
 // draw  how to put it on, for someone typing a puzzle in or making one.
 
-import { RULES, LOCKOUT_GAP } from "./variant.js";
+import { RULES, LOCKOUT_GAP, SUM_LINE_MAX } from "./variant.js";
 
 export const RULE_HELP = {
   killer: {
@@ -122,6 +122,24 @@ export const RULE_HELP = {
     list: "modulars",
     rule: "Any three cells in a row along an orange line hold one digit from each of 1 4 7, 2 5 8 and 3 6 9, like 1 5 9 4 8.",
     draw: "Tap Modulars, then each cell along the line from one end, three at least, and tap Add modular.",
+  },
+  sumline: {
+    name: "Sum Line",
+    list: "sumlines",
+    rule: "A dashed olive line cuts into runs of cells one after another, each adding up to the number at its start: with 10, the line 3 7 1 9 is 3 7 and then 1 9. Digits may repeat if nothing else stops them.",
+    draw: `Tap Sum lines, then each cell along the line from one end, type its sum, 1 to ${SUM_LINE_MAX}, and tap Add sum line. The sum stays typed for the next line.`,
+  },
+  regionsum: {
+    name: "Region Sum Line",
+    list: "regionsums",
+    rule: "The digits along an indigo line add up to the same total in each box it passes through, like 4 5 in one box and 9 in the next. A line that leaves a box and comes back adds up to that total on each visit. In a Jigsaw, its regions count as the boxes.",
+    draw: "Tap Region sums, then each cell along the line from one end, and tap Add region sum.",
+  },
+  valueindex: {
+    name: "Value Indexing",
+    list: "indexes",
+    rule: "A dashed arrow starts at a dot, and the dot's digit turns up again along it: the second cell's digit counts how many cells past it that happens. In 4 2 7 4, the 2 says the next 4 is two cells on.",
+    draw: "Tap Indexing, then the dot, the counting cell and each cell after it, three cells at least, and tap Add indexing line.",
   },
   kropki: {
     name: "Kropki",

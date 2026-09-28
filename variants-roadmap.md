@@ -1,7 +1,7 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 13 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 10 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
@@ -19,7 +19,7 @@ Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 `PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
 are all taken but I, which is easily misread, so a new variant's letters are
 **Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
-QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA, QPA, QRC, QLB, QLS and QEC. Q is only read with the two after it,
+QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA, QPA, QRC, QLB, QLS, QEC, QSL, QRS and QVX. Q is only read with the two after it,
 so every seed made before still reads as it did. Put the entry in `PARTS` or
 `RULES` where its letters should go.
 
@@ -38,11 +38,8 @@ Say, Equality): a new kind of group is one more entry in `CAGES` in
 
 ## Lines
 
-| Variant | Rule | Builds on |
-|---|---|---|
-| Sum Line | The line splits into segments that each add up to a given sum. | Line tool, with a sum |
-| Region Sum Line | The line's segment in each box it passes through adds up to the same total. | Line tool, boxes or regions |
-| Value Indexing | Points from a digit X to the next X; the second cell says how far along it is. | Line tool |
+All built: Sum Line, Region Sum Line and Value Indexing joined the others.
+A sum line cannot close in a loop yet, as the other solver's can.
 
 ## Marks between cells
 
@@ -76,8 +73,7 @@ Say, Equality): a new kind of group is one more entry in `CAGES` in
 
 ## Suggested order
 
-1. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
-   a total.
+1. Done: Sum Line, Region Sum Line and Value Indexing.
 2. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
    cells on the Cages tool, which has kinds now.
 3. Counting Circles, Full Rank and Row/Column Indexing: each needs

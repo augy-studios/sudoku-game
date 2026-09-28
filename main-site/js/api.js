@@ -59,13 +59,14 @@ async function call(method, path, body) {
 }
 
 export const api = {
-  // No seed: the server picks one at `level`. A daily takes the player's date.
-  start: ({ mode, level, seed, maxHints, date }) =>
-    call("POST", "/api/game/start", { client_key: clientKey(), mode, level, seed, max_hints: maxHints, date }),
+  // No seed: the server picks one at `level`. A daily takes the player's date
+  // and its kind, "classic" or "killer".
+  start: ({ mode, level, seed, maxHints, date, kind }) =>
+    call("POST", "/api/game/start", { client_key: clientKey(), mode, level, seed, max_hints: maxHints, date, kind }),
   finish: (body) => call("POST", "/api/game/finish", { ...body, client_key: clientKey() }),
   submit: (body) => call("POST", "/api/game/submit", { ...body, client_key: clientKey() }),
   checkName: (name) => call("POST", "/api/leaderboard/name", { name }),
-  // extra: { date } for the daily, { seed } for a made puzzle's board, or
+  // extra: { date, kind } for the daily, { seed } for a made puzzle's board, or
   // { q } to search made puzzles.
   leaderboard: (board, extra = {}) => {
     const params = new URLSearchParams({ board });

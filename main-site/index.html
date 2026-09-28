@@ -120,6 +120,11 @@
                 </div>
 
                 <div class="field-group hidden" id="dailyGroup">
+                    <p class="field-label" id="dailyKindLabel">Daily puzzle</p>
+                    <div class="mode-toggle" id="dailyKindPick" role="radiogroup" aria-labelledby="dailyKindLabel">
+                        <button class="mode-btn" type="button" role="radio" aria-checked="true" data-daily="classic"><span data-icon="grid"></span>Classic</button>
+                        <button class="mode-btn" type="button" role="radio" aria-checked="false" data-daily="killer"><span data-icon="cage"></span>Killer</button>
+                    </div>
                     <div class="cal-head">
                         <button class="icon-btn small" id="calPrev" type="button" aria-label="Previous month"><span data-icon="chevronLeft"></span></button>
                         <p class="field-label cal-title" id="calTitle" aria-live="polite"></p>
@@ -264,6 +269,9 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="lockout">Lockout</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="entropic">Entropic</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="modular">Modular</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="sumline">Sum Line</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="regionsum">Region Sum</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="valueindex">Value Indexing</button>
                         </div>
                     </div>
                     <div class="rule-group" role="group" aria-labelledby="ruleGroupMarks">
@@ -321,8 +329,10 @@
                     <button id="cageDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
                 </div>
 
-                <!-- The line tools share it; solver.js names the buttons. -->
+                <!-- The line tools share it; solver.js names the buttons. A sum line's sum goes in the box. -->
                 <div id="lineBar" class="cage-bar hidden">
+                    <label id="lineSumLabel" class="field-label hidden" for="lineSum">Sum line's sum</label>
+                    <input id="lineSum" class="field cage-sum-field hidden" type="text" inputmode="numeric" autocomplete="off" placeholder="Sum" enterkeyhint="done">
                     <button id="linePill" class="btn btn-quiet pill hidden" type="button"><span id="linePillLabel">Pill of 2</span></button>
                     <button id="lineAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="lineAddLabel">Add thermo</span></button>
                     <button id="lineRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span><span id="lineRemoveLabel">Remove thermo</span></button>
@@ -378,6 +388,9 @@
                     <button id="solverLockouts" class="tool-btn" type="button" aria-pressed="false"><span data-icon="lockout"></span><span>Lockouts</span></button>
                     <button id="solverEntropics" class="tool-btn" type="button" aria-pressed="false"><span data-icon="entropic"></span><span>Entropics</span></button>
                     <button id="solverModulars" class="tool-btn" type="button" aria-pressed="false"><span data-icon="modular"></span><span>Modulars</span></button>
+                    <button id="solverSumLines" class="tool-btn" type="button" aria-pressed="false"><span data-icon="sumline"></span><span>Sum lines</span></button>
+                    <button id="solverRegionSums" class="tool-btn" type="button" aria-pressed="false"><span data-icon="regionsum"></span><span>Region sums</span></button>
+                    <button id="solverIndexes" class="tool-btn" type="button" aria-pressed="false"><span data-icon="valueindex"></span><span>Indexing</span></button>
                     <button id="solverMarks" class="tool-btn" type="button" aria-pressed="false"><span data-icon="kropki"></span><span>Marks</span></button>
                     <button id="solverOutside" class="tool-btn" type="button" aria-pressed="false"><span data-icon="outside"></span><span>Outside</span></button>
                     <button id="solverRegions" class="tool-btn" type="button" aria-pressed="false"><span data-icon="jigsaw"></span><span>Regions</span></button>
@@ -532,6 +545,11 @@
                 <button class="mode-btn" type="button" role="tab" data-board="total" aria-selected="false" aria-controls="boardBody">Total points</button>
                 <button class="mode-btn" type="button" role="tab" data-board="daily" aria-selected="false" aria-controls="boardBody">Daily</button>
                 <button class="mode-btn" type="button" role="tab" data-board="made" aria-selected="false" aria-controls="boardBody">Puzzles</button>
+            </div>
+            <!-- The Daily tab's two boards, one for each kind of daily. -->
+            <div class="mode-toggle daily-kinds hidden" id="dailyKindTabs" role="radiogroup" aria-label="Daily puzzle">
+                <button class="mode-btn" type="button" role="radio" aria-checked="true" data-daily="classic">Classic</button>
+                <button class="mode-btn" type="button" role="radio" aria-checked="false" data-daily="killer">Killer</button>
             </div>
             <form id="madeSearch" class="guess made-search hidden" role="search" autocomplete="off">
                 <label for="madeQuery" class="visually-hidden">Search made puzzles by seed</label>

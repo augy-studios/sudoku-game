@@ -1,5 +1,5 @@
-// The leaderboard window: best score, total points, or a day's daily, one
-// row per name; and made puzzles, each with a board of its own, found by
+// The leaderboard window: best score, total points, or a day's daily, its
+// classic puzzle's board or its killer's, one row per name; and made puzzles, each with a board of its own, found by
 // searching their seeds.
 
 import { api, localDate, findSeed, knownCode } from "./api.js";
@@ -34,7 +34,8 @@ const BOARDS = {
   daily: {
     head: ["#", "Name", "Score", "Time"],
     row: (e) => [e.rank, e.name, e.score, formatTime(e.elapsed_ms)],
-    about: (date) => `${date === localDate() ? "Today's daily puzzle" : "The daily puzzle"}, ${dayName(date, true)}. One entry per name.`,
+    about: (date, kind) =>
+      `${date === localDate() ? "Today's" : "The"} ${kind === "killer" ? "killer" : "classic"} daily puzzle, ${dayName(date, true)}. One entry per name; the other kind has its own board.`,
   },
   made: {
     head: ["#", "Name", "Score", "Time"],
@@ -49,6 +50,7 @@ let board = "best";
 let madeSeed = null; // a made puzzle's seed, when its board is open
 let madeCode = null; // and its short code, if it has one
 let dailyDate = null; // the day the daily board shows, null for today
+let dailyKind = "classic"; // and which of its two puzzles, "classic" or "killer"
 let loading = 0;
 
 // A made seed is long: in a list, its short code, or else its level and
@@ -63,6 +65,8 @@ function setTab(next) {
     el.setAttribute("aria-selected", String(on));
   });
   $("madeSearch").classList.toggle("hidden", board !== "made");
+  $("dailyKindTabs").classList.toggle("hidden", board !== "daily");
+  document.querySelectorAll("#dailyKindTabs [data-daily]").forEach((el) => el.setAttribute("aria-checked", String(el.dataset.daily === dailyKind)));
 }
 
 function table(head, rows) {
@@ -113,10 +117,10 @@ async function load() {
   const spec = BOARDS[board];
   const date = dailyDate ?? localDate();
   body.setAttribute("aria-busy", "true");
-  note.textContent = spec.about(date);
+  note.textContent = spec.about(date, dailyKind);
 
   try {
-    const extra = board === "daily" ? { date } : board === "made" ? (madeSeed ? { seed: madeSeed } : { q: $("madeQuery").value }) : {};
+    const extra = board === "daily" ? { date, kind: dailyKind } : board === "made" ? (madeSeed ? { seed: madeSeed } : { q: $("madeQuery").value }) : {};
     const data = await api.leaderboard(board, extra);
     if (ticket !== loading) return;
     if (board === "made") {
@@ -128,7 +132,7 @@ async function load() {
       ? table(spec.head, entries.map(spec.row))
       : `<p class="board-empty">${
           board === "daily"
-            ? `Nobody has finished ${date === localDate() ? "today's" : "that day's"} puzzle yet. Be the first.`
+            ? `Nobody has finished ${date === localDate() ? "today's" : "that day's"} ${dailyKind} puzzle yet. Be the first.`
             : "No scores yet. Finish a game and add yours."
         }</p>`;
   } catch (err) {
@@ -166,10 +170,12 @@ async function onMadeAction(action) {
 }
 
 // which: a board; for "made", `pick` is the seed whose board to open, and
-// for "daily", the day, today's without one.
-export function openLeaderboard(which = board, pick = null) {
+// for "daily", the day, today's without one, and `kind` which of its
+// puzzles, the one shown last without one.
+export function openLeaderboard(which = board, pick = null, kind = null) {
   if (which === "made") madeSeed = pick ?? madeSeed;
   dailyDate = which === "daily" ? pick : null;
+  if (kind) dailyKind = kind;
   setTab(which);
   openModal("boardModal");
   load();
@@ -181,6 +187,13 @@ export function initLeaderboard() {
     const tab = e.target.closest("[data-board]");
     if (!tab || tab.dataset.board === board) return;
     setTab(tab.dataset.board);
+    load();
+  });
+  $("dailyKindTabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-daily]");
+    if (!b || b.dataset.daily === dailyKind) return;
+    dailyKind = b.dataset.daily;
+    setTab(board);
     load();
   });
   $("madeSearch").addEventListener("submit", onSearch);
