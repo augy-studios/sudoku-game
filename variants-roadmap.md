@@ -9,6 +9,14 @@ so each one lands in a group that already exists.
 Renban, Palindrome · Kropki, XV · Sandwich, Little Killer, Skyscrapers,
 X-Sums · Diagonal, Anti-knight, Anti-king, Windoku.
 
+## Every new variant needs an explanation
+
+Each one gets an entry in `main-site/js/rule-help.js`: its name as
+`variantName` says it, what it means for someone solving, and how to draw it
+in the Solver and Create tools. The site shows these on the rule buttons,
+under them, and in a game's Rules box. The engine tests fail until the entry
+is there, in the same order as the buttons.
+
 ## Before building many more: seed letters
 
 Each variant gets one letter at the front of a made puzzle's seed

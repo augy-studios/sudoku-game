@@ -61,7 +61,8 @@ import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
 import { showPanel, renderSetup, launch } from "./game.js";
-import { store, copyText, hydrateIcons } from "./ui.js";
+import { store, copyText, hydrateIcons, fillRuleHelp } from "./ui.js";
+import { RULE_HELP, rulesOf } from "./rule-help.js";
 import { confetti } from "./confetti.js";
 import { savePuzzleImage } from "./image.js";
 
@@ -842,11 +843,15 @@ function toggleCandidates() {
 
 /* ---- cages ---- */
 
-// A rule button: killer, a key of LINES or EDGES, or one of RULES by key.
+// A rule button's key: killer, jigsaw, a key of LINES, EDGES or OUTSIDE, all
+// switches in a stage's state, or one of RULES by key, a bit of s.rules.
+const isSwitch = (key) => key === "killer" || key === "jigsaw" || key in LINES || key in EDGES || key in OUTSIDE;
+const ruleOn = (key) => (isSwitch(key) ? s[key] : Boolean(s.rules & RULES.find((r) => r.key === key).bit));
+
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
-  if (key === "killer" || key === "jigsaw" || key in LINES || key in EDGES || key in OUTSIDE) s[key] = !s[key];
+  if (isSwitch(key)) s[key] = !s[key];
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -1519,6 +1524,9 @@ function render() {
   const solved = isSolved();
   const settings = getSettings();
   const wrong = clashes(g, variant());
+  // The rules explained: while the clues go in, every one switched on, drawn
+  // yet or not; after, those the puzzle uses.
+  const helpKeys = enter ? Object.keys(RULE_HELP).filter(ruleOn) : rulesOf(variant());
   if (checked) for (const c of wrongCells()) wrong.add(c);
 
   board.set({
@@ -1598,7 +1606,7 @@ function render() {
     solverPlay: stage === "made",
     solverSeedCopy: stage === "made",
     solverRules: enter,
-    solverRuleLine: !enter && Boolean(variant()),
+    solverRuleHelp: Boolean(helpKeys.length),
     solverCages: enter && killer(),
     cageBar: cageMode,
     solverThermos: enter && s.thermo,
@@ -1635,13 +1643,8 @@ function render() {
   $("solverHintLabel").textContent = pending ? "Show it" : "Hint";
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
-  document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
-    const { rule } = b.dataset;
-    const switched = rule === "killer" || rule === "jigsaw" || rule in LINES || rule in EDGES || rule in OUTSIDE;
-    const on = switched ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
-    b.setAttribute("aria-pressed", String(on));
-  });
-  $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
+  document.querySelectorAll("#solverRules [data-rule]").forEach((b) => b.setAttribute("aria-pressed", String(ruleOn(b.dataset.rule))));
+  fillRuleHelp($("solverRuleHelp"), helpKeys, { draw: enter });
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
   $("solverThermos").setAttribute("aria-pressed", String(lineKind === "thermo"));
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
@@ -1760,6 +1763,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverImage").addEventListener("click", onImage);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
+  // What each rule means, on hover, before it is switched on.
+  document.querySelectorAll("#solverRules [data-rule]").forEach((b) => (b.title = RULE_HELP[b.dataset.rule].rule));
   $("solverRules").addEventListener("click", (e) => {
     const b = e.target.closest("[data-rule]");
     if (b) toggleRule(b.dataset.rule);

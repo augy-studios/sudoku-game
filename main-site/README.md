@@ -83,7 +83,11 @@ network game it is not scored.
 board, on or off in any mix, grouped as Cages & regions, Lines, Marks,
 Outside the grid and Whole grid (the same groups as
 [variants-roadmap.md](../variants-roadmap.md), which lists those still to
-build): Killer, Thermo, Arrow, Whispers (German
+build). Each rule is explained in a line or two from `rule-help.js`: as a
+tooltip on its button, under the buttons once it is on (what it means, and
+while the clues go in, how to draw it), and in a Rules box over the board
+in a variant game or replay. The engine tests fail if a rule button, or
+any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
 Whispers), Renban, Palindrome, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and

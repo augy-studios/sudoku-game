@@ -250,7 +250,8 @@
                         </div>
                     </div>
                 </div>
-                <p id="solverRuleLine" class="field-note rule-line hidden"></p>
+                <!-- What each rule that is on means, and while the clues go in, how to draw it (rule-help.js). -->
+                <ul id="solverRuleHelp" class="rule-help hidden" aria-label="How the rules work"></ul>
 
                 <div class="board-wrap"><div id="solverBoard"></div></div>
 
@@ -347,6 +348,12 @@
                     <span class="chip" id="hintChip"></span>
                     <button class="chip chip-btn" id="seedChip" type="button" aria-label="Copy seed"></button>
                 </div>
+
+                <!-- A variant puzzle's rules, each explained (rule-help.js). -->
+                <details id="rulesBox" class="rules-box hidden" open>
+                    <summary>Rules</summary>
+                    <ul id="rulesList" class="rule-help"></ul>
+                </details>
 
                 <div id="opponent" class="opponent hidden" aria-live="polite">
                     <p id="oppText"></p>

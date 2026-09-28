@@ -1,4 +1,5 @@
 import { icon } from "./icons.js";
+import { RULE_HELP } from "./rule-help.js";
 
 // Safe to call repeatedly; re-renders when data-icon changes.
 export function hydrateIcons(root = document) {
@@ -17,6 +18,22 @@ export function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// Fills a list with each rule's name and what it means, keys of RULE_HELP
+// in order; with `draw`, also how to put it on. Only redone when they
+// change, so a list open for reading is left alone.
+export function fillRuleHelp(list, keys, { draw = false } = {}) {
+  const key = `${keys.join()}|${draw}`;
+  if (list.dataset.rules === key) return;
+  list.dataset.rules = key;
+  list.innerHTML = keys
+    .map((k) => {
+      const h = RULE_HELP[k];
+      const how = draw ? ` <span class="rule-how">${escapeHtml(h.draw)}</span>` : "";
+      return `<li><strong>${escapeHtml(h.name)}.</strong> ${escapeHtml(h.rule)}${how}</li>`;
+    })
+    .join("");
 }
 
 // Focus goes into the modal on open and back to the opener on close.

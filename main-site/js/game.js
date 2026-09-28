@@ -15,7 +15,8 @@ import { Replay } from "./replay.js";
 import { api, localDate } from "./api.js";
 import { getSettings, onSettingsChange, saveSettings } from "./settings.js";
 import { openLeaderboard, formatTime } from "./leaderboard.js";
-import { copyText, hydrateIcons, store } from "./ui.js";
+import { copyText, hydrateIcons, store, fillRuleHelp } from "./ui.js";
+import { rulesOf } from "./rule-help.js";
 import { confetti } from "./confetti.js";
 import { openSolver } from "./solver.js";
 import { variantName, layout } from "./variant.js";
@@ -550,6 +551,15 @@ function renderChips(over) {
         ? `Free hints ${t.hints} of ${g.maxHints}`
         : `${hints}, ${t.paidHints} paid`;
   $("seedChip").textContent = seedChipText(g.seed);
+  renderRules(g.seed);
+}
+
+// A variant puzzle's rules, each explained, over the board; hidden for a
+// classic one.
+function renderRules(seed) {
+  const keys = rulesOf(seed);
+  $("rulesBox").classList.toggle("hidden", !keys.length);
+  fillRuleHelp($("rulesList"), keys);
 }
 
 // A made puzzle's seed is too long for a chip, so its chip only offers to
@@ -938,6 +948,7 @@ function watch(link) {
   const variant = variantName(link.seed);
   $("levelChip").textContent = `${variant ? `${variant} replay` : "Replay"}, ${LEVELS[link.seed.level].name}`;
   $("seedChip").textContent = seedChipText(link.seed);
+  renderRules(link.seed);
 
   const t = tally(result, link.log);
   $("resultTitle").textContent = result.solved ? "Solved with Solve" : result.complete ? "Solved" : "Unfinished game";

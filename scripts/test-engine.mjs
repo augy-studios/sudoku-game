@@ -7,6 +7,8 @@
 // Run: node scripts/test-engine.mjs
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { RULE_HELP, rulesOf } from "../main-site/js/rule-help.js";
 import { LEVEL_IDS } from "../main-site/js/levels.js";
 import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
@@ -1362,6 +1364,29 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     assert.deepEqual(puzzleFor(back).solution, solution);
   }
+});
+
+// Every rule on the site says what it means and how to put it on: each rule
+// button has an entry in rule-help.js, in the buttons' order, and every
+// variant variantName can name has one too, so a new variant cannot go in
+// without it.
+test("every variant rule has its explanation", () => {
+  const html = readFileSync(new URL("../main-site/index.html", import.meta.url), "utf8");
+  const buttons = [...html.matchAll(/data-rule="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(buttons, Object.keys(RULE_HELP), "rule buttons and rule-help.js, in the same order");
+  for (const [key, h] of Object.entries(RULE_HELP)) {
+    for (const field of ["name", "rule", "draw"]) assert.ok(h[field]?.trim(), `${key}: ${field}`);
+    const alone = h.list ? { [h.list]: [1] } : { rules: RULES.find((r) => r.key === key)?.bit };
+    assert.equal(variantName(alone), h.name, `${key}: named as variantName names it`);
+    assert.deepEqual(rulesOf(alone), [key], `${key}: found in a variant`);
+  }
+  // Everything variantName knows, from each part and every switch at once.
+  const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
+  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
+  const named = variantName(every).split(", ").sort();
+  assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
+  assert.deepEqual(rulesOf(null), []);
+  assert.deepEqual(rulesOf({ cages: [1], rules: 1 }), ["killer", "diagonal"]);
 });
 
 test("the solver finds clashes and candidates", () => {

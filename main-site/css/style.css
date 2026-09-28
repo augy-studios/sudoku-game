@@ -697,7 +697,43 @@ body {
   color: var(--on-brand);
   border-color: transparent;
 }
-.card .rule-line { color: var(--ink); }
+/* Each rule explained: its name, what it means, and in the solver and the
+   maker while the clues go in, how to draw it, quieter. */
+.rule-help {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 560px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: left;
+  color: var(--ink);
+}
+.rule-help strong { font-weight: 700; }
+.rule-help .rule-how {
+  display: block;
+  color: var(--muted-strong);
+}
+/* A variant game's Rules box, over the board: open to start, and folds away. */
+.rules-box {
+  width: 100%;
+  max-width: 560px;
+  padding: 8px 12px;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.rules-box summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+.rules-box[open] summary { margin-bottom: 6px; }
 .cage-bar {
   display: flex;
   flex-wrap: wrap;
