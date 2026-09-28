@@ -47,6 +47,8 @@ import {
   barredSides,
   squareKinds,
   SQUARES,
+  hasRule,
+  TAXICAB,
   seen,
   SANDWICH_LINES,
   VIEWS,
@@ -108,8 +110,10 @@ export function bitCount(mask) {
 // its empty cells; the two digits either side of a
 // side Anti-consecutive, Strict Kropki or Strict XV bars them from; the
 // digits of a kind repeated in a 2x2 square, under Global Entropy or Global
-// Mod, once the square has too few cells left for the kinds it lacks; a
-// sandwich's 1, 9 and the digits between once those go past its sum, or
+// Mod, once the square has too few cells left for the kinds it lacks; two
+// digits X exactly X steps apart, under Anti-taxicab; a 5 with neither a 1
+// above it nor a 9 below it left possible, under Dutch Flatmates, with the
+// digits in those two cells; a sandwich's 1, 9 and the digits between once those go past its sum, or
 // fill it to some other sum; a Little Killer diagonal's digits once they go
 // past its sum, or fill it to some other sum; the digits of a Skyscraper
 // view, from the clue on, once more can be seen than it counts, or once
@@ -253,6 +257,20 @@ export function clashes(grid, variant = null) {
       if (got.size + 4 - filled.length < 3) {
         filled.filter((c) => filled.some((o) => o !== c && kind(grid[o]) === kind(grid[c]))).forEach((c) => out.add(c));
       }
+    }
+  }
+  if (hasRule(variant?.rules, "antitaxicab")) {
+    for (let c = 0; c < 81; c++) {
+      if (grid[c] && TAXICAB[c][grid[c]].some((o) => grid[o] === grid[c])) out.add(c);
+    }
+  }
+  if (hasRule(variant?.rules, "dutchflatmates")) {
+    for (let c = 0; c < 81; c++) {
+      if (grid[c] !== 5) continue;
+      // -1 off the grid, 0 still empty.
+      const above = c >= 9 ? grid[c - 9] : -1;
+      const below = c < 72 ? grid[c + 9] : -1;
+      if (above !== 0 && above !== 1 && below !== 0 && below !== 9) [c - 9, c, c + 9].filter((o) => grid[o] > 0).forEach((o) => out.add(o));
     }
   }
   for (const { line, sum } of variant?.sandwiches ?? []) {

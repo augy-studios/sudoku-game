@@ -25,7 +25,7 @@
 // regions take the boxes' place: the boxes lose their edges and tint, and
 // each region gets a heavy line round it instead. Anti-knight, anti-king,
 // Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV, Global
-// Entropy and Global Mod have nothing to draw.
+// Entropy, Global Mod, Anti-taxicab and Dutch Flatmates have nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";

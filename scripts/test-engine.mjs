@@ -56,6 +56,7 @@ import {
   barredSides,
   squareKinds,
   SQUARES,
+  TAXICAB,
   touching,
   layout,
   RULES,
@@ -364,6 +365,10 @@ function keepsRules(grid, rules) {
   for (const kinds of squareKinds(rules)) {
     if (SQUARES.some((square) => new Set(square.map((c) => kinds.findIndex((m) => m & (1 << grid[c])))).size !== 3)) return false;
   }
+  // Worked out here from rows and columns, not from TAXICAB, to check it.
+  const steps = (a, b) => Math.abs(Math.floor(a / 9) - Math.floor(b / 9)) + Math.abs((a % 9) - (b % 9));
+  if (rules & rule("antitaxicab") && grid.some((d, c) => grid.some((e, o) => e === d && steps(c, o) === d))) return false;
+  if (rules & rule("dutchflatmates") && grid.some((d, c) => d === 5 && grid[c - 9] !== 1 && grid[c + 9] !== 9)) return false;
   return pairs.every((others, c) => others.every((o) => grid[o] !== grid[c]));
 }
 
@@ -417,6 +422,8 @@ test("rules puzzles solve, check, hint and carry their rules in seeds", () => {
     ["strictxv", "QSX"],
     ["globalentropy", "QGE"],
     ["globalmod", "QGM"],
+    ["antitaxicab", "QAT"],
+    ["dutchflatmates", "QDF"],
   ]) {
     const rules = rule(key);
     const { puzzle, solution } = rulesPuzzle(rules);
@@ -1775,6 +1782,60 @@ test("the rules about 2x2 squares clash, narrow and read back from seeds", () =>
   assert.equal(seedVariantName("QGEQGM-H-BBBB"), "Global Entropy, Global Mod");
   assert.equal(seedVariantName("QENQSXQGE-H-BBBB"), "Entropic, Strict XV, Global Entropy");
   assert.equal(variantName({ entropics: [1], rules: entropy.rules }), "Entropic, Global Entropy");
+});
+
+// Anti-taxicab and Dutch Flatmates: rules about which digit sits where, so
+// neither is a house or a pair of cells that always differ.
+test("Anti-taxicab and Dutch Flatmates clash, narrow and read back from seeds", () => {
+  const taxi = { rules: rule("antitaxicab") };
+  const flat = { rules: rule("dutchflatmates") };
+  assert.equal(layout(taxi.rules | flat.rules).houses.length, 27);
+  assert.deepEqual(layout(taxi.rules | flat.rules).pairs[40], []);
+  assert.deepEqual(TAXICAB[40][1], [31, 39, 41, 49]);
+  assert.deepEqual(TAXICAB[0][2], [2, 10, 18]);
+  assert.equal(TAXICAB[40][9].length, 0, "nothing is nine steps from the centre");
+  assert.equal(TAXICAB[0][9].length, 8);
+
+  // A 4 in the centre and a 4 at row 3, column 3 are four steps apart, and
+  // in no row, column or box together; a 4 three steps away is fine.
+  assert.deepEqual(sorted(clashes(placed({ 40: 4, 20: 4 }), taxi)), [20, 40]);
+  assert.equal(clashes(placed({ 40: 4, 20: 4 })).size, 0, "not without the rule");
+  assert.equal(clashes(placed({ 40: 4, 21: 4 }), taxi).size, 0);
+  const cand = variantCandidates(placed({ 40: 4 }), taxi);
+  for (const c of [20, 24, 56, 60, 4, 76]) assert.equal(cand[c] & (1 << 4), 0, `no 4 at ${c}`);
+  assert.ok(cand[21] & (1 << 4));
+
+  // A 5 with a 1 above or a 9 below is fine; with neither, it clashes with
+  // what is there. A 5 on the top row needs its 9, on the bottom row its 1.
+  assert.equal(clashes(placed({ 9: 5, 0: 1, 18: 4 }), flat).size, 0);
+  assert.equal(clashes(placed({ 9: 5, 0: 3, 18: 9 }), flat).size, 0);
+  assert.equal(clashes(placed({ 9: 5, 0: 3 }), flat).size, 0, "the cell below is still open");
+  assert.deepEqual(sorted(clashes(placed({ 9: 5, 0: 3, 18: 4 }), flat)), [0, 9, 18]);
+  assert.deepEqual(sorted(clashes(placed({ 0: 5, 9: 3 }), flat)), [0, 9]);
+  assert.equal(clashes(placed({ 0: 5, 9: 3 })).size, 0, "not without the rule");
+  assert.equal(variantCandidates(placed({ 0: 5 }), flat)[9], 1 << 9);
+  assert.equal(variantCandidates(placed({ 80: 5 }), flat)[71], 1 << 1);
+  // With a 1 in row 1 and a 9 in column 2, row 2, column 2 cannot be 5; the
+  // cell beside it still can, from below.
+  const flatCand = variantCandidates(placed({ 0: 1, 37: 9 }), flat);
+  assert.equal(flatCand[10] & (1 << 5), 0);
+  assert.ok(flatCand[11] & (1 << 5));
+  assert.ok(variantCandidates(placed({ 0: 1, 37: 9 }))[10] & (1 << 5), "not without the rule");
+
+  // Both at once have a grid. From an empty grid it runs past the solver's
+  // budget, so the grid is written out, found by a search with no budget.
+  // Neither rule keeps when digits are relabelled, so no first row of 1 to
+  // 9 here: under Anti-taxicab that row has no grid at all.
+  const both = taxi.rules | flat.rules;
+  const grid = [..."193678245847325619526419873934261758618753492752894361479182536381546927265937184"].map(Number);
+  assert.ok(keepsRules(grid, both), "both have a grid");
+  assert.equal(clashes(grid, { rules: both }).size, 0);
+  assert.deepEqual(variantSolutions(firstRow(), taxi, 1), []);
+
+  // Their letters: QAT, then QDF, after the other switch rules.
+  assert.equal(seedVariantName("QATQDF-H-BBBB"), "Anti-taxicab, Dutch Flatmates");
+  assert.equal(seedVariantName("DQGMQDF-H-BBBB"), "Diagonal, Global Mod, Dutch Flatmates");
+  assert.equal(variantName({ rules: flat.rules | rule("antiknight") }), "Anti-knight, Dutch Flatmates");
 });
 
 // Entropic and modular lines alike, `kinds` sorting digits for each.

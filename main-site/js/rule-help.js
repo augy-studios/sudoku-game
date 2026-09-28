@@ -197,6 +197,16 @@ export const RULE_HELP = {
     rule: "Every 2×2 square of cells holds a digit from each of 1 4 7, 2 5 8 and 3 6 9. Its fourth digit can be from any of them.",
     draw: "Nothing to draw: turning it on is all.",
   },
+  antitaxicab: {
+    name: "Anti-taxicab",
+    rule: "A digit never has the same digit exactly that many steps away, counting steps along rows and columns, turns allowed: no 3 is three steps from another 3.",
+    draw: "Nothing to draw: turning it on is all.",
+  },
+  dutchflatmates: {
+    name: "Dutch Flatmates",
+    rule: "Every 5 has a 1 in the cell right above it, or a 9 in the cell right below it, or both.",
+    draw: "Nothing to draw: turning it on is all.",
+  },
 };
 
 // The rules a variant uses, as keys of RULE_HELP in its order: those whose

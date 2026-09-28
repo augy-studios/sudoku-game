@@ -87,15 +87,19 @@
 //            a side with no X or V there add up to neither 10 nor 5; Global
 //            Entropy, every 2x2 square holds a low, a middle and a high
 //            digit; Global Mod, every 2x2 square holds one each of 1 4 7,
-//            2 5 8 and 3 6 9.
+//            2 5 8 and 3 6 9; Anti-taxicab, a digit X never has another X
+//            exactly X steps away along rows and columns; Dutch Flatmates,
+//            every 5 has a 1 in the cell above it or a 9 in the cell below.
 //
 // Diagonals, windows and disjoint groups are extra houses, like rows,
 // columns and boxes; the knight's and king's moves are extra pairs of cells
 // that must differ. A Jigsaw's regions are houses in the boxes' place, and
 // disjoint groups still go by the 3x3 boxes. The rules about sides are
-// sides barred from some marks' relations (barredSides below), and the
-// rules about 2x2 squares sort each square's digits into kinds as entropic
-// and modular lines do (squareKinds below).
+// sides barred from some marks' relations (barredSides below), the rules
+// about 2x2 squares sort each square's digits into kinds as entropic and
+// modular lines do (squareKinds below), and Anti-taxicab and Dutch
+// Flatmates depend on which digit a cell holds, so each has its own
+// narrowing (TAXICAB and flatmateBounds below).
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
@@ -116,9 +120,13 @@ export const RULES = [
   { key: "strictxv", bit: 128, letter: "QSX", name: "Strict XV" },
   { key: "globalentropy", bit: 256, letter: "QGE", name: "Global Entropy" },
   { key: "globalmod", bit: 512, letter: "QGM", name: "Global Mod" },
+  { key: "antitaxicab", bit: 1024, letter: "QAT", name: "Anti-taxicab" },
+  { key: "dutchflatmates", bit: 2048, letter: "QDF", name: "Dutch Flatmates" },
 ];
 export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
-const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
+// Whether the rule `key` is among the bits in `rules`.
+export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
+const has = hasRule;
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
 export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
@@ -713,6 +721,52 @@ function squareBounds(sorts, g, free) {
   return true;
 }
 
+/* ---- rules about which digit sits where ---- */
+
+// Anti-taxicab: TAXICAB[c][d], for d 1 to 9, the cells d steps from c along
+// rows and columns, turning as often as it likes: rows apart and columns
+// apart add up to d. None of them holds d when c does.
+export const TAXICAB = Array.from({ length: 81 }, (_, c) =>
+  Array.from({ length: 10 }, (_, d) => (d ? [...Array(81).keys()].filter((o) => Math.abs(ROW[o] - ROW[c]) + Math.abs(COL[o] - COL[c]) === d) : []))
+);
+
+// Takes each placed digit d out of the cells d steps from it, under
+// Anti-taxicab. `free` is narrowed in place, as in thermoBounds; false if
+// two placed digits d are d steps apart.
+function taxicabBounds(g, free) {
+  for (let c = 0; c < 81; c++) {
+    const d = g[c];
+    if (!d) continue;
+    for (const o of TAXICAB[c][d]) {
+      if (g[o] === d) return false;
+      if (!g[o]) free[o] &= ~(1 << d);
+    }
+  }
+  return true;
+}
+
+// Dutch Flatmates: every 5 has a 1 in the cell above it or a 9 in the cell
+// below. A cell with neither in reach cannot be 5, and a 5, placed or the
+// only digit left, with just one of them in reach has that one. Placed
+// digits count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if a placed 5 has neither.
+function flatmateBounds(g, free) {
+  const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
+  for (let c = 0; c < 81; c++) {
+    if (!(mask(c) & (1 << 5))) continue;
+    const up = c >= 9 && Boolean(mask(c - 9) & (1 << 1));
+    const down = c < 72 && Boolean(mask(c + 9) & (1 << 9));
+    if (!up && !down) {
+      if (g[c]) return false;
+      free[c] &= ~(1 << 5);
+    } else if (mask(c) === 1 << 5 && up !== down) {
+      const o = up ? c - 9 : c + 9;
+      if (!g[o]) free[o] = up ? 1 << 1 : 1 << 9;
+    }
+  }
+  return true;
+}
+
 /* ---- dots and marks between two cells ---- */
 
 export const DOT_MARKS = ["white", "black"];
@@ -1270,8 +1324,9 @@ const norm = (v) => ({
 
 // What can go in each empty cell, by every cell it must differ from, its
 // cage, its thermometers, arrows and other lines, its dots and marks, its
-// 2x2 squares under Global Entropy or Global Mod, and the clues outside; 0
-// for a filled cell. A cage allows digits not already
+// 2x2 squares under Global Entropy or Global Mod, the digits around it under
+// Anti-taxicab and Dutch Flatmates, and the clues outside; 0 for a filled
+// cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
   const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
@@ -1313,6 +1368,8 @@ export function variantCandidates(grid, variant) {
   quadBounds(quads, grid, out);
   barredBounds(barredSides(rules, dots, xvs), grid, out);
   squareBounds(squareKinds(rules), grid, out);
+  if (has(rules, "antitaxicab")) taxicabBounds(grid, out);
+  if (has(rules, "dutchflatmates")) flatmateBounds(grid, out);
   sandwichBounds(sandwiches, grid, out);
   littleBounds(littles, grid, out);
   skyscraperBounds(skyscrapers, grid, out);
@@ -1324,8 +1381,9 @@ export function variantCandidates(grid, variant) {
 
 // Depth first search. At each step every empty cell's candidates are worked
 // out from its houses, the cells it must differ from, its thermometers,
-// arrows and other lines, its dots and marks, its 2x2 squares, the clues
-// outside, and its cage, where a
+// arrows and other lines, its dots and marks, its 2x2 squares, the digits
+// around it under Anti-taxicab and Dutch Flatmates, the clues outside, and
+// its cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
 // cage cannot do without and only one of its cells can take, goes there;
@@ -1343,6 +1401,8 @@ function search(grid, variant, found) {
   const { houses, housesOf, pairs } = layout(rules, regions);
   const barred = barredSides(rules, dots, xvs);
   const sorts = squareKinds(rules);
+  const taxicab = has(rules, "antitaxicab");
+  const flatmates = has(rules, "dutchflatmates");
   let steps = 0;
   const hm = new Int32Array(houses.length);
   const of = cageOf(cages);
@@ -1405,6 +1465,8 @@ function search(grid, variant, found) {
     if (quads.length && !quadBounds(quads, g, free)) return null;
     if (barred.length && !barredBounds(barred, g, free)) return null;
     if (sorts.length && !squareBounds(sorts, g, free)) return null;
+    if (taxicab && !taxicabBounds(g, free)) return null;
+    if (flatmates && !flatmateBounds(g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;
     if (littles.length && !littleBounds(littles, g, free)) return null;
     if (skyscrapers.length && !skyscraperBounds(skyscrapers, g, free)) return null;

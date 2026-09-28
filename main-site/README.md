@@ -119,8 +119,10 @@ side are never consecutive), Strict Kropki (every dot is given: cells
 sharing a side with no dot are neither consecutive nor a double), Strict
 XV (every X and V is given: cells sharing a side with no mark add up to
 neither 10 nor 5), Global Entropy (every 2x2 square holds a low, a middle
-and a high digit) and Global Mod (every 2x2 square holds one each of 1 4 7,
-2 5 8 and 3 6 9). Diagonals are drawn as faint lines and windows tinted,
+and a high digit), Global Mod (every 2x2 square holds one each of 1 4 7,
+2 5 8 and 3 6 9), Anti-taxicab (a digit X never has another X exactly X
+steps away along rows and columns) and Dutch Flatmates (every 5 has a 1
+above it or a 9 below it). Diagonals are drawn as faint lines and windows tinted,
 on the board and in a saved image; the others have nothing to draw, so the
 level chip and the rules line name them. In variant.js, diagonals, windows
 and disjoint groups are extra houses, the knight's and king's moves extra
@@ -128,12 +130,15 @@ pairs of cells that must differ, the rules about sides barred sides:
 each side and the marks' relations its two digits must not keep, narrowed
 as a dot is (`barredSides`), and the rules about 2x2 squares the kinds of
 entropic and modular lines, each square's cells narrowed to the kinds
-they can be while it holds all three (`squareKinds`). So one solver handles
+they can be while it holds all three (`squareKinds`). Anti-taxicab and
+Dutch Flatmates hang on which digit a cell holds, so each narrows cells
+its own way: a placed X comes out of the cells X steps away (`TAXICAB`),
+and a cell with no 1 possible above it and no 9 below cannot be 5. So one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, QEN, QMO,
-P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE and QGM, always in that
+P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
