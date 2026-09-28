@@ -69,6 +69,13 @@ puzzle that passes is rated (by its blanks, and at least Hard if singles
 alone cannot finish it) and gets a seed that carries the whole puzzle, to
 copy, play, or save as an image with the clues.
 
+Both open a seed, in the Open a seed box over the rule buttons or through
+Paste, while the clues go in: a generated seed's clues, or a made seed's
+with its rules and everything drawn on it, every rule switched to what the
+seed has (what a rule switched off had drawn is kept for when it comes
+back). So a made puzzle can be changed and checked again for a new seed,
+or saved as an image, and opening one is undoable.
+
 **Made puzzles.** Their seeds, like `H-FYWQ-75KD-...`, are the puzzle
 packed into one number: which cells hold clues as 81 bits, and the clues in
 base 9 above them, written in the seed alphabet, never under 12 characters

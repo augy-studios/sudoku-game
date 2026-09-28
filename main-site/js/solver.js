@@ -28,12 +28,16 @@
 // rules (variant.js). Every check, hint and candidate then follows them
 // too.
 //
+// Either can open a seed, from the new-game screen, a made puzzle's board or
+// Copy seed: its puzzle goes in to change, check again for a new seed, or
+// save as an image. A made seed brings its rules and everything drawn on it.
+//
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
-import { madeSeed, parseSeed } from "./seed.js";
+import { madeSeed, parseSeed, puzzleFor } from "./seed.js";
 import {
   cageProblem,
   cageOf,
@@ -171,6 +175,7 @@ let checked = false; // Check was pressed, and nothing has changed since
 let pending = null; // a hint pointed at but not yet shown
 let mark = null; // the cell a hint just filled
 let note = ""; // says what just happened, until the next change
+let seedNote = ""; // why the Open a seed box's seed did not open
 let editTimer = null;
 
 const creating = () => mode === "create";
@@ -713,34 +718,44 @@ function clearAll() {
   say("Cleared. Undo brings it back.");
 }
 
+// Puts a seed's puzzle in, undoably: a made one's clues, rules and
+// everything drawn on it, or a generated one's clues. Every rule is switched
+// to what the seed has, so a classic seed turns them all off; what the rules
+// switched off had drawn is kept for when they come back. `how` starts the
+// note, "Pasted" or "Opened".
+function openSeed(found, how) {
+  endCage();
+  const seed = found.made ? found : madeSeed(found.level, puzzleFor(found).puzzle);
+  s.killer = Boolean(seed.cages);
+  s.rules = seed.rules ?? 0;
+  const parts = { cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages };
+  for (const [kind, L] of Object.entries(LINES)) {
+    s[kind] = Boolean(seed[L.list]);
+    parts[L.list] = seed[L.list] ? seed[L.list].map((t) => t.slice()) : s[L.list];
+  }
+  for (const [kind, E] of Object.entries(EDGES)) {
+    s[kind] = Boolean(seed[E.list]);
+    parts[E.list] = seed[E.list] ? seed[E.list].map((e) => ({ cells: e.cells.slice(), mark: e.mark })) : s[E.list];
+  }
+  for (const [kind, O] of Object.entries(OUTSIDE)) {
+    s[kind] = Boolean(seed[O.list]);
+    parts[O.list] = seed[O.list] ? seed[O.list].map((o) => ({ ...o, ...(o.cells ? { cells: o.cells.slice() } : {}) })) : s[O.list];
+  }
+  s.jigsaw = Boolean(seed.regions);
+  parts.regions = seed.regions ? seed.regions.slice() : s.regions;
+  change(seed.grid.slice(), parts);
+  selected = null;
+  const name = variantName(seed);
+  const what = found.made ? `a made ${name ? `${name} ` : ""}puzzle` : `seed ${found.text}'s puzzle`;
+  const next = creating() ? "Change it and tap Check it for its new seed" : `Tap ${goLabel()} when ready`;
+  say(`${how} ${what}. ${next}, or Save image to download it. Undo takes it back.`);
+}
+
 function pasteText(text) {
   if (s.stage !== "enter") return say("Tap Edit puzzle first to paste in a different one.");
-  // A made puzzle's seed brings its cages too.
+  // A seed brings its puzzle, and a made one its rules and drawn parts.
   const seed = parseGrid(text) ? null : parseSeed(text);
-  if (seed?.made) {
-    endCage();
-    s.killer = Boolean(seed.cages);
-    s.rules = seed.rules ?? 0;
-    const parts = { cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages };
-    for (const [kind, L] of Object.entries(LINES)) {
-      s[kind] = Boolean(seed[L.list]);
-      parts[L.list] = seed[L.list] ? seed[L.list].map((t) => t.slice()) : s[L.list];
-    }
-    for (const [kind, E] of Object.entries(EDGES)) {
-      s[kind] = Boolean(seed[E.list]);
-      parts[E.list] = seed[E.list] ? seed[E.list].map((e) => ({ cells: e.cells.slice(), mark: e.mark })) : s[E.list];
-    }
-    for (const [kind, O] of Object.entries(OUTSIDE)) {
-      s[kind] = Boolean(seed[O.list]);
-      parts[O.list] = seed[O.list] ? seed[O.list].map((o) => ({ ...o, ...(o.cells ? { cells: o.cells.slice() } : {}) })) : s[O.list];
-    }
-    s.jigsaw = Boolean(seed.regions);
-    parts.regions = seed.regions ? seed.regions.slice() : s.regions;
-    change(seed.grid.slice(), parts);
-    selected = null;
-    const name = variantName(seed);
-    return say(`Pasted a made ${name ? `${name} ` : ""}puzzle. Tap ${goLabel()} when ready.`);
-  }
+  if (seed) return openSeed(seed, "Pasted");
   const next = parseGrid(text);
   if (!next) return say("That paste is not a puzzle. It needs 81 cells in reading order: digits for clues, and 0 or . for blanks.");
   change(next);
@@ -775,6 +790,28 @@ async function onImage() {
     ok = false;
   }
   flash("solverImageLabel", ok ? "Saved" : "Save failed", "Save image");
+}
+
+// The Open a seed box.
+function onSeedOpen() {
+  const box = $("solverSeedInput");
+  const text = box.value.trim();
+  if (s.stage !== "enter") return;
+  if (!text) {
+    seedNote = "Type or paste a seed first, such as one from Copy seed.";
+    return render();
+  }
+  const seed = parseSeed(text);
+  if (!seed) {
+    seedNote = "That is not a seed, or not one with a single answer. Seeds look like H-BXK4-M9TR; a made puzzle's are longer.";
+    box.classList.remove("shake");
+    void box.offsetWidth;
+    box.classList.add("shake");
+    return render();
+  }
+  box.value = "";
+  seedNote = "";
+  openSeed(seed, "Opened");
 }
 
 async function onPasteBtn() {
@@ -1673,8 +1710,8 @@ const TITLES = {
 };
 
 const FOOTS = {
-  solver: "Not scored, and nothing leaves this browser. Paste takes 81 cells in reading order, with 0 or . for blanks.",
-  create: "Paste takes 81 cells in reading order, with 0 or . for blanks. A made puzzle gets a leaderboard of its own.",
+  solver: "Not scored, and nothing leaves this browser. Paste takes 81 cells in reading order, with 0 or . for blanks, or a seed.",
+  create: "Paste takes 81 cells in reading order, with 0 or . for blanks, or a seed. A made puzzle gets a leaderboard of its own.",
   made: "The seed carries the whole puzzle: paste it into the Seed box on the new-game screen to play it. Played solo, it scores on its own board, never the main ones.",
 };
 
@@ -1778,6 +1815,7 @@ function render() {
     solverPlay: stage === "made",
     solverSeedCopy: stage === "made",
     solverRules: enter,
+    solverSeedGroup: enter,
     solverRuleHelp: Boolean(helpKeys.length),
     solverCages: enter && killer(),
     cageBar: cageMode,
@@ -1822,6 +1860,8 @@ function render() {
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => b.setAttribute("aria-pressed", String(ruleOn(b.dataset.rule))));
   fillRuleHelp($("solverRuleHelp"), helpKeys, { draw: enter });
+  $("solverSeedNote").textContent =
+    seedNote || (creating() ? "A seed's puzzle, to change and check again for a new seed, or to save as an image." : "A seed's puzzle, to solve here or save as an image.");
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
   $("solverThermos").setAttribute("aria-pressed", String(lineKind === "thermo"));
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
@@ -1945,6 +1985,15 @@ export function initSolver({ reopen = true } = {}) {
   $("solverImage").addEventListener("click", onImage);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
+  $("solverSeedOpen").addEventListener("click", onSeedOpen);
+  $("solverSeedInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onSeedOpen();
+  });
+  $("solverSeedInput").addEventListener("input", () => {
+    if (!seedNote) return;
+    seedNote = "";
+    render();
+  });
   // What each rule means, on hover, before it is switched on.
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => (b.title = RULE_HELP[b.dataset.rule].rule));
   $("solverRules").addEventListener("click", (e) => {

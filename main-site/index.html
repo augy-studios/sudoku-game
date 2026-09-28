@@ -214,6 +214,17 @@
             <section id="solver" class="panel solver hidden" aria-labelledby="solverTitle">
                 <h3 id="solverTitle" class="panel-title">Type in a puzzle</h3>
 
+                <!-- A seed's puzzle, opened to change or save. -->
+                <div class="field-group" id="solverSeedGroup">
+                    <label class="field-label" for="solverSeedInput">Open a seed</label>
+                    <div class="guess">
+                        <input id="solverSeedInput" class="field seed-field" type="text" placeholder="Seed" maxlength="200"
+                            autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="go">
+                        <button id="solverSeedOpen" class="btn btn-primary" type="button"><span data-icon="play"></span>Open</button>
+                    </div>
+                    <p class="field-note" id="solverSeedNote"></p>
+                </div>
+
                 <!-- Grouped by what each rule adds, as in variants-roadmap.md, so a new one has a place. -->
                 <div class="rule-pick" id="solverRules" role="group" aria-label="Rules, on top of the classic ones">
                     <div class="rule-group" role="group" aria-labelledby="ruleGroupCages">
