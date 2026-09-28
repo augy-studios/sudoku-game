@@ -80,7 +80,7 @@ function renderPuzzles(data) {
     .map(
       (p) => `<li><button class="made-row" type="button" data-seed="${escapeHtml(p.seed)}">
         <span class="made-row-seed">${escapeHtml(shortSeed(p.seed))}</span>
-        <span class="made-row-info">${escapeHtml(LEVELS[p.level]?.name ?? "")}, ${p.players} ${p.players === 1 ? "player" : "players"}, best ${p.top_score}</span>
+        <span class="made-row-info">${p.seed.startsWith("K") ? "Killer, " : ""}${escapeHtml(LEVELS[p.level]?.name ?? "")}, ${p.players} ${p.players === 1 ? "player" : "players"}, best ${p.top_score}</span>
       </button></li>`
     )
     .join("")}</ul>`;

@@ -36,7 +36,8 @@ the browser and the server always agree on a game.
 | `qr.js` | QR encoder for the join link, from uwuPromptr, so it works offline. |
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
-| `image.js` | Draws a puzzle to a PNG, for the solver's Save image. |
+| `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
+| `killer.js` | Pure. Killer sudoku: cages, what they allow, and a solver for them, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -77,6 +78,24 @@ box, which also takes a copied puzzle. Its maker knows the answer, so a
 made puzzle never goes on the main boards: played solo it goes on a board of
 its own (mode `made`, from migration 002), without time bonuses, and in a
 network game it is not scored.
+
+**Killer.** The solver and the maker both have a Classic or Killer switch.
+In Killer, the Cages tool gathers cells (tap them), takes the sum from the
+pad, the keyboard or the sum box, and adds the cage; tapping a cage already
+drawn picks it up to change or remove. Undo covers cages too. Clues are
+optional. Checks, clashes (a digit twice in a cage, or a cage past its sum),
+candidates and hints all follow the cages. The killer solver (killer.js)
+narrows each cage to the digit sets that make its sum and that its empty
+cells could hold, places forced digits in houses and cages, and otherwise
+branches on the cell with fewest candidates. It gives up after a fixed
+400,000 steps, well under a second, and says so: a layout with that much
+freedom asks the maker for another clue or a smaller cage. The count is
+the same on the page and the server, so they always agree. A made killer
+puzzle's seed starts with K (`K-H-...`, about 140 characters) and carries
+its clues and cages; it plays as a game with the cages drawn, scores on its
+own board like any made puzzle, and saves as an image with them. Copy
+puzzle is hidden for killer puzzles, since cages do not fit in 81
+characters: the seed is how one is shared.
 
 **Copy puzzle.** On every game, its result and the solver: the puzzle's clues
 as 81 characters with . for blanks, which the solver's Paste and most sudoku

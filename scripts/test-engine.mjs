@@ -12,6 +12,7 @@ import { newSeed, parseSeed, puzzleFor, madeSeed } from "../main-site/js/seed.js
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
+import { killerSolutions, killerCandidates, cageProblem } from "../main-site/js/killer.js";
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
 
 let passed = 0;
@@ -235,6 +236,73 @@ test("clues are checked for exactly one answer", () => {
   assert.equal(many.why, "many");
   assert.equal(loose[many.c], 0, "the cell pointed at is empty");
   assert.notEqual(many.digits[0], many.digits[1]);
+});
+
+// A killer puzzle with no clues: a solved grid cut into cages of up to
+// four cells, drawn from a seeded generator until one has one answer.
+function killerPuzzle() {
+  const { solution } = puzzleFor(parseSeed("M-KLMN-PQRS"));
+  let x = 7;
+  const rand = () => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32);
+  for (;;) {
+    const free = new Set(solution.keys());
+    const cages = [];
+    while (free.size) {
+      const cells = [[...free][Math.floor(rand() * free.size)]];
+      free.delete(cells[0]);
+      const want = 1 + Math.floor(rand() * 4);
+      while (cells.length < want) {
+        const next = cells
+          .flatMap((c) => [c - 9, c + 9, c % 9 ? c - 1 : -1, c % 9 < 8 ? c + 1 : -1])
+          .filter((n) => free.has(n) && !cells.some((o) => solution[o] === solution[n]));
+        if (!next.length) break;
+        const n = next[Math.floor(rand() * next.length)];
+        cells.push(n);
+        free.delete(n);
+      }
+      cages.push({ sum: cells.reduce((t, c) => t + solution[c], 0), cells: cells.sort((a, b) => a - b) });
+    }
+    if (killerSolutions(new Array(81).fill(0), cages, 2)?.length === 1) return { solution, cages };
+  }
+}
+
+test("killer cages are checked, solved and carried in seeds", () => {
+  const { solution, cages } = killerPuzzle();
+  const empty = new Array(81).fill(0);
+  assert.equal(cageProblem(cages), null);
+  assert.deepEqual(killerSolutions(empty, cages, 2), [solution]);
+  assert.equal(cageProblem([{ sum: 3, cells: [0, 2] }]).why, "apart");
+  assert.equal(cageProblem([{ sum: 30, cells: [0, 1] }]).why, "sum");
+  assert.equal(cageProblem([{ sum: 3, cells: [0, 1] }, { sum: 4, cells: [1, 2] }]).why, "overlap");
+
+  // Candidates never lose the answer's digit, and a cage's sum narrows them.
+  const cand = killerCandidates(empty, cages);
+  for (let c = 0; c < 81; c++) assert.ok(cand[c] & (1 << solution[c]));
+  const pair = cages.find((k) => k.cells.length === 2 && k.sum === 3);
+  if (pair) assert.equal(cand[pair.cells[0]], (1 << 1) | (1 << 2));
+
+  // Hints with the cages are always the answer's digit.
+  const grid = empty.slice();
+  for (let step = nextStep(grid, null, cages); step; step = nextStep(grid, null, cages)) {
+    assert.equal(step.d, solution[step.c]);
+    grid[step.c] = step.d;
+  }
+
+  assert.equal(checkClues(empty, cages).ok, true);
+  const clash = empty.slice();
+  const cage = cages.find((k) => k.cells.length > 1);
+  clash[cage.cells[0]] = 9;
+  clash[cage.cells[1]] = 9;
+  assert.equal(checkClues(clash, cages).why, "clash", "a digit twice in a cage");
+  assert.equal(checkClues(empty, cages.slice(0, 3)).why, "many", "too few cages");
+
+  const seed = madeSeed(rateLevel(empty, cages), empty, cages);
+  assert.match(seed.text, /^K-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.cages, seed.cages);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  assert.equal(parseSeed(madeSeed("M", empty, cages.slice(0, 3)).text), null, "too few cages is no seed");
 });
 
 test("the solver finds clashes and candidates", () => {

@@ -2,6 +2,9 @@
 // real elements with their own thick edges and alternating tint, rather than
 // borders picked out cell by cell. Tap or click a cell to select it; arrow
 // keys move the selection. What happens with a digit is game.js's business.
+//
+// A killer puzzle's cages are drawn over the cells: a dashed line just inside
+// each cage's edge, and its sum in the corner of its first cell.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
@@ -38,6 +41,15 @@ export class BoardView {
       root.append(box);
     }
 
+    // The cages' layer, over the cells and letting taps through. Redrawn when
+    // the board changes size, since it is drawn in pixels.
+    this.cageKey = "";
+    this.cageLayer = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    this.cageLayer.classList.add("cage-layer");
+    this.cageLayer.setAttribute("aria-hidden", "true");
+    root.parentElement.append(this.cageLayer);
+    new ResizeObserver(() => this.drawCages(true)).observe(root);
+
     root.addEventListener("click", (e) => {
       const cell = e.target.closest("[data-cell]");
       if (cell && this.view?.interactive) this.onSelect(Number(cell.dataset.cell));
@@ -64,9 +76,11 @@ export class BoardView {
   }
 
   // view: { puzzle, solution, values, notes, selected, interactive,
-  // highlightSame, highlightPeers, mark: { c, kind } | null, wrong? }. kind
-  // is ok, wrong, hint, erase, note or undo, for the replay's last action.
-  // wrong, a Set of cells, overrides telling wrong digits by the solution.
+  // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
+  // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
+  // replay's last action. wrong, a Set of cells, overrides telling wrong
+  // digits by the solution. cages are a killer puzzle's; picked, a Set of
+  // cells, are those being gathered into a new cage.
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -74,6 +88,10 @@ export class BoardView {
     const selDigit = sel != null ? values[sel] : 0;
     const focusDigit = view.focusDigit || selDigit;
     this.root.classList.toggle("interactive", Boolean(interactive));
+    this.cages = view.cages ?? [];
+    // Each cage's first cell carries its sum, so its notes make room.
+    const heads = new Set(this.cages.map((cage) => Math.min(...cage.cells)));
+    this.drawCages();
 
     for (let c = 0; c < 81; c++) {
       const cell = this.cells[c];
@@ -91,6 +109,8 @@ export class BoardView {
         peer ? "peer" : "",
         same ? "same" : "",
         mark && mark.c === c ? `mark mark-${mark.kind}` : "",
+        view.picked?.has(c) ? "picked" : "",
+        heads.has(c) ? "cage-head" : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -114,6 +134,8 @@ export class BoardView {
       }
 
       let label = `${cellName(c).replace("r", "Row ").replace("c", ", column ")}, `;
+      const cage = this.cages.find((k) => k.cells.includes(c));
+      if (cage) label += `cage of ${cage.cells.length} adding to ${cage.sum}, `;
       if (v) label += `${v}${wrong ? ", wrong" : given ? ", given" : ""}`;
       else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => notes[c] & (1 << d)).join(" ")}`;
       else label += "empty";
@@ -121,5 +143,56 @@ export class BoardView {
       cell.tabIndex = interactive && c === (sel ?? 0) ? 0 : -1;
       cell.setAttribute("aria-pressed", String(c === sel));
     }
+  }
+
+  // The dashed outlines and sums. Only redrawn when the cages change, or
+  // when `resized`.
+  drawCages(resized = false) {
+    const cages = this.cages ?? [];
+    const key = JSON.stringify(cages);
+    if (!resized && key === this.cageKey) return;
+    this.cageKey = key;
+    const layer = this.cageLayer;
+    if (!cages.length) {
+      layer.innerHTML = "";
+      return;
+    }
+    const base = layer.parentElement.getBoundingClientRect();
+    const rect = (c) => {
+      const r = this.cells[c].getBoundingClientRect();
+      return { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height };
+    };
+    const of = new Array(81).fill(-1);
+    cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
+    let path = "";
+    let sums = "";
+    const f = (n) => n.toFixed(1);
+    for (const [i, cage] of cages.entries()) {
+      for (const c of cage.cells) {
+        const { x, y, w, h } = rect(c);
+        const d = w * 0.1;
+        const r0 = Math.floor(c / 9);
+        const c0 = c % 9;
+        const same = (dr, dc) => {
+          const r = r0 + dr;
+          const col = c0 + dc;
+          return r >= 0 && r < 9 && col >= 0 && col < 9 && of[r * 9 + col] === i;
+        };
+        const right = x + w;
+        const bottom = y + h;
+        // An edge runs from corner to corner of the inset, on to the cell's
+        // edge where the cage carries on, or past it where the cage turns a
+        // corner inwards.
+        const from = (side, gone, turn) => (gone ? side + d : turn ? side - d : side);
+        const to = (side, gone, turn) => (gone ? side - d : turn ? side + d : side);
+        if (!same(-1, 0)) path += `M${f(from(x, !same(0, -1), same(-1, -1)))} ${f(y + d)}H${f(to(right, !same(0, 1), same(-1, 1)))}`;
+        if (!same(1, 0)) path += `M${f(from(x, !same(0, -1), same(1, -1)))} ${f(bottom - d)}H${f(to(right, !same(0, 1), same(1, 1)))}`;
+        if (!same(0, -1)) path += `M${f(x + d)} ${f(from(y, !same(-1, 0), same(-1, -1)))}V${f(to(bottom, !same(1, 0), same(1, -1)))}`;
+        if (!same(0, 1)) path += `M${f(right - d)} ${f(from(y, !same(-1, 0), same(-1, 1)))}V${f(to(bottom, !same(1, 0), same(1, 1)))}`;
+      }
+      const head = rect(Math.min(...cage.cells));
+      sums += `<text class="cage-sum" x="${f(head.x + head.w * 0.06)}" y="${f(head.y + head.w * 0.27)}" font-size="${f(head.w * 0.24)}">${cage.sum}</text>`;
+    }
+    layer.innerHTML = `<path class="cage-line" d="${path}"/>${sums}`;
   }
 }

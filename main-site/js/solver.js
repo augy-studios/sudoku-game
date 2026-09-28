@@ -11,12 +11,17 @@
 // a seed that carries the whole puzzle, to share, play, copy or save as an
 // image.
 //
+// Either can be a killer puzzle: the Killer switch adds cages, drawn with
+// the Cages tool (tap cells, type the sum, Add cage), and every check, hint
+// and candidate then follows the cages too.
+//
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
 
 import { ROW, COL } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
-import { madeSeed } from "./seed.js";
+import { madeSeed, parseSeed } from "./seed.js";
+import { cageProblem, cageOf } from "./killer.js";
 import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
@@ -36,14 +41,19 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false });
+const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false, variant: "classic", cages: [] });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
 let s = states.solver;
 
 let solution = null; // the answer, from the solve or made stage on
 let made = null; // the made puzzle's seed, in the made stage
-let history = []; // earlier grids of this stage, for undo
+let history = []; // earlier states of this stage, for undo
+// The Cages tool: on, the cells being gathered, the sum typed so far, and
+// the cage being changed, if one was picked up.
+let cageMode = false;
+let picked = new Set();
+let editing = -1;
 let selected = null;
 let padDigit = 0;
 let checked = false; // Check was pressed, and nothing has changed since
@@ -56,6 +66,10 @@ const creating = () => mode === "create";
 // The grid this stage edits.
 const grid = () => (s.stage === "solve" ? s.values : s.clues);
 const goLabel = () => (creating() ? "Check it" : "Help me solve it");
+const killer = () => s.variant === "killer";
+// The cages the rules use: none in a classic puzzle, even if some are kept
+// for when the switch goes back.
+const cages = () => (killer() && s.cages.length ? s.cages : null);
 
 /* ---- keeping it ---- */
 
@@ -70,13 +84,13 @@ function settle() {
   solution = null;
   made = null;
   if (s.stage === "enter") return;
-  const check = checkClues(s.clues);
+  const check = checkClues(s.clues, cages());
   if (!check.ok) {
     s.stage = "enter";
     return;
   }
   solution = check.solution;
-  if (s.stage === "made") made = madeSeed(rateLevel(s.clues), s.clues);
+  if (s.stage === "made") made = madeSeed(rateLevel(s.clues, cages()), s.clues, cages());
 }
 
 function load(which) {
@@ -87,6 +101,9 @@ function load(which) {
   st.clues = saved.clues;
   st.open = saved.open === true;
   st.candidates = saved.candidates === true;
+  st.variant = saved.variant === "killer" ? "killer" : "classic";
+  const kept = Array.isArray(saved.cages) ? saved.cages : [];
+  st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
   if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
     st.stage = "solve";
     st.values = saved.values;
@@ -107,7 +124,11 @@ function hintText(step, reveal) {
     if (kind === "hidden") return `Look at ${where(c)}: in ${unitName(unit)}, one digit has nowhere else to go. Tap Show it for the digit.`;
     return `Nothing can be filled by looking alone now. The cell at ${where(c)} has the fewest options; tap Show it for its digit.`;
   }
-  if (kind === "single") return `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
+  if (kind === "single") {
+    return cages()
+      ? `${d} goes in ${where(c)}: its row, column, box and cage rule out every other digit.`
+      : `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
+  }
   if (kind === "hidden") return `${d} goes in ${where(c)}: it is the only place left for a ${d} in ${unitName(unit)}.`;
   return `${d} goes in ${where(c)}. That takes more than one step to see, so it comes from the answer.`;
 }
@@ -118,7 +139,9 @@ function hintText(step, reveal) {
 function problemText(check) {
   const { why } = check;
   if (why === "empty") return creating() ? "Put some clues in first." : "Type in the puzzle's digits first.";
-  if (why === "clash") return "The red digits clash: the same digit twice in a row, column or box. Fix them first.";
+  if (why === "clash") return `The red digits clash: the same digit twice in a row, column or box${killer() ? ", or in a cage, or past a cage's sum" : ""}. Fix them first.`;
+  if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
+  if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
   }
@@ -131,6 +154,14 @@ function problemText(check) {
   const either = `It has more than one answer: ${where(check.c)} could be ${a} or ${b}, for one.`;
   return creating() ? `${either} Add a clue there or nearby, then check again.` : `${either} A clue is probably missing or wrong; check it against the original.`;
 }
+
+const CAGE_PROBLEMS = {
+  size: "A cage needs one to nine cells.",
+  cell: "A cage has a cell off the board.",
+  overlap: "Two cages share a cell.",
+  sum: "A cage has a sum its cells cannot make with different digits.",
+  apart: "A cage's cells must join up edge to edge.",
+};
 
 /* ---- state ---- */
 
@@ -150,11 +181,14 @@ function wrongCells() {
   return out;
 }
 
-// Puts a new grid in this stage, undoably.
-function change(next) {
-  history.push(grid().slice());
+const snapshot = () => ({ clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice() });
+
+// Puts a new grid in this stage, or new cages, undoably.
+function change(next, nextCages = s.cages) {
+  history.push(snapshot());
   if (s.stage === "solve") s.values = next;
   else s.clues = next;
+  s.cages = nextCages;
   checked = false;
   pending = null;
   mark = null;
@@ -182,6 +216,7 @@ function resetStage() {
 
 function selectCell(c, { focus = false } = {}) {
   if (!canEdit()) return;
+  if (cageMode) return pickCell(c);
   selected = c;
   padDigit = 0;
   render();
@@ -211,6 +246,7 @@ function advance() {
 
 function inputDigit(d) {
   if (!canEdit()) return;
+  if (cageMode) return typeSum(String(d));
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
     // Nothing to put it in: light the digit up instead.
     padDigit = padDigit === d ? 0 : d;
@@ -245,6 +281,7 @@ function blank() {
 }
 
 function erase() {
+  if (cageMode) return typeSum("back");
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
   const next = grid().slice();
   next[selected] = 0;
@@ -254,8 +291,11 @@ function erase() {
 
 function undo() {
   if (!history.length) return;
-  if (s.stage === "solve") s.values = history.pop();
-  else s.clues = history.pop();
+  const back = history.pop();
+  s.clues = back.clues;
+  s.values = back.values;
+  s.cages = back.cages;
+  clearPicked();
   checked = false;
   pending = null;
   mark = null;
@@ -265,14 +305,24 @@ function undo() {
 }
 
 function clearAll() {
-  if (s.stage !== "enter" || !s.clues.some(Boolean)) return;
-  change(empty());
+  if (s.stage !== "enter" || (!s.clues.some(Boolean) && !cages())) return;
+  endCage();
+  change(empty(), killer() ? [] : s.cages);
   selected = null;
   say("Cleared. Undo brings it back.");
 }
 
 function pasteText(text) {
   if (s.stage !== "enter") return say("Tap Edit puzzle first to paste in a different one.");
+  // A made puzzle's seed brings its cages too.
+  const seed = parseGrid(text) ? null : parseSeed(text);
+  if (seed?.made) {
+    endCage();
+    s.variant = seed.cages ? "killer" : s.variant;
+    change(seed.grid.slice(), seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages);
+    selected = null;
+    return say(`Pasted a made puzzle${seed.cages ? `, with ${plural(seed.cages.length, "cage")}` : ""}. Tap ${goLabel()} when ready.`);
+  }
   const next = parseGrid(text);
   if (!next) return say("That paste is not a puzzle. It needs 81 cells in reading order: digits for clues, and 0 or . for blanks.");
   change(next);
@@ -299,10 +349,10 @@ async function onSeedCopy() {
 
 // The clues as a PNG, to print or send.
 async function onImage() {
-  if (!s.clues.some(Boolean)) return;
+  if (!s.clues.some(Boolean) && !cages()) return;
   let ok = false;
   try {
-    ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png");
+    ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png", cages());
   } catch {
     ok = false;
   }
@@ -320,7 +370,9 @@ async function onPasteBtn() {
 // Only clues with exactly one answer go on: to solving, in the solver, or
 // to sharing, in the maker.
 function onGo() {
-  const check = checkClues(s.clues);
+  endCage();
+  if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
+  const check = checkClues(s.clues, cages());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
     if (check.why === "many") selected = check.c;
@@ -330,7 +382,7 @@ function onGo() {
   solution = check.solution;
   if (creating()) {
     s.stage = "made";
-    made = madeSeed(rateLevel(s.clues), s.clues);
+    made = madeSeed(rateLevel(s.clues, cages()), s.clues, cages());
     save();
     return say(`It has exactly one answer, so it is a proper puzzle. ${madeSummary()}`);
   }
@@ -341,7 +393,10 @@ function onGo() {
 }
 
 function madeSummary() {
-  return `Rated ${LEVELS[made.level].name}, with ${plural(s.clues.filter(Boolean).length, "clue")}. Share the seed, copy the puzzle or save it as an image.`;
+  const what = made.cages
+    ? `a killer puzzle with ${plural(made.cages.length, "cage")} and ${plural(s.clues.filter(Boolean).length, "clue")}`
+    : `with ${plural(s.clues.filter(Boolean).length, "clue")}`;
+  return `Rated ${LEVELS[made.level].name}, ${what}. Share the seed, ${made.cages ? "" : "copy the puzzle "}or save it as an image.`;
 }
 
 // A made puzzle, played as a game. It scores only on its own board: its
@@ -362,6 +417,7 @@ function disarmEdit() {
 
 // Back to the clues. Digits already filled in ask for a second tap.
 function onEdit() {
+  endCage();
   const progress = s.stage === "solve" && s.values.some((d, c) => d && !s.clues[c]);
   if (progress && !editTimer) {
     $("solverEdit").classList.add("armed");
@@ -391,7 +447,7 @@ function onCheck() {
 // The empty cell with the fewest candidates, and its digit from the answer:
 // for when nothing can be filled by looking.
 function easiest() {
-  const cand = candidates(s.values);
+  const cand = candidates(s.values, cages());
   let best = -1;
   for (let c = 0; c < 81; c++) {
     if (!s.values[c] && (best < 0 || bitCount(cand[c]) < bitCount(cand[best]))) best = c;
@@ -420,7 +476,7 @@ function onHint() {
     render();
     return;
   }
-  pending = nextStep(s.values, selected) ?? easiest();
+  pending = nextStep(s.values, selected, cages()) ?? easiest();
   selected = pending.c;
   padDigit = 0;
   mark = null;
@@ -440,12 +496,105 @@ function toggleCandidates() {
   render();
 }
 
+/* ---- cages ---- */
+
+function setVariant(variant) {
+  if (s.stage !== "enter" || variant === s.variant) return;
+  endCage();
+  s.variant = variant;
+  save();
+  note = "";
+  render();
+}
+
+function toggleCageMode() {
+  if (cageMode) return endCage(true);
+  cageMode = true;
+  selected = null;
+  padDigit = 0;
+  note = "";
+  render();
+}
+
+// Drops the cells gathered but not added, and any cage picked up.
+function clearPicked() {
+  picked = new Set();
+  editing = -1;
+  $("cageSum").value = "";
+}
+
+// Leaves the Cages tool; `draw` to show it at once.
+function endCage(draw = false) {
+  cageMode = false;
+  clearPicked();
+  if (draw) {
+    note = "";
+    render();
+  }
+}
+
+// A tap in the Cages tool: a cell of another cage, with nothing gathered,
+// picks that cage up; otherwise the cell goes in or out of the gathering.
+function pickCell(c) {
+  const of = cageOf(s.cages);
+  if (!picked.size && of[c] >= 0) {
+    editing = of[c];
+    picked = new Set(s.cages[editing].cells);
+    $("cageSum").value = String(s.cages[editing].sum);
+  } else if (of[c] >= 0 && of[c] !== editing) {
+    return say("That cell is in another cage. Add or clear this one first, then tap it to change that cage.");
+  } else if (picked.has(c)) picked.delete(c);
+  else picked.add(c);
+  note = "";
+  render();
+}
+
+// Digits typed while gathering go to the sum; "back" takes one off.
+function typeSum(key) {
+  const box = $("cageSum");
+  box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-2);
+  note = "";
+  render();
+}
+
+function cageStatus() {
+  const n = picked.size;
+  if (!n) return "Tap the cells of a cage, then type its sum. Tap a cage already drawn to change it.";
+  return `${plural(n, "cell")} picked. Type the sum, then ${editing >= 0 ? "Change cage" : "Add cage"}.`;
+}
+
+function onCageAdd() {
+  const sum = Number($("cageSum").value);
+  const cells = [...picked].sort((a, b) => a - b);
+  if (!cells.length) return;
+  if (!Number.isInteger(sum) || sum < 1) return say("Type the cage's sum first.");
+  const next = s.cages.filter((_, i) => i !== editing).concat([{ sum, cells }]);
+  const problem = cageProblem(next);
+  if (problem) return say(CAGE_PROBLEMS[problem.why]);
+  change(s.clues, next.sort((a, b) => a.cells[0] - b.cells[0]));
+  clearPicked();
+  say(`Cage of ${plural(cells.length, "cell")} adding to ${sum}. Tap the cells of the next one.`);
+}
+
+function onCageRemove() {
+  if (editing < 0) return;
+  change(s.clues, s.cages.filter((_, i) => i !== editing));
+  clearPicked();
+  say("Cage removed. Undo brings it back.");
+}
+
 /* ---- drawing ---- */
 
 function defaultStatus() {
   const n = s.clues.filter(Boolean).length;
   if (s.stage === "enter") {
-    if (clashes(s.clues).size) return "The red digits clash: the same digit twice in a row, column or box.";
+    if (cageMode) return cageStatus();
+    if (clashes(s.clues, cages()).size) return "The red digits clash: the same digit twice in a row, column or box, or in a cage.";
+    if (killer()) {
+      const k = s.cages.length;
+      if (!k) return "A killer puzzle: tap Cages, then the cells of a cage, then type its sum. Clues are optional.";
+      return `${plural(k, "cage")} and ${plural(n, "clue")} so far. Tap Cages for more, or ${goLabel()} when it is done.`;
+    }
     if (creating()) {
       if (!n) return "Type your clues in, row by row, 0 or . for a blank. Check it tells you whether it has exactly one answer.";
       return `${plural(n, "clue")} so far. Tap Check it to see whether it has exactly one answer.`;
@@ -455,7 +604,7 @@ function defaultStatus() {
   }
   if (s.stage === "made") return `It has exactly one answer. ${madeSummary()}`;
   if (isSolved()) return "Solved. Every digit is right.";
-  if (clashes(s.values).size) return "The red digits clash: the same digit twice in a row, column or box.";
+  if (clashes(s.values, cages()).size) return "The red digits clash: the same digit twice in a row, column or box, or in a cage.";
   return `${plural(s.values.filter((d) => !d).length, "cell")} to go. Stuck? Tap Hint.`;
 }
 
@@ -478,7 +627,7 @@ function render() {
   const g = grid();
   const solved = isSolved();
   const settings = getSettings();
-  const wrong = clashes(g);
+  const wrong = clashes(g, cages());
   if (checked) for (const c of wrongCells()) wrong.add(c);
 
   board.set({
@@ -486,7 +635,7 @@ function render() {
     puzzle: solving ? s.clues : g,
     solution: solving ? solution : g,
     values: g,
-    notes: solving && s.candidates && !solved ? candidates(g) : empty(),
+    notes: solving && s.candidates && !solved ? candidates(g, cages()) : empty(),
     selected,
     interactive: canEdit(),
     highlightSame: settings.highlight_same,
@@ -494,6 +643,9 @@ function render() {
     focusDigit: padDigit,
     mark,
     wrong,
+    // In the classic switch, cages kept for later are not shown.
+    cages: killer() ? s.cages : null,
+    picked: cageMode ? picked : null,
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
@@ -528,6 +680,11 @@ function render() {
     solverEdit: !enter,
     solverPlay: stage === "made",
     solverSeedCopy: stage === "made",
+    solverVariant: enter,
+    solverCages: enter && killer(),
+    cageBar: cageMode,
+    // A killer puzzle's cages do not fit in 81 characters.
+    solverCopy: !killer(),
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -538,16 +695,23 @@ function render() {
   }
   $("solverGoLabel").textContent = goLabel();
 
-  const any = s.clues.some(Boolean);
+  const any = s.clues.some(Boolean) || Boolean(cages());
   $("solverUndo").disabled = !history.length;
   $("solverErase").disabled = !canEdit();
   $("solverClear").disabled = !any;
-  $("solverCopy").disabled = !any;
+  $("solverCopy").disabled = !s.clues.some(Boolean);
   $("solverImage").disabled = !any;
   for (const id of ["solverCheck", "solverHint", "solverSolve"]) $(id).disabled = solved;
   $("solverHintLabel").textContent = pending ? "Show it" : "Hint";
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
+  document.querySelectorAll("#solverVariant [data-variant]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.variant === s.variant)));
+  $("solverCages").setAttribute("aria-pressed", String(cageMode));
+  if (cageMode) {
+    $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
+    $("cageRemove").classList.toggle("hidden", editing < 0);
+    $("cageAdd").disabled = !picked.size;
+  }
 }
 
 /* ---- in and out ---- */
@@ -564,6 +728,7 @@ export function openSolver(which = "solver") {
     store.set(storageKey(name), st);
   }
   resetStage();
+  endCage();
   settle();
   showPanel("solver");
   render();
@@ -587,7 +752,10 @@ function onKey(e) {
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
+  if (cageMode && /^[0-9]$/.test(e.key)) typeSum(e.key);
+  else if (cageMode && e.key === "Enter") onCageAdd();
+  else if (cageMode && e.key === "Escape") endCage(true);
+  else if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
   else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
   else if (e.key.startsWith("Arrow") && selected == null && canEdit()) selectCell(40, { focus: true });
@@ -621,6 +789,18 @@ export function initSolver({ reopen = true } = {}) {
   $("solverImage").addEventListener("click", onImage);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
+  $("solverVariant").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-variant]");
+    if (b) setVariant(b.dataset.variant);
+  });
+  $("solverCages").addEventListener("click", toggleCageMode);
+  $("cageAdd").addEventListener("click", onCageAdd);
+  $("cageRemove").addEventListener("click", onCageRemove);
+  $("cageDone").addEventListener("click", () => endCage(true));
+  $("cageSum").addEventListener("input", () => render());
+  $("cageSum").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onCageAdd();
+  });
   document.addEventListener("keydown", onKey);
   document.addEventListener("paste", (e) => {
     if ($("solver").classList.contains("hidden") || e.target.closest?.("input, textarea")) return;

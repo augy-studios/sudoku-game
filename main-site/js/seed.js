@@ -8,10 +8,12 @@
 //
 // A puzzle someone made has a seed too, a longer one that carries the
 // puzzle itself rather than what to generate: see madeSeed below. It has
-// `made: true`, and is never scored.
+// `made: true`, and scores only on its own board. A made killer puzzle's
+// seed starts with K and carries its cages too.
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
-import { generate, solve, countSolutions } from "./sudoku.js";
+import { generate, solve, countSolutions, COL } from "./sudoku.js";
+import { killerSolve, killerSolutions, cageProblem } from "./killer.js";
 
 // No vowels, and no 0 O 1 I, as for pairing codes: a seed read aloud cannot
 // be misheard and cannot spell a word.
@@ -122,24 +124,120 @@ function decodeGrid(body) {
   return digits === 0n ? grid : null;
 }
 
-// The seed of a made puzzle. `level` is the maker's rating; it names the
-// level on screen and nothing else, since a made puzzle is never scored.
-// The puzzle should have one answer: parseSeed refuses one that does not.
-export function madeSeed(level, grid) {
+/* A made killer puzzle's seed is one number too, read as a run of mixed
+   radix digits, first digit lowest: for each cell whether it holds a clue,
+   then the clues, then for each cell whether it is in a cage, then for each
+   pair of caged neighbours (right, then below) whether they share a cage,
+   then each cage's sum, cages in order of their first cell. Cages are joined
+   edge to edge, so the shared edges give back the cages exactly. */
+
+function packDigits(digits) {
+  let n = 0n;
+  for (let i = digits.length - 1; i >= 0; i--) n = n * BigInt(digits[i][1]) + BigInt(digits[i][0]);
+  return n;
+}
+
+function toBody(n) {
+  let body = "";
+  for (; n > 0n; n /= BASE) body = ALPHABET[Number(n % BASE)] + body;
+  return body.padStart(MADE_MIN, ALPHABET[0]);
+}
+
+function fromBody(body) {
+  let n = 0n;
+  for (const ch of body) {
+    const v = ALPHABET.indexOf(ch);
+    if (v < 0) return null;
+    n = n * BASE + BigInt(v);
+  }
+  return n;
+}
+
+// Neighbour pairs to the right and below, in reading order.
+function* neighbourPairs() {
+  for (let c = 0; c < 81; c++) {
+    if (COL[c] < 8) yield [c, c + 1];
+    if (c < 72) yield [c, c + 9];
+  }
+}
+
+function encodeKiller(grid, cages) {
+  const digits = [];
+  for (let c = 0; c < 81; c++) digits.push([grid[c] ? 1 : 0, 2]);
+  for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, 9]);
+  const of = new Array(81).fill(-1);
+  cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
+  for (let c = 0; c < 81; c++) digits.push([of[c] >= 0 ? 1 : 0, 2]);
+  for (const [a, b] of neighbourPairs()) if (of[a] >= 0 && of[b] >= 0) digits.push([of[a] === of[b] ? 1 : 0, 2]);
+  for (const cage of sortCages(cages)) digits.push([cage.sum, 46]);
+  return toBody(packDigits(digits));
+}
+
+function decodeKiller(body) {
+  let n = fromBody(body);
+  if (n == null) return null;
+  const take = (radix) => {
+    const r = BigInt(radix);
+    const v = Number(n % r);
+    n /= r;
+    return v;
+  };
+  const grid = new Array(81).fill(0);
+  const clued = [];
+  for (let c = 0; c < 81; c++) if (take(2)) clued.push(c);
+  for (const c of clued) grid[c] = take(9) + 1;
+  const caged = [];
+  for (let c = 0; c < 81; c++) caged.push(Boolean(take(2)));
+  // Cells joined by shared edges, gathered into cages.
+  const root = [...Array(81).keys()];
+  const find = (c) => (root[c] === c ? c : (root[c] = find(root[c])));
+  for (const [a, b] of neighbourPairs()) if (caged[a] && caged[b] && take(2)) root[find(a)] = find(b);
+  const groups = new Map();
+  for (let c = 0; c < 81; c++) {
+    if (!caged[c]) continue;
+    const r = find(c);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(c);
+  }
+  const cages = [...groups.values()].map((cells) => ({ sum: take(46), cells }));
+  return n === 0n ? { grid, cages } : null;
+}
+
+// Cages in order of their first cell, each cage's cells in reading order.
+function sortCages(cages) {
+  return cages.map((cage) => ({ sum: cage.sum, cells: cage.cells.slice().sort((a, b) => a - b) })).sort((a, b) => a.cells[0] - b.cells[0]);
+}
+
+// The seed of a made puzzle, with its cages if it is a killer. `level` is
+// the maker's rating; it names the level on screen and nothing else. The
+// puzzle should have one answer: parseSeed refuses one that does not.
+export function madeSeed(level, grid, cages = null) {
+  const groups = (body) => body.match(/.{1,4}/g).join("-");
+  if (cages?.length) {
+    const sorted = sortCages(cages);
+    const body = encodeKiller(grid, sorted);
+    return { level, body, text: `K-${level}-${groups(body)}`, made: true, grid: grid.slice(), cages: sorted };
+  }
   const body = encodeGrid(grid);
-  const text = `${level}-${body.match(/.{1,4}/g).join("-")}`;
-  return { level, body, text, made: true, grid: grid.slice() };
+  return { level, body, text: `${level}-${groups(body)}`, made: true, grid: grid.slice() };
 }
 
 // Parsing one means checking it has one answer, so the last few are kept.
 const madeParsed = new Map();
 
-function parseMade(level, body) {
-  const key = level + body;
+function parseMade(level, body, killer = false) {
+  const key = `${killer ? "K" : ""}${level}${body}`;
   if (madeParsed.has(key)) return madeParsed.get(key);
-  const grid = decodeGrid(body);
-  const ok = grid && grid.filter(Boolean).length >= MIN_CLUES && countSolutions(grid, 2) === 1;
-  const seed = ok ? madeSeed(level, grid) : null;
+  let seed = null;
+  if (killer) {
+    const got = decodeKiller(body);
+    const ok = got && got.cages.length && !cageProblem(got.cages) && killerSolutions(got.grid, got.cages, 2)?.length === 1;
+    seed = ok ? madeSeed(level, got.grid, got.cages) : null;
+  } else {
+    const grid = decodeGrid(body);
+    const ok = grid && grid.filter(Boolean).length >= MIN_CLUES && countSolutions(grid, 2) === 1;
+    seed = ok ? madeSeed(level, grid) : null;
+  }
   madeParsed.set(key, seed);
   if (madeParsed.size > 16) madeParsed.delete(madeParsed.keys().next().value);
   return seed;
@@ -154,6 +252,7 @@ export function parseSeed(input, level = null) {
     return buildSeed(raw[0], raw.slice(1));
   }
   if (raw.length >= MADE_MIN + 1 && LEVEL_IDS.includes(raw[0])) return parseMade(raw[0], raw.slice(1));
+  if (raw.length >= MADE_MIN + 2 && raw[0] === "K" && LEVEL_IDS.includes(raw[1])) return parseMade(raw[1], raw.slice(2), true);
   if (level && LEVEL_IDS.includes(level) && isBody(raw)) return buildSeed(level, raw);
   return null;
 }
@@ -166,7 +265,7 @@ export function puzzleFor(seed) {
   const hit = made.get(seed.text);
   if (hit) return hit;
   const { puzzle, solution } = seed.made
-    ? { puzzle: seed.grid.slice(), solution: solve(seed.grid) }
+    ? { puzzle: seed.grid.slice(), solution: seed.cages ? killerSolve(seed.grid, seed.cages) : solve(seed.grid) }
     : generate(randomSource(hashString(`puzzle|${seed.text}`)), LEVELS[seed.level].blanks);
   const out = { puzzle, solution, blanks: puzzle.filter((d) => d === 0).length };
   made.set(seed.text, out);

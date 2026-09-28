@@ -488,6 +488,7 @@ function update({ fresh = false } = {}) {
       highlightPeers: s.highlight_peers,
       focusDigit: padDigit,
       mark: null,
+      cages: g.seed.cages ?? null,
     });
   }
   renderChips(over);
@@ -515,7 +516,7 @@ function currentTally() {
 
 function renderChips(over) {
   const level = LEVELS[g.seed.level].name;
-  const kind = { daily: "Daily", race: "Race", coop: "Co-op" }[g.mode] ?? (g.seed.made ? "Made" : "");
+  const kind = { daily: "Daily", race: "Race", coop: "Co-op" }[g.mode] ?? (g.seed.cages ? "Killer" : g.seed.made ? "Made" : "");
   $("levelChip").textContent = kind ? `${kind}, ${level}` : level;
   renderTimer();
   const t = currentTally();
@@ -570,8 +571,9 @@ function renderActions(over) {
   // Once it is over the result has its own buttons; a network game keeps
   // its way out of the session here.
   $("leaveRow").classList.toggle("hidden", over && !g.role);
-  // Once it is over, the result has its own.
-  $("copyPuzzleBtn").classList.toggle("hidden", over);
+  // Once it is over, the result has its own. A killer puzzle's cages do
+  // not fit in 81 characters: its seed is the way to share it.
+  $("copyPuzzleBtn").classList.toggle("hidden", over || Boolean(g.seed.cages));
   if (!leaveTimer) $("leaveLabel").textContent = g.role ? (g.role === "host" ? "Stop hosting" : "Leave") : "New game";
 
   // A finished game's result says all of this itself.
@@ -693,10 +695,11 @@ function finish(fresh) {
   $("newGameLabel").textContent = "New game";
 
   $("result").classList.remove("hidden");
+  $("resultPuzzleBtn").classList.toggle("hidden", Boolean(g.seed.cages));
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
   replayer.load(
-    { puzzle: g.puzzle, solution: g.solution, log: g.log, players: g.mode === "coop" ? 2 : 1 },
+    { puzzle: g.puzzle, solution: g.solution, log: g.log, players: g.mode === "coop" ? 2 : 1, cages: g.seed.cages },
     { highlightSame: s.highlight_same },
     { autoplay: !fresh && s.auto_replay }
   );
@@ -894,7 +897,7 @@ function watch(link) {
   for (const id of ["scoreChip", "mistakeChip", "hintChip", "timerChip"]) $(id).textContent = "";
   $("playNote").textContent = "";
   $("status").textContent = "A shared replay.";
-  $("levelChip").textContent = `Replay, ${LEVELS[link.seed.level].name}`;
+  $("levelChip").textContent = `${link.seed.cages ? "Killer replay" : "Replay"}, ${LEVELS[link.seed.level].name}`;
   $("seedChip").textContent = seedChipText(link.seed);
 
   const t = tally(result, link.log);
@@ -910,10 +913,11 @@ function watch(link) {
   $("newGameLabel").textContent = "Close replay";
 
   $("result").classList.remove("hidden");
+  $("resultPuzzleBtn").classList.toggle("hidden", Boolean(link.seed.cages));
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
   replayer.load(
-    { puzzle, solution, log: link.log, players: link.meta === "c" ? 2 : 1 },
+    { puzzle, solution, log: link.log, players: link.meta === "c" ? 2 : 1, cages: link.seed.cages },
     { highlightSame: getSettings().highlight_same },
     { autoplay: true }
   );

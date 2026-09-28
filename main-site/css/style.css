@@ -319,6 +319,7 @@ body {
 /* The board: a heavy line round the whole and round each box, a light one
    between cells. Box edges meet at 3px, cell edges at 1px. */
 .board-wrap {
+  position: relative;
   width: min(100%, 480px);
   aspect-ratio: 1;
 }
@@ -386,6 +387,38 @@ body {
 .cell.mark-undo { box-shadow: inset 0 0 0 3px var(--brand-ink); }
 @keyframes mark-in {
   from { opacity: 0.4; }
+}
+
+/* Killer cages, drawn over the cells by board.js. */
+.cage-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  overflow: visible;
+}
+.cage-line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2.5;
+  opacity: 0.75;
+}
+.cage-sum {
+  fill: var(--ink);
+  font-family: inherit;
+  /* A halo in the board's colour, so the dashed line stops short of it. */
+  paint-order: stroke;
+  stroke: var(--cell-bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.cell.cage-head .notes { padding-top: 30%; }
+/* Cells being gathered into a new cage. */
+.cell.picked {
+  box-shadow: inset 0 0 0 3px var(--warn), inset 0 0 0 100vmax var(--cell-same);
 }
 
 .notes {
@@ -503,6 +536,17 @@ body {
   max-width: 460px;
   line-height: 1.4;
 }
+.solver-variant { width: min(100%, 320px); }
+.cage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 480px;
+}
+.cage-bar .field-label { width: 100%; text-align: center; }
+.cage-sum-field { flex: 0 0 90px; text-align: center; }
 .solver-tools {
   grid-template-columns: none;
   grid-auto-flow: column;

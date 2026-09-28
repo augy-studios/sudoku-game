@@ -205,10 +205,23 @@
             <section id="solver" class="panel solver hidden" aria-labelledby="solverTitle">
                 <h3 id="solverTitle" class="panel-title">Type in a puzzle</h3>
 
+                <div class="mode-toggle solver-variant" id="solverVariant" role="radiogroup" aria-label="Rules">
+                    <button class="mode-btn" type="button" role="radio" aria-checked="true" data-variant="classic"><span data-icon="grid"></span>Classic</button>
+                    <button class="mode-btn" type="button" role="radio" aria-checked="false" data-variant="killer"><span data-icon="cage"></span>Killer</button>
+                </div>
+
                 <div class="board-wrap"><div id="solverBoard"></div></div>
 
                 <p id="solverStatus" class="status solver-status" role="status" aria-live="polite"></p>
                 <p id="solverSeed" class="made-seed hidden"></p>
+
+                <div id="cageBar" class="cage-bar hidden">
+                    <label class="field-label" for="cageSum">Cage sum</label>
+                    <input id="cageSum" class="field cage-sum-field" type="number" inputmode="numeric" min="1" max="45" placeholder="Sum" enterkeyhint="done">
+                    <button id="cageAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="cageAddLabel">Add cage</span></button>
+                    <button id="cageRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span>Remove cage</button>
+                    <button id="cageDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
+                </div>
 
                 <div id="solverPad" class="pad" aria-label="Numbers">
                     <button class="pad-btn" type="button" data-digit="1">1<span class="count"></span></button>
@@ -226,6 +239,7 @@
                     <button id="solverUndo" class="tool-btn" type="button"><span data-icon="undo"></span><span>Undo</span></button>
                     <button id="solverErase" class="tool-btn" type="button"><span data-icon="erase"></span><span>Erase</span></button>
                     <button id="solverPaste" class="tool-btn" type="button"><span data-icon="clipboard"></span><span>Paste</span></button>
+                    <button id="solverCages" class="tool-btn" type="button" aria-pressed="false"><span data-icon="cage"></span><span>Cages</span></button>
                     <button id="solverClear" class="tool-btn" type="button"><span data-icon="trash"></span><span>Clear</span></button>
                     <button id="solverCheck" class="tool-btn" type="button"><span data-icon="check"></span><span>Check</span></button>
                     <button id="solverHint" class="tool-btn" type="button"><span data-icon="bulb"></span><span id="solverHintLabel">Hint</span></button>
