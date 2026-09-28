@@ -60,6 +60,8 @@ export const icons = {
   kropki: svg(`<path d="M12 4v16" stroke-width="1.2"/><circle cx="7" cy="12" r="3"/><circle cx="17" cy="12" r="3" fill="currentColor"/>`),
   // A thick line over a run of three dots.
   renban: svg(`<path d="M5 12h14" stroke-width="3.2"/><circle cx="6" cy="18.5" r="1" fill="currentColor"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/><circle cx="18" cy="18.5" r="1" fill="currentColor"/>`),
+  // A line that is its own mirror image, across a dashed middle.
+  palindrome: svg(`<path d="M4 17 8 8l4 7 4-7 4 9" stroke-width="2.6"/><path d="M12 3v18" stroke-width="1.2" stroke-dasharray="2 2"/>`),
   cage: svg(`<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M7.5 9.5h3" stroke-width="1.6"/>`),
   image: svg(`<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="9.5" r="1.8"/><path d="m20.5 16-5-5-8.5 8.5"/>`),
   clipboard: svg(`<rect x="5" y="4.5" width="14" height="16.5" rx="2"/><path d="M9 4.5V4a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 4v.5M9 4.5V6h6V4.5"/>`),

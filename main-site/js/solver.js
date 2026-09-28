@@ -15,8 +15,9 @@
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
 // cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
-// way with the Arrows tool, from the circle; Whispers and Renban add German
-// Whispers and renban lines, drawn the same way again with their own tools;
+// way with the Arrows tool, from the circle; Whispers, Renban and Palindrome
+// add German Whispers, renban and palindrome lines, drawn the same way again
+// with their own tools;
 // Kropki and XV add dots and X and V marks on the sides between cells, put
 // down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
 // X-Sums add clues outside the grid, put down with the Outside tool in a
@@ -38,6 +39,7 @@ import {
   arrowProblem,
   whisperProblem,
   renbanProblem,
+  palindromeProblem,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -74,8 +76,8 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, whisper, renban, kropki, xv, sandwich, little,
-// skyscraper, xsum, jigsaw and rules are the variant's switches; cages are kept while Killer is off, for
+// killer, thermo, arrow, whisper, renban, palindrome, kropki, xv, sandwich,
+// little, skyscraper, xsum, jigsaw and rules are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each kind of line, dot, mark and outside clue
 // likewise.
 const fresh = () => ({
@@ -89,6 +91,7 @@ const fresh = () => ({
   arrow: false,
   whisper: false,
   renban: false,
+  palindrome: false,
   kropki: false,
   xv: false,
   sandwich: false,
@@ -102,6 +105,7 @@ const fresh = () => ({
   arrows: [],
   whispers: [],
   renbans: [],
+  palindromes: [],
   dots: [],
   xvs: [],
   sandwiches: [],
@@ -123,7 +127,7 @@ let history = []; // earlier states of this stage, for undo
 let cageMode = false;
 let picked = new Set();
 let editing = -1;
-// The Thermos, Arrows, Whispers or Renbans tool, likewise: which is on, a
+// The Thermos, Arrows, Whispers, Renbans or Palindromes tool, likewise: which is on, a
 // key of LINES below, the path so far from its first cell, and the line
 // being changed.
 let lineKind = null;
@@ -160,6 +164,7 @@ const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
 const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
 const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
+const palindromes = () => (s.palindrome && s.palindromes.length ? s.palindromes : null);
 const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
 const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : null);
@@ -168,7 +173,7 @@ const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers 
 const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
+  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -178,6 +183,7 @@ const variant = () =>
         arrows: arrows() ?? [],
         whispers: whispers() ?? [],
         renbans: renbans() ?? [],
+        palindromes: palindromes() ?? [],
         dots: dots() ?? [],
         xvs: xvs() ?? [],
         sandwiches: sandwiches() ?? [],
@@ -272,6 +278,7 @@ function hintText(step, reveal) {
       ...(arrows() ? ["arrows"] : []),
       ...(whispers() ? ["whisper lines"] : []),
       ...(renbans() ? ["renban lines"] : []),
+      ...(palindromes() ? ["palindrome lines"] : []),
       ...(dots() ? ["dots"] : []),
       ...(xvs() ? ["X and V marks"] : []),
       ...(sandwiches() ? ["Sandwich sums"] : []),
@@ -298,6 +305,7 @@ function problemText(check) {
   if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
   if (why === "whispers") return WHISPER_PROBLEMS[check.problem.why];
   if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
+  if (why === "palindromes") return PALINDROME_PROBLEMS[check.problem.why];
   if (why === "dots") return DOT_PROBLEMS[check.problem.why];
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
   if (why === "sandwiches") return SANDWICH_PROBLEMS[check.problem.why];
@@ -330,6 +338,7 @@ function clashText() {
   if (arrows()) extra.push("not adding up to an arrow's circle");
   if (whispers()) extra.push("less than 5 apart next to each other on a whisper line");
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
+  if (palindromes()) extra.push("not the same from either end of a palindrome line");
   if (dots()) extra.push("breaking a dot");
   if (xvs()) extra.push("not adding up to an X or a V");
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
@@ -369,6 +378,14 @@ const RENBAN_PROBLEMS = {
   cell: "A renban line has a cell off the board.",
   loop: "A renban line cannot cross itself.",
   apart: "Each cell of a renban line must touch the one before it.",
+};
+
+const PALINDROME_PROBLEMS = {
+  count: "There is room for forty palindrome lines.",
+  length: "A palindrome line needs two to nine cells.",
+  cell: "A palindrome line has a cell off the board.",
+  loop: "A palindrome line cannot cross itself.",
+  apart: "Each cell of a palindrome line must touch the one before it.",
 };
 
 const DOT_PROBLEMS = {
@@ -691,6 +708,7 @@ function onGo() {
   if (s.arrow && !s.arrows.length) return say("Draw an arrow first: tap Arrows, then the circle and each cell along it.");
   if (s.whisper && !s.whispers.length) return say("Draw a whisper line first: tap Whispers, then each cell along it.");
   if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
+  if (s.palindrome && !s.palindromes.length) return say("Draw a palindrome line first: tap Palindromes, then each cell along it.");
   if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
@@ -969,6 +987,17 @@ const LINES = {
     started: "One end placed. Tap the next cell: the line's digits are a run, like 3 4 5, in any order.",
     problem: renbanProblem,
     problems: RENBAN_PROBLEMS,
+  },
+  palindrome: {
+    list: "palindromes",
+    short: "palindrome",
+    name: "palindrome line",
+    title: "Palindrome line",
+    a: "A palindrome line",
+    start: "end",
+    started: "One end placed. Tap the next cell: the line's digits read the same from either end.",
+    problem: palindromeProblem,
+    problems: PALINDROME_PROBLEMS,
   },
 };
 
@@ -1429,6 +1458,9 @@ function defaultStatus() {
     if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
     if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
     if (s.renban && !s.renbans.length) return "A renban puzzle: tap Renbans, then each cell along a line. Its digits are a run, like 3 4 5, in any order.";
+    if (s.palindrome && !s.palindromes.length) {
+      return "A palindrome puzzle: tap Palindromes, then each cell along a line. Its digits read the same from either end, like 3 7 1 7 3.";
+    }
     if (s.kropki && !s.dots.length) {
       return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
     }
@@ -1508,6 +1540,7 @@ function render() {
     arrows: shownLines("arrow"),
     whispers: shownLines("whisper"),
     renbans: shownLines("renban"),
+    palindromes: shownLines("palindrome"),
     dots: s.kropki ? s.dots : null,
     xvs: s.xv ? s.xvs : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
@@ -1572,6 +1605,7 @@ function render() {
     solverArrows: enter && s.arrow,
     solverWhispers: enter && s.whisper,
     solverRenbans: enter && s.renban,
+    solverPalindromes: enter && s.palindrome,
     lineBar: Boolean(lineKind),
     solverMarks: enter && (s.kropki || s.xv),
     markBar: markMode,
@@ -1613,6 +1647,7 @@ function render() {
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
   $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
+  $("solverPalindromes").setAttribute("aria-pressed", String(lineKind === "palindrome"));
   $("solverMarks").setAttribute("aria-pressed", String(markMode));
   $("solverOutside").setAttribute("aria-pressed", String(outMode));
   $("solverRegions").setAttribute("aria-pressed", String(regionMode));
@@ -1734,6 +1769,7 @@ export function initSolver({ reopen = true } = {}) {
   $("solverArrows").addEventListener("click", () => toggleLineMode("arrow"));
   $("solverWhispers").addEventListener("click", () => toggleLineMode("whisper"));
   $("solverRenbans").addEventListener("click", () => toggleLineMode("renban"));
+  $("solverPalindromes").addEventListener("click", () => toggleLineMode("palindrome"));
   $("solverMarks").addEventListener("click", toggleMarkMode);
   $("markDone").addEventListener("click", () => endCage(true));
   $("solverOutside").addEventListener("click", toggleOutMode);

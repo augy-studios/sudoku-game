@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban and palindrome lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -81,7 +81,7 @@ network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
 board, on or off in any mix: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
+Whispers), Renban, Palindrome, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
@@ -92,10 +92,10 @@ king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, T, A, S, R, P, V, B, L, Y, U, J,
-D, N, G and W, always in that order, as in `KD-H-...`; a seed with any
+seed starts with its rules' letters, K, T, A, S, R, O, P, V, B, L, Y, U,
+J, D, N, G and W, always in that order, as in `KD-H-...`; a seed with any
 before D carries that part in its body too: cages, thermometers, arrows,
-whisper lines, renban lines, dots, XV marks, Sandwich sums, Little Killer
+whisper lines, renban lines, palindrome lines, dots, XV marks, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums or regions (a line as its length, its first
 cell and each step's direction; dots, marks, Skyscraper counts and X-Sums
 as a list, or every side's or view's value, whichever is shorter; Sandwich
@@ -146,6 +146,17 @@ reach. Neighbours on a whisper line less than 5 apart show as a clash, as
 do a repeat on a renban line, and a renban line's digits once they spread
 wider than it is long. They are drawn as a thick line with no bulb, green
 for whispers and purple for renban, on the board and in a saved image.
+
+**Palindrome.** A palindrome line's digits read the same from either end,
+so cells the same way in from each end hold the same digit, and a line's
+middle cell, if it has one, may be anything. The Palindromes tool draws one
+as Whispers does, and they may share cells, up to forty, two to nine cells
+long. The solver keeps each such pair of cells to the digits both can
+still be, so a digit placed at one end is the only candidate at the other;
+a pair whose two cells share a row, column or box can never match. A pair
+holding two different digits shows as a clash. A palindrome line is drawn
+as a thick blue line, on the board and in a saved image: often grey
+elsewhere, but here grey is a thermometer's.
 
 **Kropki and XV.** They mark the side two cells share. A white dot's
 digits are consecutive and a black dot's are one double the other; an X's

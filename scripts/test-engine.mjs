@@ -22,6 +22,7 @@ import {
   arrowProblem,
   whisperProblem,
   renbanProblem,
+  palindromeProblem,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -633,8 +634,24 @@ function linePuzzle(key, x, fits) {
   return { puzzle: thinOut(solution, { [key]: lines }, rand), solution, [key]: lines };
 }
 
+// A palindrome of `length` cells: past its middle, each next cell holds the
+// digit of the one as far in from the other end.
+const fitsPalindrome = (length) => (line, o, sol) => line.length < length / 2 || sol[o] === sol[line[length - 1 - line.length]];
+
 const whisperPuzzle = () => linePuzzle("whispers", 11, fitsWhisper);
 const renbanPuzzle = () => linePuzzle("renbans", 13, fitsRenban);
+
+// Palindromes of five cells, then of three, on the same grid.
+function palindromePuzzle() {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(19);
+  const used = new Set();
+  const palindromes = [
+    ...layLines(solution, rand, fitsPalindrome(5), { count: 4, min: 5, max: 5, used }),
+    ...layLines(solution, rand, fitsPalindrome(3), { count: 4, min: 3, max: 3, used }),
+  ];
+  return { puzzle: thinOut(solution, { palindromes }, rand), solution, palindromes };
+}
 
 // Solves by steps alone, checking each against the answer.
 function stepsAgree(puzzle, solution, variant) {
@@ -749,6 +766,53 @@ test("renban lines are checked, solved and carried in seeds", () => {
   assert.match(madeSeed("H", new Array(81).fill(0), { cages: killerPuzzle().cages, whispers, renbans, rules: 1 }).text, /^KSRD-H-/);
   assert.equal(seedVariantName("KSRD-H-BBBB"), "Killer, German Whispers, Renban, Diagonal");
   assert.equal(variantName({ whispers, renbans }), "German Whispers, Renban");
+});
+
+test("palindrome lines are checked, solved and carried in seeds", () => {
+  assert.equal(palindromeProblem([[20, 30, 40]]), null);
+  assert.equal(palindromeProblem([[0, 1, 0]]).why, "loop");
+
+  const { puzzle, solution, palindromes } = palindromePuzzle();
+  assert.equal(palindromes.length, 8);
+  assert.ok(palindromes.some((t) => t.length === 5));
+  for (const t of palindromes) assert.deepEqual(t.map((c) => solution[c]), t.map((c) => solution[c]).reverse());
+  assert.equal(checkClues(puzzle, { palindromes }).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the lines");
+
+  const cand = variantCandidates(puzzle, { palindromes });
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]));
+  // Row 3, column 3 and row 5, column 5 share no house: a 4 at one end puts
+  // a 4 at the other, and leaves the middle free.
+  const t = [20, 30, 40];
+  const four = new Array(81).fill(0);
+  four[20] = 4;
+  const ends = variantCandidates(four, { palindromes: [t] });
+  assert.equal(ends[40], 1 << 4);
+  assert.equal(ends[30], 0b1111111110);
+  stepsAgree(puzzle, solution, { palindromes });
+
+  // Ends that differ clash; ends in one box can never match.
+  four[40] = 5;
+  assert.deepEqual([...clashes(four, { palindromes: [t] })].sort((p, q) => p - q), [20, 40]);
+  four[40] = 4;
+  assert.equal(clashes(four, { palindromes: [t] }).size, 0);
+  assert.equal(variantSolutions(new Array(81).fill(0), { palindromes: [[0, 10, 20]] }, 1)?.length, 0, "ends in one box have no answer");
+
+  const seed = madeSeed(rateLevel(puzzle, { palindromes }), puzzle, { palindromes });
+  assert.match(seed.text, /^O-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.palindromes, palindromes);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+
+  // With the other lines on the same grid; the letters go K, T, A, S, R, O,
+  // then the rest.
+  const { renbans } = renbanPuzzle();
+  const mixed = parseSeed(madeSeed("H", puzzle, { renbans, palindromes }).text);
+  assert.match(mixed.text, /^RO-H-/);
+  assert.deepEqual([mixed.renbans, mixed.palindromes], [renbans, palindromes]);
+  assert.equal(seedVariantName("KROPD-H-BBBB"), "Killer, Renban, Palindrome, Kropki, Diagonal");
+  assert.equal(variantName({ renbans, palindromes }), "Renban, Palindrome");
 });
 
 // Every side two cells share, the first cell first: each cell's right-hand
@@ -1262,6 +1326,8 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     );
     const whispers = layLines(solution, rand, fitsWhisper, lines);
     const renbans = layLines(solution, rand, fitsRenban, lines);
+    // Their own numbers, so the parts laid after come out as before.
+    const palindromes = layLines(solution, seeded(23), fitsPalindrome(3), { ...lines, max: 3 });
     // A few dots and marks, never two on one side.
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
@@ -1273,9 +1339,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const skyscrapers = layViews(solution, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
     const xsums = layViews(solution, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken);
     const littles = layLittles(solution, rand, 0.1, taken);
-    const variant = { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
+    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
     const name = keys.join(", ");
-    const lists = ["thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -1288,12 +1354,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASRPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASROPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     assert.deepEqual(puzzleFor(back).solution, solution);
   }
 });

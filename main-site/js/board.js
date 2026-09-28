@@ -9,8 +9,8 @@
 // tints its four windows. Thermometers are a thick grey line from a round
 // bulb, faint enough to read digits through, and arrows a thin one from a
 // ring round the circle's digit to a head. German Whispers lines are a
-// green line as thick as a thermometer's, with no bulb, and renban lines a
-// purple one. Kropki dots sit on the side two cells share, white or black,
+// green line as thick as a thermometer's, with no bulb, renban lines a
+// purple one and palindrome lines a blue one. Kropki dots sit on the side two cells share, white or black,
 // and XV marks there as a letter. Sandwich and Little Killer clues sit
 // outside the grid, in a margin a cell wide the board then leaves round it,
 // a Little Killer's with a small arrow along its diagonal; so do Skyscraper
@@ -131,12 +131,12 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages, thermos, arrows, whispers, renbans, dots,
-  // xvs, sandwiches, littles, skyscrapers, xsums and regions are a variant
-  // puzzle's, and rules its
+  // digits by the solution. cages, thermos, arrows, whispers, renbans,
+  // palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums and
+  // regions are a variant puzzle's, and rules its
   // switches (variant.js); picked, a Set of cells, are those being gathered
   // into a new cage, and path a line being drawn, as pathKind says:
-  // "thermo", "arrow", "whisper" or "renban". margin leaves room round the
+  // "thermo", "arrow", "whisper", "renban" or "palindrome". margin leaves room round the
   // grid for clues outside it; spots, margin spots [r, c] to show as open
   // for a clue, and spot the one picked.
   set(view) {
@@ -152,6 +152,7 @@ export class BoardView {
     this.arrows = view.arrows ?? [];
     this.whispers = view.whispers ?? [];
     this.renbans = view.renbans ?? [];
+    this.palindromes = view.palindromes ?? [];
     this.dots = view.dots ?? [];
     this.xvs = view.xvs ?? [];
     this.sandwiches = view.sandwiches ?? [];
@@ -236,17 +237,18 @@ export class BoardView {
     const arrows = this.arrows ?? [];
     const whispers = this.whispers ?? [];
     const renbans = this.renbans ?? [];
+    const palindromes = this.palindromes ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? [])];
     const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, edges, outside, margin, regions, path, this.pathKind]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, palindromes, edges, outside, margin, regions, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, whispers, renbans, edges, path, ...outside.slice(0, 5)].some((list) => list.length);
+    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, edges, path, ...outside.slice(0, 5)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -339,20 +341,21 @@ export class BoardView {
         `<path d="${line}"/></g>`
       );
     };
-    // German Whispers and renban lines: through the cells' middles, no more.
-    // A line of one cell, while it is drawn, is a dot.
+    // German Whispers, renban and palindrome lines: through the cells'
+    // middles, no more. A line of one cell, while it is drawn, is a dot.
     const line = (t, cls) => {
       if (!t.length) return "";
       const points = t.map(centre);
       const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("") + (t.length === 1 ? "h0" : "");
       return `<path class="${cls}" d="${d}" stroke-width="${f(points[0].w * 0.26)}"/>`;
     };
-    const draw = { thermo, arrow, whisper: line, renban: line };
+    const draw = { thermo, arrow, whisper: line, renban: line, palindrome: line };
     const kind = this.pathKind;
     const pending = draw[kind](path, `${kind} ${kind}-pending`);
     const marks =
       whispers.map((t) => line(t, "whisper")).join("") +
       renbans.map((t) => line(t, "renban")).join("") +
+      palindromes.map((t) => line(t, "palindrome")).join("") +
       thermos.map((t) => thermo(t, "thermo")).join("") +
       arrows.map((a) => arrow(a, "arrow")).join("") +
       pending;

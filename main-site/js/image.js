@@ -1,7 +1,7 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a variant puzzle's cages, thermometers, arrows, German Whispers and
-// renban lines, Kropki dots, XV marks, diagonals and windows as on screen.
+// and a variant puzzle's cages, thermometers, arrows, German Whispers,
+// renban and palindrome lines, Kropki dots, XV marks, diagonals and windows as on screen.
 // Sandwich, Little Killer, Skyscraper and X-Sum clues sit outside the grid,
 // in a margin a cell wide the image grows by. A Jigsaw's regions take the
 // boxes' heavy lines and tint.
@@ -28,11 +28,12 @@ const ARROW_GREY = "#8f9a92";
 // Pale, so digits read through them.
 const WHISPER_GREEN = "#a8dcb2";
 const RENBAN_PURPLE = "#dac6ee";
+const PALINDROME_BLUE = "#b2cfee";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, whispers, renbans, dots, xvs,
-// sandwiches, littles, skyscrapers, xsums, regions, rules } (variant.js), or
-// nothing for a classic puzzle.
+// variant: { cages, thermos, arrows, whispers, renbans, palindromes, dots,
+// xvs, sandwiches, littles, skyscrapers, xsums, regions, rules }
+// (variant.js), or nothing for a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
@@ -40,6 +41,7 @@ export async function drawPuzzle(grid, variant = null) {
   const arrows = variant?.arrows ?? [];
   const whispers = variant?.whispers ?? [];
   const renbans = variant?.renbans ?? [];
+  const palindromes = variant?.palindromes ?? [];
   const dots = variant?.dots ?? [];
   const xvs = variant?.xvs ?? [];
   const sandwiches = variant?.sandwiches ?? [];
@@ -126,11 +128,12 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.stroke();
   }
   const at = (c) => [PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.5) * CELL];
-  // German Whispers and renban lines, under everything else: solid, through
-  // the cells' middles.
+  // German Whispers, renban and palindrome lines, under everything else:
+  // solid, through the cells' middles.
   for (const [lines, colour] of [
     [whispers, WHISPER_GREEN],
     [renbans, RENBAN_PURPLE],
+    [palindromes, PALINDROME_BLUE],
   ]) {
     for (const t of lines) {
       ctx.strokeStyle = colour;
@@ -269,7 +272,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules });
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }

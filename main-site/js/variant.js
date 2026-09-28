@@ -1,8 +1,8 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, thermos, arrows, whispers, renbans, dots, xvs,
-// sandwiches, littles, skyscrapers, xsums, regions, rules }:
+// A variant is { cages, thermos, arrows, whispers, renbans, palindromes,
+// dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -20,6 +20,9 @@
 //   renbans  renban lines, paths like a thermometer's: a line's digits are
 //            a run of consecutive digits in any order, with no repeats.
 //            They may share cells.
+//   palindromes  palindrome lines, paths like a thermometer's: a line's
+//            digits read the same from either end, so cells the same way
+//            in from each end hold the same digit. They may share cells.
 //   dots     Kropki dots, [{ cells: [a, b], mark }] on the side two cells
 //            share, a before b in reading order. A "white" dot's digits are
 //            consecutive; a "black" dot's are one double the other.
@@ -69,7 +72,7 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (xsums?.length) names.unshift("X-Sums");
@@ -78,6 +81,7 @@ export function variantName({ cages, thermos, arrows, whispers, renbans, dots, x
   if (sandwiches?.length) names.unshift("Sandwich");
   if (xvs?.length) names.unshift("XV");
   if (dots?.length) names.unshift("Kropki");
+  if (palindromes?.length) names.unshift("Palindrome");
   if (renbans?.length) names.unshift("Renban");
   if (whispers?.length) names.unshift("German Whispers");
   if (arrows?.length) names.unshift("Arrow");
@@ -267,6 +271,7 @@ export const thermoProblem = lineProblem;
 export const arrowProblem = lineProblem;
 export const whisperProblem = lineProblem;
 export const renbanProblem = lineProblem;
+export const palindromeProblem = lineProblem;
 
 // ABOVE[k]: the digits over k, for k 0 to 9. BELOW[k]: those under it, for
 // k 1 to 10. LOW and HIGH: a mask's least and greatest digit.
@@ -414,6 +419,23 @@ function renbanBounds(renbans, g, free) {
     }
     if (!fits) return false;
     for (const c of t) if (!g[c]) free[c] &= allow;
+  }
+  return true;
+}
+
+// Narrows each pair of cells the same way in from either end of a
+// palindrome line to the digits both can be; a line's middle cell, if it has
+// one, is free. Placed digits count as masks of one, and `free` is narrowed
+// in place, as in thermoBounds; false if a pair has no digit in common.
+function palindromeBounds(palindromes, g, free) {
+  for (const t of palindromes) {
+    for (let i = 0, j = t.length - 1; i < j; i++, j--) {
+      const [a, b] = [t[i], t[j]];
+      const m = (g[a] ? 1 << g[a] : free[a]) & (g[b] ? 1 << g[b] : free[b]);
+      if (!m) return false;
+      if (!g[a]) free[a] = m;
+      if (!g[b]) free[b] = m;
+    }
   }
   return true;
 }
@@ -756,6 +778,7 @@ const norm = (v) => ({
   arrows: v?.arrows ?? [],
   whispers: v?.whispers ?? [],
   renbans: v?.renbans ?? [],
+  palindromes: v?.palindromes ?? [],
   dots: v?.dots ?? [],
   xvs: v?.xvs ?? [],
   sandwiches: v?.sandwiches ?? [],
@@ -771,7 +794,7 @@ const norm = (v) => ({
 // the clues outside; 0 for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -798,6 +821,7 @@ export function variantCandidates(grid, variant) {
   arrowBounds(arrows, grid, out);
   whisperBounds(whispers, grid, out);
   renbanBounds(renbans, grid, out);
+  palindromeBounds(palindromes, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
   sandwichBounds(sandwiches, grid, out);
@@ -824,7 +848,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   let steps = 0;
   const hm = new Int32Array(houses.length);
@@ -876,6 +900,7 @@ function search(grid, variant, found) {
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
     if (whispers.length && !whisperBounds(whispers, g, free)) return null;
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
+    if (palindromes.length && !palindromeBounds(palindromes, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;

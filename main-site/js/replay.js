@@ -70,8 +70,8 @@ export class Replay {
   }
 
   // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
-  // whispers?, renbans?, dots?, xvs?, sandwiches?, littles?, skyscrapers?,
-  // xsums?, regions?, rules? }.
+  // whispers?, renbans?, palindromes?, dots?, xvs?, sandwiches?, littles?,
+  // skyscrapers?, xsums?, regions?, rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
   load(game, view, { autoplay = false } = {}) {
@@ -126,6 +126,7 @@ export class Replay {
       arrows: this.game.arrows ?? null,
       whispers: this.game.whispers ?? null,
       renbans: this.game.renbans ?? null,
+      palindromes: this.game.palindromes ?? null,
       dots: this.game.dots ?? null,
       xvs: this.game.xvs ?? null,
       sandwiches: this.game.sandwiches ?? null,

@@ -465,9 +465,11 @@ body {
   opacity: 0.8;
 }
 /* German Whispers green and renban purple, the colours these lines have
-   in most apps, and as faint as a thermometer. */
+   in most apps, and as faint as a thermometer. Palindromes are often grey,
+   which here is a thermometer's, so blue. */
 .whisper,
-.renban {
+.renban,
+.palindrome {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -475,8 +477,10 @@ body {
 }
 .whisper { stroke: var(--ok); }
 .renban { stroke: #9a5bd8; }
+.palindrome { stroke: #3f86d4; }
 .whisper-pending,
-.renban-pending {
+.renban-pending,
+.palindrome-pending {
   stroke: var(--warn);
   opacity: 0.45;
 }

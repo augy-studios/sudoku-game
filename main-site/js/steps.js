@@ -4,8 +4,9 @@
 // in sudoku.js. A set of candidates is a mask with digits as bits 1 to 9,
 // the same as a cell's notes, so the board can draw one as the other.
 //
-// Each takes a variant, { cages, thermos, arrows, whispers, renbans, dots,
-// xvs, sandwiches, littles, skyscrapers, xsums, regions, rules }
+// Each takes a variant, { cages, thermos, arrows, whispers, renbans,
+// palindromes, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions,
+// rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -19,6 +20,7 @@ import {
   arrowProblem,
   whisperProblem,
   renbanProblem,
+  palindromeProblem,
   dotProblem,
   xvProblem,
   sandwichProblem,
@@ -35,7 +37,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -73,7 +75,8 @@ export function bitCount(mask) {
 // its circle's, once they go past the circle (or past 9 with the circle
 // empty), or fill the arrow to some other sum; digits next to each other on
 // a German Whispers line less than 5 apart; a renban line's digits that
-// repeat, or all of them once they spread wider than the line is long; and
+// repeat, or all of them once they spread wider than the line is long; two
+// digits the same way in from either end of a palindrome line that differ;
 // the two digits either side of a dot or an XV mark they break; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
 // fill it to some other sum; a Little Killer diagonal's digits once they go
@@ -127,6 +130,14 @@ export function clashes(grid, variant = null) {
     const digits = filled.map((c) => grid[c]);
     if (Math.max(...digits) - Math.min(...digits) >= t.length) filled.forEach((c) => out.add(c));
     filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
+  }
+  for (const t of variant?.palindromes ?? []) {
+    for (let i = 0, j = t.length - 1; i < j; i++, j--) {
+      if (grid[t[i]] && grid[t[j]] && grid[t[i]] !== grid[t[j]]) {
+        out.add(t[i]);
+        out.add(t[j]);
+      }
+    }
   }
   for (const { cells, mark } of [...(variant?.dots ?? []), ...(variant?.xvs ?? [])]) {
     const [a, b] = cells;
@@ -232,7 +243,8 @@ export const MIN_CLUES = 17;
 
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
-// "cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs",
+// "cages", "thermos", "arrows", "whispers", "renbans", "palindromes",
+// "dots", "xvs",
 // "sandwiches", "littles", "skyscrapers", "xsums" or "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
@@ -269,6 +281,10 @@ export function checkClues(clues, variant = null) {
   if (variant?.renbans?.length) {
     const problem = renbanProblem(variant.renbans);
     if (problem) return { ok: false, why: "renbans", problem };
+  }
+  if (variant?.palindromes?.length) {
+    const problem = palindromeProblem(variant.palindromes);
+    if (problem) return { ok: false, why: "palindromes", problem };
   }
   if (variant?.dots?.length) {
     const problem = dotProblem(variant.dots);
