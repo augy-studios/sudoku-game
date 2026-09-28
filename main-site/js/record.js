@@ -23,14 +23,15 @@ import { PEERS } from "./sudoku.js";
 export const KINDS = ["p", "e", "n", "h", "u", "s"];
 export const MAX_ACTIONS = 2000;
 
-function apply(values, notes, a, solution) {
+// peers: the cells a placed digit clears that note from.
+function apply(values, notes, a, solution, peers) {
   const { k, c } = a;
   if (k === "p" || k === "h") {
     const d = k === "h" ? solution[c] : a.d;
     values[c] = d;
     notes[c] = 0;
     const bit = 1 << d;
-    for (const o of PEERS[c]) notes[o] &= ~bit;
+    for (const o of peers[c]) notes[o] &= ~bit;
   } else if (k === "e") {
     if (values[c]) values[c] = 0;
     else notes[c] = 0;
@@ -61,12 +62,15 @@ const isComplete = (values, solution) => values.every((v, i) => v === solution[i
 
 // Replays `log` over the puzzle. Stops at the first action that cannot be
 // played and says where. With `frames`, also returns the grid after every
-// action, for the replay.
+// action, for the replay. `peers`, for each cell those a digit placed there
+// clears its note from: its row, column and box unless a Jigsaw's regions
+// take the boxes' place. Notes never count for the score, so the API can
+// leave it out.
 //
 // steps[i] says what action i did: ok (a placed digit was right), credit (it
 // filled that cell correctly for the first time), and undid (the index of
 // the action an undo took back).
-export function play(puzzle, solution, log, { frames = false } = {}) {
+export function play(puzzle, solution, log, { frames = false, peers = PEERS } = {}) {
   let values = puzzle.slice();
   let notes = new Array(81).fill(0);
   const credited = new Array(81).fill(false);
@@ -112,7 +116,7 @@ export function play(puzzle, solution, log, { frames = false } = {}) {
       // cleared, such as notes a placed digit took out of its row.
       values = puzzle.slice();
       notes = new Array(81).fill(0);
-      for (const j of standing) apply(values, notes, log[j], solution);
+      for (const j of standing) apply(values, notes, log[j], solution, peers);
     } else {
       if (a.k === "p") step.ok = a.d === solution[a.c];
       if ((a.k === "p" && step.ok) || a.k === "h") {
@@ -120,7 +124,7 @@ export function play(puzzle, solution, log, { frames = false } = {}) {
         credited[a.c] = true;
       }
       standing.push(i);
-      apply(values, notes, a, solution);
+      apply(values, notes, a, solution, peers);
       if (a.k === "s") solved = true;
     }
     steps.push(step);

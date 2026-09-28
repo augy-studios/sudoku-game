@@ -52,6 +52,8 @@ export const icons = {
   arrow: svg(`<circle cx="7.5" cy="16.5" r="3.5"/><path d="M10 14 19 5M13.5 5H19v5.5"/>`),
   // A line zigzagging high and low, as whispers' digits do.
   whisper: svg(`<path d="M4 17 8.5 7l4 10 4-10L20 15" stroke-width="2.6"/>`),
+  // A grid cut into two uneven regions, as a Jigsaw's are.
+  jigsaw: svg(`<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h6v-4h4v8h6" stroke-width="2.4"/>`),
   // A corner of the grid, with a clue outside it and an arrow in.
   outside: svg(`<path d="M9 21V9h12" stroke-width="1.4"/><path d="M4 4l4 4M8 5v3H5"/><path d="M13 13h4v4h-4z" stroke-width="1.2"/>`),
   // A white dot and a black one, either side of a cell's edge.

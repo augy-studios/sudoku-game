@@ -4,6 +4,7 @@
 // undos, so a player can see where a game went wrong.
 
 import { play, cellName } from "./record.js";
+import { layout } from "./variant.js";
 import { escapeHtml, hydrateIcons, store } from "./ui.js";
 
 const STEP_MS = 700;
@@ -69,7 +70,8 @@ export class Replay {
   }
 
   // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
-  // whispers?, renbans?, dots?, xvs?, sandwiches?, littles?, rules? }.
+  // whispers?, renbans?, dots?, xvs?, sandwiches?, littles?, skyscrapers?,
+  // xsums?, regions?, rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
   load(game, view, { autoplay = false } = {}) {
@@ -77,7 +79,9 @@ export class Replay {
     this.active = true;
     this.game = game;
     this.view = view;
-    const result = play(game.puzzle, game.solution, game.log, { frames: true });
+    // A Jigsaw's notes clear along its regions, as in the game.
+    const peers = game.regions ? layout(0, game.regions).peers : undefined;
+    const result = play(game.puzzle, game.solution, game.log, { frames: true, peers });
     this.frames = result.frames;
     this.marks = game.log.slice(0, result.steps.length).map((a, i) => describe(a, result.steps[i], game.log, game.players));
 
@@ -126,7 +130,10 @@ export class Replay {
       xvs: this.game.xvs ?? null,
       sandwiches: this.game.sandwiches ?? null,
       littles: this.game.littles ?? null,
-      margin: Boolean(this.game.sandwiches || this.game.littles),
+      skyscrapers: this.game.skyscrapers ?? null,
+      xsums: this.game.xsums ?? null,
+      regions: this.game.regions ?? null,
+      margin: Boolean(this.game.sandwiches || this.game.littles || this.game.skyscrapers || this.game.xsums),
     });
     $("rpScrub").value = String(i);
     const total = this.frames.length - 1;

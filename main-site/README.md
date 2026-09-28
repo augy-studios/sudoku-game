@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, Kropki dots, XV marks, Sandwich and Little Killer clues, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -81,9 +81,8 @@ network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
 board, on or off in any mix: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Kropki, XV, Sandwich, Little Killer, Diagonal (both
-long diagonals hold 1
-to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
+Whispers), Renban, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
+X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
 and windows tinted, on the board and in a saved image; the anti rules have
@@ -93,14 +92,15 @@ king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, T, A, S, R, P, V, B, L, D, N, G and
-W, always in that order, as in `KD-H-...`; a seed with K, T, A, S, R, P,
-V, B or L carries its cages, thermometers, arrows, whisper lines, renban
-lines, dots, XV marks, Sandwich sums or Little Killer sums in its body too
-(a line as its length, its first cell and each step's direction; dots and
-marks as a list of their sides, or past 27 of them every side's mark,
-whichever is shorter; Sandwich sums as every row's and column's sum or
-none; Little Killer sums as each one's first cell, way and sum), and the
+seed starts with its rules' letters, K, T, A, S, R, P, V, B, L, Y, U, J,
+D, N, G and W, always in that order, as in `KD-H-...`; a seed with any
+before D carries that part in its body too: cages, thermometers, arrows,
+whisper lines, renban lines, dots, XV marks, Sandwich sums, Little Killer
+sums, Skyscraper counts, X-Sums or regions (a line as its length, its first
+cell and each step's direction; dots, marks, Skyscraper counts and X-Sums
+as a list, or every side's or view's value, whichever is shorter; Sandwich
+sums as every row's and column's sum or none; Little Killer sums as each
+one's first cell, way and sum; regions as which neighbours share one). The
 others' carry the clues only.
 
 Some mixes of the switch rules have no grid at all, whatever else is on:
@@ -166,7 +166,7 @@ digits between that line's 1 and 9, 0 when they sit side by side. A Little
 Killer sum, anywhere round the edge, adds up the whole diagonal its small
 arrow points along, and digits may repeat on it. The Outside tool puts
 them down: tap a spot in the margin (tapping one opens the tool), type the
-sum, and Add sum; Turn switches a spot between a Sandwich sum and each
+sum, and Add; Turn switches a spot between a Sandwich sum and each
 diagonal it could point along, and a spot holds one clue. The solver tries
 each place a sandwich's 1 and 9 could take and keeps what the cells between
 could add up to with different digits 2 to 8; a Little Killer diagonal it
@@ -174,6 +174,33 @@ squeezes as it does an arrow. A sandwich or diagonal past its sum, or full
 at some other sum, shows as a clash. Near its last clues a Little Killer
 puzzle can take the checker its whole budget, about a second, to give up
 on.
+
+**Skyscrapers and X-Sums.** Their clues go beside a row or column on any
+side, in the same margin and with the same Outside tool; where a spot could
+take more than one kind, Turn steps through them. A Skyscraper count says
+how many digits are seen from that side, each taller than every one
+before; it is drawn in a small square. An X-Sum says what the first X
+digits from that side add up to, X being the first of them; it is drawn in
+a small circle. The solver keeps a Skyscraper view's cells no taller than
+the count allows (the cell k places in at most 10 minus the count plus k),
+and checks the digits placed from the clue on against it; X-Sums it treats
+as a Sandwich, trying each X. Too many seen, or the 9 in with some other
+number seen, or an X-Sum past its sum or full at another, show as clashes.
+
+**Jigsaw.** Nine regions of nine cells take the boxes' place: each holds 1
+to 9, and the boxes are no houses. In variant.js a Jigsaw's regions are
+houses in the boxes' place, so hints name them ("the region holding row 4,
+column 1") and every other rule works with them; the anti rules' extra
+pairs are worked out against them too. On the board and in a saved image
+the boxes lose their heavy edges and tint, and each region gets a heavy
+line round it. The Regions tool cuts them: turning Jigsaw on starts from
+the boxes, tapping a cell picks its region, and tapping other cells moves
+them into it; Back to boxes starts again. Check says first if a region is
+not nine cells, joined edge to edge. Not every way of cutting the grid has
+any grid that fits, and the checker can take its whole budget to give up
+on one that has none. In a game, a placed digit clears its note from the
+cells of its region, not its box (play() in record.js takes the peers to
+clear; the API leaves them out, as notes never score).
 
 **Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
 sum from the pad, the keyboard or the sum box, and adds the cage; tapping a

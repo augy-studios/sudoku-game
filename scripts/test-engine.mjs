@@ -26,6 +26,12 @@ import {
   xvProblem,
   sandwichProblem,
   littleProblem,
+  skyscraperProblem,
+  xsumProblem,
+  regionProblem,
+  sortRegions,
+  seen,
+  VIEWS,
   diagonalFrom,
   SANDWICH_LINES,
   markKeeps,
@@ -869,15 +875,117 @@ const littleOf = (solution, cells) => ({ cells, sum: cells.reduce((t, c) => t + 
 // Some of a solved grid's Sandwich clues, each line with chance `p`.
 const laySandwiches = (solution, rand, p) => [...Array(18).keys()].filter(() => rand() < p).map((line) => sandwichOf(solution, line));
 // Some of its Little Killer clues, at most one from each spot.
-function layLittles(solution, rand, p) {
-  const spots = new Set();
+// The margin spot a clue sits in, as "r,c", -1 and 9 being just outside.
+const littleSpot = (cells) => `${Math.floor(cells[0] / 9) * 2 - Math.floor(cells[1] / 9)},${(cells[0] % 9) * 2 - (cells[1] % 9)}`;
+const viewSpot = (view) => {
+  const i = view % 9;
+  return [`${i},-1`, `-1,${i}`, `${i},9`, `9,${i}`][Math.floor(view / 9)];
+};
+
+// Some of its Little Killer clues, at most one from each spot, skipping
+// spots in `taken`.
+function layLittles(solution, rand, p, taken = new Set()) {
   return LITTLE_SPOTS.filter((cells) => {
-    const spot = `${cells[0] - (cells[1] - cells[0])}`;
-    if (spots.has(spot) || rand() >= p) return false;
-    spots.add(spot);
+    const spot = littleSpot(cells);
+    if (taken.has(spot) || rand() >= p) return false;
+    taken.add(spot);
     return true;
   }).map((cells) => littleOf(solution, cells));
 }
+
+// A solved grid's Skyscraper and X-Sum clues for a view.
+const skyscraperOf = (solution, view) => ({ view, count: seen(VIEWS[view].map((c) => solution[c])) });
+function xsumOf(solution, view) {
+  const digits = VIEWS[view].map((c) => solution[c]);
+  return { view, sum: digits.slice(0, digits[0]).reduce((t, d) => t + d, 0) };
+}
+// Some of them, each of `views` with chance `p`, skipping spots in `taken`.
+function layViews(solution, rand, of, p, views = [...VIEWS.keys()], taken = new Set()) {
+  return views
+    .filter((view) => {
+      if (taken.has(viewSpot(view)) || rand() >= p) return false;
+      taken.add(viewSpot(view));
+      return true;
+    })
+    .map((view) => of(solution, view));
+}
+
+// Checks clues of one kind on views: a puzzle made with some of them needs
+// them, candidates and steps keep the answer, and the seed carries them.
+function viewCluesAgree(key, letter, of, x) {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(x);
+  const clues = layViews(solution, rand, of, 0.5);
+  const variant = { [key]: clues };
+  assert.equal(clashes(solution, variant).size, 0);
+  const puzzle = thinOut(solution, variant, rand, { untilHard: true });
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, `${key}: needs the clues`);
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `${key}: candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, new RegExp(`^${letter}-[EMHX]-`));
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back[key], clues);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  // Every view's clue reads back too, the other way the seed can hold them.
+  const all = VIEWS.map((_, view) => of(solution, view));
+  assert.deepEqual(parseSeed(madeSeed("H", solution, { [key]: all }).text)[key], all);
+  return { puzzle, solution };
+}
+
+test("Skyscraper clues are checked, solved and carried in seeds", () => {
+  assert.equal(skyscraperProblem([{ view: 0, count: 1 }, { view: 35, count: 9 }]), null);
+  assert.equal(skyscraperProblem([{ view: 36, count: 3 }]).why, "view");
+  assert.equal(skyscraperProblem([{ view: 3, count: 0 }]).why, "count");
+  assert.equal(skyscraperProblem([{ view: 3, count: 2 }, { view: 3, count: 4 }]).why, "twice");
+  assert.equal(seen([2, 1, 5, 3, 9, 4]), 3);
+
+  const empty = new Array(81).fill(0);
+  // 1 is the 9 first; 9 is 1 to 9 in order, each at most its place.
+  assert.equal(variantCandidates(empty, { skyscrapers: [{ view: 0, count: 1 }] })[0], 1 << 9);
+  const nine = variantCandidates(empty, { skyscrapers: [{ view: 18, count: 9 }] });
+  assert.equal(nine[8], 1 << 1, "from the right, the first is the rightmost");
+  assert.equal(nine[7], (1 << 1) | (1 << 2));
+  assert.equal(variantCandidates(empty, { skyscrapers: [{ view: 9, count: 3 }] })[0] & ((1 << 8) | (1 << 9)), 0, "3 seen: the first is at most 7");
+  // 3 and 5 seen, one short of 3: the next is the 9, or no taller than 5.
+  const row = empty.slice();
+  row[0] = 3;
+  row[1] = 5;
+  assert.equal(variantCandidates(row, { skyscrapers: [{ view: 0, count: 3 }] })[2] & ((1 << 6) | (1 << 7) | (1 << 8)), 0);
+  row[2] = 9;
+  assert.deepEqual([...clashes(row, { skyscrapers: [{ view: 0, count: 2 }] })], [0, 1, 2]);
+  assert.equal(clashes(row, { skyscrapers: [{ view: 0, count: 3 }] }).size, 0);
+  assert.deepEqual([...clashes(row, { skyscrapers: [{ view: 0, count: 4 }] })], [0, 1, 2], "the 9 is in, and only 3 are seen");
+
+  viewCluesAgree("skyscrapers", "Y", skyscraperOf, 37);
+});
+
+test("X-Sum clues are checked, solved and carried in seeds", () => {
+  assert.equal(xsumProblem([{ view: 0, sum: 1 }, { view: 35, sum: 45 }]), null);
+  assert.equal(xsumProblem([{ view: 3, sum: 46 }]).why, "sum");
+
+  const empty = new Array(81).fill(0);
+  assert.equal(variantCandidates(empty, { xsums: [{ view: 0, sum: 1 }] })[0], 1 << 1);
+  assert.equal(variantCandidates(empty, { xsums: [{ view: 0, sum: 45 }] })[0], 1 << 9);
+  // 3 is a 2 and then a 1: a 1 alone would make 1, and a 3 first at least 6.
+  const three = variantCandidates(empty, { xsums: [{ view: 9, sum: 3 }] });
+  assert.equal(three[0], 1 << 2);
+  assert.equal(three[9], 1 << 1);
+  const row = empty.slice();
+  row[8] = 3;
+  row[7] = 4;
+  row[6] = 5;
+  assert.deepEqual([...clashes(row, { xsums: [{ view: 18, sum: 10 }] })].sort((a, b) => a - b), [6, 7, 8]);
+  assert.equal(clashes(row, { xsums: [{ view: 18, sum: 12 }] }).size, 0);
+  row[6] = 0;
+  assert.equal(clashes(row, { xsums: [{ view: 18, sum: 10 }] }).size, 0, "not yet full");
+
+  viewCluesAgree("xsums", "U", xsumOf, 41);
+  assert.equal(seedVariantName("BLYUD-H-BBBB"), "Sandwich, Little Killer, Skyscrapers, X-Sums, Diagonal");
+});
 
 test("Sandwich clues are checked, solved and carried in seeds", () => {
   assert.equal(sandwichProblem([{ line: 0, sum: 0 }, { line: 17, sum: 35 }]), null);
@@ -973,6 +1081,118 @@ test("Little Killer clues are checked, solved and carried in seeds", () => {
   assert.equal(seedVariantName("KTASRPVBLD-H-BBBB"), "Killer, Thermo, Arrow, German Whispers, Renban, Kropki, XV, Sandwich, Little Killer, Diagonal");
 });
 
+// Jigsaw regions: the boxes, with cells swapped between neighbouring
+// regions `swaps` times, each swap kept only if both regions stay joined.
+function jigsawRegions(rand, swaps) {
+  const regions = [...Array(81).keys()].map((c) => Math.floor(c / 27) * 3 + Math.floor((c % 9) / 3));
+  const beside = (c) => [c - 9, c + 9, c % 9 ? c - 1 : -1, c % 9 < 8 ? c + 1 : -1].filter((o) => o >= 0 && o < 81);
+  for (let done = 0, tries = 0; done < swaps && tries < swaps * 50; tries++) {
+    const a = Math.floor(rand() * 81);
+    const across = beside(a).filter((o) => regions[o] !== regions[a]);
+    if (!across.length) continue;
+    const other = regions[across[Math.floor(rand() * across.length)]];
+    const back = [...Array(81).keys()].filter((b) => regions[b] === other && beside(b).some((o) => regions[o] === regions[a] && o !== a));
+    if (!back.length) continue;
+    const b = back[Math.floor(rand() * back.length)];
+    const next = regions.slice();
+    [next[a], next[b]] = [regions[b], regions[a]];
+    if (regionProblem(next)) continue;
+    regions.splice(0, 81, ...next);
+    done++;
+  }
+  return sortRegions(regions);
+}
+
+test("Jigsaw regions are checked, solved and carried in seeds", () => {
+  const boxes = sortRegions([...Array(81).keys()].map((c) => Math.floor(c / 27) * 3 + Math.floor((c % 9) / 3)));
+  assert.equal(regionProblem(boxes), null);
+  assert.equal(regionProblem(boxes.slice(0, 80)).why, "cell");
+  const big = boxes.slice();
+  big[3] = 0;
+  assert.deepEqual(regionProblem(big), { why: "size", region: 0, size: 10 });
+  // Two cells of box 0 swapped for two of box 1 that do not touch it.
+  const split = boxes.slice();
+  split[20] = 1;
+  split[5] = 0;
+  assert.equal(regionProblem(split).why, "apart");
+  assert.deepEqual(sortRegions([5, 5, 2, 7, 2]), [0, 0, 1, 2, 1]);
+
+  // Not every way of cutting the grid has a grid to fit it, and the checker
+  // can spend its whole budget finding that out, so these regions are ones
+  // known to have one.
+  const regions = jigsawRegions(seeded(2), 60);
+  const rand = seeded(43);
+  assert.equal(regionProblem(regions), null);
+  assert.notDeepEqual(regions, boxes, "moved off the boxes");
+  const { houses } = layout(0, regions);
+  assert.deepEqual(houses.slice(18).map((h) => h.kind), new Array(9).fill("region"));
+
+  const solution = variantSolve(new Array(81).fill(0), { regions });
+  assert.ok(solution, "a grid fits the regions");
+  for (const h of houses) assert.equal(new Set(h.cells.map((c) => solution[c])).size, 9, `${h.kind} ${h.index}`);
+  const variant = { regions };
+  assert.equal(clashes(solution, variant).size, 0);
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the regions");
+  stepsAgree(puzzle, solution, variant);
+  // A repeat in a region clashes; one in a box that is no region does not.
+  const moved = regions.findIndex((r, c) => r !== boxes[c]);
+  const mate = regions.findIndex((r, c) => r === regions[moved] && c !== moved && Math.floor(c / 9) !== Math.floor(moved / 9) && c % 9 !== moved % 9);
+  const twice = new Array(81).fill(0);
+  twice[moved] = 4;
+  twice[mate] = 4;
+  assert.deepEqual([...clashes(twice, variant)].sort((a, b) => a - b), [moved, mate].sort((a, b) => a - b));
+  const boxMate = boxes.findIndex((b, c) => b === boxes[moved] && regions[c] !== regions[moved] && Math.floor(c / 9) !== Math.floor(moved / 9) && c % 9 !== moved % 9);
+  const boxed = new Array(81).fill(0);
+  boxed[moved] = 4;
+  boxed[boxMate] = 4;
+  assert.equal(clashes(boxed, variant).size, 0, "boxes are no house in a Jigsaw");
+  assert.equal(clashes(boxed).size, 2);
+  // A digit clears its note from its region's cells, not its box's, when
+  // the game hands play() the region peers.
+  const blank = new Array(81).fill(0);
+  const notesOf = (peers, other) =>
+    play(blank, solution, [
+      { k: "n", c: other, d: 4, t: 0, b: 0 },
+      { k: "p", c: moved, d: 4, t: 1, b: 0 },
+    ], { peers }).notes[other];
+  const regionPeers = layout(0, regions).peers;
+  assert.equal(notesOf(regionPeers, mate), 0, "cleared in the region");
+  assert.equal(notesOf(regionPeers, boxMate), 1 << 4, "kept in the box");
+  assert.equal(notesOf(undefined, boxMate), 0, "classic play clears the box");
+
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^J-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.regions, regions);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  // Regions numbered any other way make the same seed.
+  assert.equal(madeSeed("H", puzzle, { regions: regions.map((r) => 8 - r) }).text, madeSeed("H", puzzle, variant).text);
+  assert.equal(seedVariantName("KJD-H-BBBB"), "Killer, Jigsaw, Diagonal");
+
+  // With drawn parts too: cages, lines, marks and clues outside, on the
+  // Jigsaw's own grid.
+  const cages = layCages(solution, rand, 5);
+  const used = new Set();
+  const lines = { count: 3, max: 5, used };
+  const thermos = layLines(solution, rand, (line, o, sol) => sol[o] > sol[line.at(-1)], lines);
+  const whispers = layLines(solution, rand, fitsWhisper, lines);
+  const dots = layEdges(solution, rand, ["white", "black"], 0.15);
+  const taken = new Set();
+  const sandwiches = laySandwiches(solution, rand, 0.2).filter((w) => !taken.has(viewSpot(w.line)) && taken.add(viewSpot(w.line)));
+  const skyscrapers = layViews(solution, rand, skyscraperOf, 0.2, [...VIEWS.keys()].slice(18), taken);
+  const all = { regions, cages, thermos, whispers, dots, sandwiches, skyscrapers };
+  assert.equal(clashes(solution, all).size, 0);
+  const sparse = thinOut(solution, all, rand);
+  assert.equal(checkClues(sparse, all).ok, true);
+  stepsAgree(sparse, solution, all);
+  const mixed = parseSeed(madeSeed("H", sparse, all).text);
+  assert.match(mixed.text, /^KTSPBYJ-H-/);
+  for (const list of Object.keys(all)) assert.deepEqual(mixed[list], all[list], list);
+});
+
 // Cages laid through a solved grid: `count` of them, two to four cells
 // joined edge to edge with no digit twice, none sharing a cell.
 function layCages(solution, rand, count) {
@@ -1046,11 +1266,17 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
     const xvs = layEdges(solution, rand, ["x", "v"], 0.3, sides);
+    // Clues outside the grid, never two in one spot: sandwiches left and
+    // above, skyscrapers and X-sums right and below.
     const sandwiches = laySandwiches(solution, rand, 0.25);
-    const littles = layLittles(solution, rand, 0.1);
-    const variant = { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules };
+    const taken = new Set(sandwiches.map((w) => viewSpot(w.line)));
+    const skyscrapers = layViews(solution, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
+    const xsums = layViews(solution, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken);
+    const littles = layLittles(solution, rand, 0.1, taken);
+    const variant = { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
     const name = keys.join(", ");
-    for (const list of ["thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles"]) assert.ok(variant[list].length, `${name}: some ${list}`);
+    const lists = ["thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+    for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
     const puzzle = thinOut(solution, variant, rand);
@@ -1062,12 +1288,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASRPVBL" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASRPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     assert.deepEqual(puzzleFor(back).solution, solution);
   }
 });

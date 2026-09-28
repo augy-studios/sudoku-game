@@ -11,9 +11,10 @@
 // `made: true`, and scores only on its own board. A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
 // T for thermometers, A for arrows, S for German Whispers lines, R for
-// renban lines, P for Kropki dots, V for XV marks, B for Sandwich clues and
-// L for Little Killer clues, which the seed then carries too, and D, N, G
-// and W for the switch rules (variant.js).
+// renban lines, P for Kropki dots, V for XV marks, B for Sandwich clues, L
+// for Little Killer clues, Y for Skyscraper clues, U for X-Sum clues and J
+// for a Jigsaw's regions, which the seed then carries too, and D, N, G and
+// W for the switch rules (variant.js).
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
 import { generate, solve, countSolutions, COL } from "./sudoku.js";
@@ -29,6 +30,11 @@ import {
   xvProblem,
   sandwichProblem,
   littleProblem,
+  skyscraperProblem,
+  xsumProblem,
+  regionProblem,
+  sortRegions,
+  VIEWS,
   diagonalFrom,
   SANDWICH_MAX,
   DOT_MARKS,
@@ -158,9 +164,13 @@ function decodeGrid(body) {
    shorter: how many, and for each its side and which of the two marks it
    is; or for every side, its mark or none. Then Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
-   many, and for each its first cell, which way it runs and its sum. Each
-   part is there only when the seed's letters say so, so a seed from before
-   a part came reads as it did. */
+   many, and for each its first cell, which way it runs and its sum. Then
+   Skyscraper clues, and then X-Sum clues, as whichever is shorter: how
+   many, and for each its view and its value; or for every view, its value
+   or none. Then a Jigsaw's regions: for each pair of neighbours, whether
+   they share a region, which gives back the regions as the shared edges
+   give back cages. Each part is there only when the seed's letters say
+   so, so a seed from before a part came reads as it did. */
 
 function packDigits(digits) {
   let n = 0n;
@@ -344,6 +354,63 @@ function readLittles(take) {
   return out;
 }
 
+// Clues on views, their value under `key` from 1 to `most`: a flag, then
+// either how many and each one's view and value, or every view's value, 0
+// for none; whichever is shorter.
+function writeViews(digits, clues, key, most) {
+  const values = new Map(clues.map((clue) => [clue.view, clue[key]]));
+  const listed = Math.log2(VIEWS.length + 1) + values.size * Math.log2(VIEWS.length * most);
+  if (listed <= VIEWS.length * Math.log2(most + 1)) {
+    digits.push([0, 2], [values.size, VIEWS.length + 1]);
+    for (const view of [...values.keys()].sort((a, b) => a - b)) digits.push([view, VIEWS.length], [values.get(view) - 1, most]);
+  } else {
+    digits.push([1, 2]);
+    VIEWS.forEach((_, view) => digits.push([values.get(view) ?? 0, most + 1]));
+  }
+}
+
+// The other way, from `take`, which reads the next digit.
+function readViews(take, key, most) {
+  const out = [];
+  if (take(2)) {
+    VIEWS.forEach((_, view) => {
+      const value = take(most + 1);
+      if (value) out.push({ view, [key]: value });
+    });
+  } else {
+    const count = take(VIEWS.length + 1);
+    for (let i = 0; i < count; i++) out.push({ view: take(VIEWS.length), [key]: take(most) + 1 });
+  }
+  return out;
+}
+
+// A Jigsaw's regions: for each pair of neighbours, whether they share one.
+function writeRegions(digits, regions) {
+  for (const [a, b] of SIDES) digits.push([regions[a] === regions[b] ? 1 : 0, 2]);
+}
+
+// The other way: cells joined where they share, numbered in order of their
+// first cell. Checking them after refuses a seed whose regions are not
+// nine of nine.
+function readRegions(take) {
+  const root = [...Array(81).keys()];
+  const find = (c) => (root[c] === c ? c : (root[c] = find(root[c])));
+  for (const [a, b] of SIDES) if (take(2)) root[find(a)] = find(b);
+  return sortRegions([...Array(81).keys()].map(find));
+}
+
+// Clues on views in order of their views, each a copy.
+const sortViews = (clues) => clues.map((clue) => ({ ...clue })).sort((a, b) => a.view - b.view);
+const views = (list, letter, name, problem, key, most) => ({
+  list,
+  letter,
+  name,
+  problem,
+  write: (digits, clues) => writeViews(digits, clues, key, most),
+  read: (take) => readViews(take, key, most),
+  sort: sortViews,
+});
+
 const sortSandwiches = (sandwiches) => sandwiches.map((s) => ({ line: s.line, sum: s.sum })).sort((a, b) => a.line - b.line);
 // By first cell, then by second, which is which way each runs.
 const sortLittles = (littles) =>
@@ -421,6 +488,9 @@ const PARTS = [
   edges("xvs", "V", "XV", xvProblem, XV_MARKS),
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
   { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
+  views("skyscrapers", "Y", "Skyscrapers", skyscraperProblem, "count", 9),
+  views("xsums", "U", "X-Sums", xsumProblem, "sum", 45),
+  { list: "regions", letter: "J", name: "Jigsaw", problem: regionProblem, write: writeRegions, read: readRegions, sort: sortRegions },
 ];
 
 // The letters that start a variant seed, in this order.
@@ -435,8 +505,9 @@ function prefixFor(parts, rules) {
 }
 
 // The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
-// renbans, dots, xvs, sandwiches, littles, rules } for a variant puzzle
-// (variant.js), or nothing for a classic one. `level` is
+// renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions,
+// rules } for a variant puzzle (variant.js), or nothing for a classic one.
+// `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.
 export function madeSeed(level, grid, variant = null) {

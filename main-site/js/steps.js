@@ -5,8 +5,9 @@
 // the same as a cell's notes, so the board can draw one as the other.
 //
 // Each takes a variant, { cages, thermos, arrows, whispers, renbans, dots,
-// xvs, sandwiches, littles, rules } (variant.js), as an optional last
-// argument; without one the rules are the classic ones.
+// xvs, sandwiches, littles, skyscrapers, xsums, regions, rules }
+// (variant.js), as an optional last argument; without one the rules are the
+// classic ones.
 
 import { PEERS, countSolutions, findSolutions } from "./sudoku.js";
 import {
@@ -22,15 +23,25 @@ import {
   xvProblem,
   sandwichProblem,
   littleProblem,
+  skyscraperProblem,
+  xsumProblem,
+  regionProblem,
   markKeeps,
+  seen,
   SANDWICH_LINES,
+  VIEWS,
 } from "./variant.js";
 
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles"];
-const isVariant = (v) => Boolean(v?.rules || DRAWN.some((list) => v?.[list]?.length));
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+// A Jigsaw's regions, or null; a seed without them reads them as empty.
+const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
+const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
+// The cells each cell must differ from: its row, column and box, or under a
+// variant its region and the rules' too.
+const peersOf = (v) => (v?.rules || regionsOf(v) ? layout(v.rules ?? 0, regionsOf(v)).peers : PEERS);
 
 // 81 cells in reading order: digits for clues, 0 or . for blanks. Anything
 // else, such as spaces and grid lines, is skipped.
@@ -53,7 +64,8 @@ export function bitCount(mask) {
 }
 
 // Cells whose digit is also in a cell it must differ from: its row, column
-// and box, and under the variant's rules its diagonal, window, a knight's
+// and box, or a Jigsaw's region, and under the variant's rules its
+// diagonal, window, a knight's
 // move or a king's diagonal step away, or its cage; the digits of a cage
 // that go past its sum, or that fill it to some other sum; the digits of
 // a thermometer that do not rise fast enough from the bulb: two cells three
@@ -64,10 +76,13 @@ export function bitCount(mask) {
 // repeat, or all of them once they spread wider than the line is long; and
 // the two digits either side of a dot or an XV mark they break; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
-// fill it to some other sum; and a Little Killer diagonal's digits once
-// they go past its sum, or fill it to some other sum.
+// fill it to some other sum; a Little Killer diagonal's digits once they go
+// past its sum, or fill it to some other sum; the digits of a Skyscraper
+// view, from the clue on, once more can be seen than it counts, or once
+// they reach its 9 and some other number can; and an X-Sum's first X
+// digits once they go past its sum, or fill it to some other.
 export function clashes(grid, variant = null) {
-  const peers = variant?.rules ? layout(variant.rules).peers : PEERS;
+  const peers = peersOf(variant);
   const out = new Set();
   for (let c = 0; c < 81; c++) {
     if (grid[c] && peers[c].some((o) => grid[o] === grid[c])) out.add(c);
@@ -135,6 +150,23 @@ export function clashes(grid, variant = null) {
     const total = filled.reduce((t, c) => t + grid[c], 0);
     if (total > sum || (filled.length === cells.length && total !== sum)) filled.forEach((c) => out.add(c));
   }
+  for (const { view, count } of variant?.skyscrapers ?? []) {
+    const cells = VIEWS[view];
+    // The digits from the clue on, up to the first gap.
+    const gap = cells.findIndex((c) => !grid[c]);
+    const run = gap < 0 ? cells : cells.slice(0, gap);
+    const digits = run.map((c) => grid[c]);
+    const shown = seen(digits);
+    if (shown > count || (digits.includes(9) && shown !== count)) run.forEach((c) => out.add(c));
+  }
+  for (const { view, sum } of variant?.xsums ?? []) {
+    const cells = VIEWS[view];
+    const x = grid[cells[0]];
+    if (!x) continue;
+    const filled = cells.slice(0, x).filter((c) => grid[c]);
+    const total = filled.reduce((t, c) => t + grid[c], 0);
+    if (total > sum || (filled.length === x && total !== sum)) filled.forEach((c) => out.add(c));
+  }
   return out;
 }
 
@@ -155,14 +187,15 @@ export function candidates(grid, variant = null) {
 // Every cell that can be filled by looking, in reading order and then house
 // order: { c, d, kind: "single" } where only one digit fits the cell, and
 // { c, d, kind: "hidden", unit } where a digit has one place left in a
-// house: a row, column or box, or a variant's diagonal or window. A unit is
+// house: a row, column or box, a Jigsaw's region, or a variant's diagonal
+// or window. A unit is
 // { kind, index, cells }.
 function* steps(grid, variant) {
   const cand = candidates(grid, variant);
   for (let c = 0; c < 81; c++) {
     if (!grid[c] && bitCount(cand[c]) === 1) yield { c, d: DIGITS.find((d) => cand[c] === 1 << d), kind: "single" };
   }
-  for (const unit of layout(variant?.rules ?? 0).houses) {
+  for (const unit of layout(variant?.rules ?? 0, regionsOf(variant)).houses) {
     for (const d of DIGITS) {
       const bit = 1 << d;
       let spot = -1;
@@ -200,8 +233,8 @@ export const MIN_CLUES = 17;
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
 // "cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs",
-// "sandwiches" or "littles" (and problem, from cageProblem, thermoProblem
-// and so on),
+// "sandwiches", "littles", "skyscrapers", "xsums" or "regions" (and
+// problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
 // of the answers disagree on, and the two digits they put there). A
@@ -211,6 +244,10 @@ export const MIN_CLUES = 17;
 export function checkClues(clues, variant = null) {
   const killer = Boolean(variant?.cages?.length);
   const n = clues.filter(Boolean).length;
+  // A Jigsaw's regions first: until they are nine of nine, nothing else
+  // about the puzzle means much.
+  const regionsWrong = regionsOf(variant) && regionProblem(variant.regions);
+  if (regionsWrong) return { ok: false, why: "regions", problem: regionsWrong };
   if (!n && !DRAWN.some((list) => variant?.[list]?.length)) return { ok: false, why: "empty" };
   if (clashes(clues, variant).size) return { ok: false, why: "clash" };
   if (killer) {
@@ -249,6 +286,14 @@ export function checkClues(clues, variant = null) {
     const problem = littleProblem(variant.littles);
     if (problem) return { ok: false, why: "littles", problem };
   }
+  if (variant?.skyscrapers?.length) {
+    const problem = skyscraperProblem(variant.skyscrapers);
+    if (problem) return { ok: false, why: "skyscrapers", problem };
+  }
+  if (variant?.xsums?.length) {
+    const problem = xsumProblem(variant.xsums);
+    if (problem) return { ok: false, why: "xsums", problem };
+  }
   const found = isVariant(variant) ? variantSolutions(clues, variant, 2) : countSolutions(clues, 2) ? findSolutions(clues, 2) : [];
   if (!found) return { ok: false, why: "hard" };
   if (!found.length) return { ok: false, why: "none" };
@@ -265,10 +310,10 @@ export function rateLevel(clues, variant = null) {
   const grid = clues.slice();
   for (let step = nextStep(grid, null, variant); step; step = nextStep(grid, null, variant)) grid[step.c] = step.d;
   const blanks = clues.filter((d) => !d).length;
-  // A killer, sandwich or little killer puzzle usually has few clues or
-  // none, so blanks say little: what counts is how far singles get with the
-  // cages and the sums.
-  if (["cages", "sandwiches", "littles"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
+  // A killer puzzle, or one with clues outside the grid, usually has few
+  // clues or none, so blanks say little: what counts is how far singles get
+  // with the cages and the sums.
+  if (["cages", "sandwiches", "littles", "skyscrapers", "xsums"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
   if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
   return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

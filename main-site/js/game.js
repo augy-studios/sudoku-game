@@ -18,7 +18,7 @@ import { openLeaderboard, formatTime } from "./leaderboard.js";
 import { copyText, hydrateIcons, store } from "./ui.js";
 import { confetti } from "./confetti.js";
 import { openSolver } from "./solver.js";
-import { variantName } from "./variant.js";
+import { variantName, layout } from "./variant.js";
 import { puzzleText, parseGrid, checkClues, rateLevel } from "./steps.js";
 
 const GAME_STORAGE = "uwusudoku.game";
@@ -252,11 +252,11 @@ export function startGame(opts) {
     netMatch: opts.netMatch ?? 0,
     wasOver: false,
   };
-  res = play(g.puzzle, g.solution, g.log);
+  res = play(g.puzzle, g.solution, g.log, { peers: notePeers() });
   if (res.error) {
     // A saved game that no longer replays: keep what still does.
     g.log = g.log.slice(0, res.error.at);
-    res = play(g.puzzle, g.solution, g.log);
+    res = play(g.puzzle, g.solution, g.log, { peers: notePeers() });
   }
   selected = null;
   padDigit = 0;
@@ -333,11 +333,15 @@ function act(k, c = 0, d = 0) {
 
 // Adds an action to the log if it can be played. Also how the co-op host
 // applies the guest's. Times never run backwards, even if the clock does.
+// The cells a digit clears its note from: a Jigsaw's regions in the boxes'
+// place, or play's own rows, columns and boxes.
+const notePeers = () => (g.seed.regions ? layout(0, g.seed.regions).peers : undefined);
+
 export function applyAction(a) {
   if (!g || isOver()) return false;
   const last = g.log.at(-1)?.t ?? 0;
   const full = { k: a.k, c: a.c, d: a.d, b: a.b, t: Math.max(last, Date.now() - g.startedAt) };
-  const next = play(g.puzzle, g.solution, [...g.log, full]);
+  const next = play(g.puzzle, g.solution, [...g.log, full], { peers: notePeers() });
   if (next.error) return false;
   g.log.push(full);
   res = next;
@@ -499,7 +503,10 @@ function update({ fresh = false } = {}) {
       xvs: g.seed.xvs ?? null,
       sandwiches: g.seed.sandwiches ?? null,
       littles: g.seed.littles ?? null,
-      margin: Boolean(g.seed.sandwiches || g.seed.littles),
+      skyscrapers: g.seed.skyscrapers ?? null,
+      xsums: g.seed.xsums ?? null,
+      regions: g.seed.regions ?? null,
+      margin: Boolean(g.seed.sandwiches || g.seed.littles || g.seed.skyscrapers || g.seed.xsums),
     });
   }
   renderChips(over);
@@ -724,6 +731,9 @@ function finish(fresh) {
       xvs: g.seed.xvs,
       sandwiches: g.seed.sandwiches,
       littles: g.seed.littles,
+      skyscrapers: g.seed.skyscrapers,
+      xsums: g.seed.xsums,
+      regions: g.seed.regions,
       rules: g.seed.rules,
     },
     { highlightSame: s.highlight_same },
@@ -958,6 +968,9 @@ function watch(link) {
       xvs: link.seed.xvs,
       sandwiches: link.seed.sandwiches,
       littles: link.seed.littles,
+      skyscrapers: link.seed.skyscrapers,
+      xsums: link.seed.xsums,
+      regions: link.seed.regions,
       rules: link.seed.rules,
     },
     { highlightSame: getSettings().highlight_same },

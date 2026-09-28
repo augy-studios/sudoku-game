@@ -18,16 +18,17 @@
 // way with the Arrows tool, from the circle; Whispers and Renban add German
 // Whispers and renban lines, drawn the same way again with their own tools;
 // Kropki and XV add dots and X and V marks on the sides between cells, put
-// down with the Marks tool; Sandwich and Little Killer add sums outside
-// the grid, put down with the Outside tool in a margin the board leaves
-// for them; and Diagonal, Anti-knight, Anti-king and Windoku add their
+// down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
+// X-Sums add clues outside the grid, put down with the Outside tool in a
+// margin the board leaves for them; Jigsaw puts regions in the boxes'
+// place, cut with the Regions tool; and Diagonal, Anti-knight, Anti-king and Windoku add their
 // rules (variant.js). Every check, hint and candidate then follows them
 // too.
 //
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
 
-import { ROW, COL } from "./sudoku.js";
+import { ROW, COL, BOX } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
 import { madeSeed, parseSeed } from "./seed.js";
 import {
@@ -41,6 +42,9 @@ import {
   xvProblem,
   sandwichProblem,
   littleProblem,
+  skyscraperProblem,
+  xsumProblem,
+  regionProblem,
   diagonalFrom,
   SANDWICH_MAX,
   DOT_MARKS,
@@ -70,8 +74,8 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, whisper, renban, kropki, xv, sandwich, little and
-// rules are the variant's switches; cages are kept while Killer is off, for
+// killer, thermo, arrow, whisper, renban, kropki, xv, sandwich, little,
+// skyscraper, xsum, jigsaw and rules are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each kind of line, dot, mark and outside clue
 // likewise.
 const fresh = () => ({
@@ -89,6 +93,9 @@ const fresh = () => ({
   xv: false,
   sandwich: false,
   little: false,
+  skyscraper: false,
+  xsum: false,
+  jigsaw: false,
   rules: 0,
   cages: [],
   thermos: [],
@@ -99,6 +106,10 @@ const fresh = () => ({
   xvs: [],
   sandwiches: [],
   littles: [],
+  skyscrapers: [],
+  xsums: [],
+  // A Jigsaw's regions, from the boxes until the maker cuts them.
+  regions: Array.from(BOX),
 });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
@@ -126,6 +137,10 @@ let anchor = null;
 let outMode = false;
 let spot = null;
 let choice = 0;
+// The Regions tool: on, and the region cells tapped go into, if one is
+// picked.
+let regionMode = false;
+let brush = null;
 let selected = null;
 let padDigit = 0;
 let checked = false; // Check was pressed, and nothing has changed since
@@ -149,10 +164,14 @@ const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
 const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : null);
 const littles = () => (s.little && s.littles.length ? s.littles : null);
-const drawn = () => Boolean(cages() || thermos() || arrows() || whispers() || renbans() || dots() || xvs() || sandwiches() || littles());
+const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers : null);
+const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
+const regions = () => (s.jigsaw ? s.regions : null);
+const drawn = () =>
+  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
-  drawn() || s.rules
+  drawn() || s.rules || regions()
     ? {
         cages: cages() ?? [],
         thermos: thermos() ?? [],
@@ -163,6 +182,9 @@ const variant = () =>
         xvs: xvs() ?? [],
         sandwiches: sandwiches() ?? [],
         littles: littles() ?? [],
+        skyscrapers: skyscrapers() ?? [],
+        xsums: xsums() ?? [],
+        regions: regions(),
         rules: s.rules,
       }
     : null;
@@ -207,6 +229,11 @@ function load(which) {
   }
   const kept = Array.isArray(saved.cages) ? saved.cages : [];
   st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
+  // Regions part way through cutting may be uneven, so only their shape is
+  // checked.
+  st.jigsaw = saved.jigsaw === true;
+  const cut = saved.regions;
+  st.regions = Array.isArray(cut) && cut.length === 81 && cut.every((r) => Number.isInteger(r) && r >= 0 && r <= 8) ? cut : Array.from(BOX);
   if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
     st.stage = "solve";
     st.values = saved.values;
@@ -220,6 +247,7 @@ const where = (c) => `row ${ROW[c] + 1}, column ${COL[c] + 1}`;
 const WINDOW_NAMES = ["top left", "top right", "bottom left", "bottom right"];
 function unitName(u) {
   if (u.kind === "box") return `the ${BOX_NAMES[u.index]} box`;
+  if (u.kind === "region") return `the region holding ${where(u.cells[0])}`;
   if (u.kind === "diagonal") return `the diagonal from the top ${u.index ? "right" : "left"}`;
   if (u.kind === "window") return `the ${WINDOW_NAMES[u.index]} window`;
   return `${u.kind} ${u.index + 1}`;
@@ -238,7 +266,7 @@ function hintText(step, reveal) {
     const parts = [
       "row",
       "column",
-      "box",
+      regions() ? "region" : "box",
       ...(cages() ? ["cage"] : []),
       ...(thermos() ? ["thermometers"] : []),
       ...(arrows() ? ["arrows"] : []),
@@ -248,6 +276,8 @@ function hintText(step, reveal) {
       ...(xvs() ? ["X and V marks"] : []),
       ...(sandwiches() ? ["Sandwich sums"] : []),
       ...(littles() ? ["Little Killer sums"] : []),
+      ...(skyscrapers() ? ["Skyscraper counts"] : []),
+      ...(xsums() ? ["X-Sums"] : []),
     ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
@@ -272,6 +302,9 @@ function problemText(check) {
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
   if (why === "sandwiches") return SANDWICH_PROBLEMS[check.problem.why];
   if (why === "littles") return LITTLE_PROBLEMS[check.problem.why];
+  if (why === "skyscrapers") return SKYSCRAPER_PROBLEMS[check.problem.why];
+  if (why === "xsums") return XSUM_PROBLEMS[check.problem.why];
+  if (why === "regions") return regionText(check.problem);
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
@@ -301,7 +334,9 @@ function clashText() {
   if (xvs()) extra.push("not adding up to an X or a V");
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
   if (littles()) extra.push("not adding up to a Little Killer sum");
-  return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
+  if (skyscrapers()) extra.push("showing more or fewer than a Skyscraper count");
+  if (xsums()) extra.push("not adding up to an X-Sum");
+  return `The red digits clash: the same digit twice in a row, column or ${regions() ? "region" : "box"}${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
 const THERMO_PROBLEMS = {
@@ -356,6 +391,28 @@ const LITTLE_PROBLEMS = {
   twice: "Two Little Killer sums point down the same diagonal from the same end.",
 };
 
+const SKYSCRAPER_PROBLEMS = {
+  view: "A Skyscraper count goes beside a row or a column.",
+  count: "A Skyscraper count is 1 to 9.",
+  twice: "That side of that row or column has a count already.",
+};
+
+const XSUM_PROBLEMS = {
+  view: "An X-Sum goes beside a row or a column.",
+  sum: "An X-Sum is 1 to 45.",
+  twice: "That side of that row or column has an X-Sum already.",
+};
+
+// What is wrong with a Jigsaw's regions, from regionProblem, naming each
+// region by its first cell.
+function regionText({ why, region, size }) {
+  const first = s.regions.indexOf(region);
+  const which = first >= 0 ? `the one holding ${where(first)}` : "one";
+  if (why === "size") return `Each region needs nine cells, and ${which} has ${size}. Tap Regions to move cells between them.`;
+  if (why === "apart") return `A region's cells must join up edge to edge, and ${which} is in pieces. Tap Regions to join it up.`;
+  return "The regions are not set out right. Tap Regions, then Back to boxes, to start them again.";
+}
+
 const XV_PROBLEMS = {
   cell: "An X or a V has a cell off the board.",
   apart: "An X or a V must sit on the side two cells share.",
@@ -390,7 +447,7 @@ function wrongCells() {
 }
 
 // The lists of drawn parts: "cages", then LINES's lists and EDGES's.
-const partLists = () => ["cages", ...[LINES, EDGES, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
+const partLists = () => ["cages", "regions", ...[LINES, EDGES, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
 
 const snapshot = () => {
   const out = { clues: s.clues.slice(), values: s.values.slice() };
@@ -437,6 +494,7 @@ function selectCell(c, { focus = false, at = null } = {}) {
   if (lineKind) return pickLineCell(c);
   if (markMode) return pickMarkSide(c, at);
   if (outMode) return say("Clues outside go round the edge of the grid: tap a spot there, or Done.");
+  if (regionMode) return pickRegionCell(c);
   selected = c;
   padDigit = 0;
   render();
@@ -473,6 +531,7 @@ function inputDigit(d) {
   }
   if (markMode) return say("Digits wait until the marks are done: tap Done first.");
   if (outMode) return typeOutSum(String(d));
+  if (regionMode) return say("Digits wait until the regions are done: tap Done first.");
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
     // Nothing to put it in: light the digit up instead.
     padDigit = padDigit === d ? 0 : d;
@@ -511,6 +570,7 @@ function erase() {
   if (lineKind) return stepBack();
   if (markMode) return;
   if (outMode) return typeOutSum("back");
+  if (regionMode) return;
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
   const next = grid().slice();
   next[selected] = 0;
@@ -527,6 +587,7 @@ function undo() {
   clearPicked();
   anchor = null;
   clearSpot();
+  brush = null;
   path = [];
   editingLine = -1;
   checked = false;
@@ -543,6 +604,7 @@ function clearAll() {
   // Only what the rules on use: the rest is kept for when they come back.
   const parts = { cages: killer() ? [] : s.cages };
   for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
+  parts.regions = s.jigsaw ? Array.from(BOX) : s.regions;
   change(empty(), parts);
   selected = null;
   say("Cleared. Undo brings it back.");
@@ -569,6 +631,8 @@ function pasteText(text) {
       s[kind] = Boolean(seed[O.list]);
       parts[O.list] = seed[O.list] ? seed[O.list].map((o) => ({ ...o, ...(o.cells ? { cells: o.cells.slice() } : {}) })) : s[O.list];
     }
+    s.jigsaw = Boolean(seed.regions);
+    parts.regions = seed.regions ? seed.regions.slice() : s.regions;
     change(seed.grid.slice(), parts);
     selected = null;
     const name = variantName(seed);
@@ -631,6 +695,9 @@ function onGo() {
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
   if (s.little && !s.littles.length) return say("Put a Little Killer sum down first: tap Outside, then a spot round the edge.");
+  if (s.skyscraper && !s.skyscrapers.length) return say("Put a Skyscraper count down first: tap Outside, then a spot beside a row or column.");
+  if (s.xsum && !s.xsums.length) return say("Put an X-Sum down first: tap Outside, then a spot beside a row or column.");
+  if (s.jigsaw && boxesStill()) return say("Cut the regions first: tap Regions, then a cell to pick its region, then cells to move into it.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
@@ -761,7 +828,7 @@ function toggleCandidates() {
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
-  if (key === "killer" || key in LINES || key in EDGES || key in OUTSIDE) s[key] = !s[key];
+  if (key === "killer" || key === "jigsaw" || key in LINES || key in EDGES || key in OUTSIDE) s[key] = !s[key];
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -773,6 +840,7 @@ function toggleCageMode() {
   endLine();
   endMarks();
   endOutside();
+  endRegions();
   cageMode = true;
   selected = null;
   padDigit = 0;
@@ -795,6 +863,7 @@ function endCage(draw = false) {
   endLine();
   endMarks();
   endOutside();
+  endRegions();
   if (draw) {
     note = "";
     render();
@@ -1076,12 +1145,6 @@ function markStatus() {
 
 /* ---- clues outside the grid ---- */
 
-// Sandwich's and Little Killer's clues, each kept in a list of its own as
-// lines are. Each key is also the name of the rule's switch.
-const OUTSIDE = {
-  sandwich: { list: "sandwiches", problem: sandwichProblem },
-  little: { list: "littles", problem: littleProblem },
-};
 // The ways a Little Killer diagonal can run, and an arrow for each.
 const DIAGONAL_WAYS = [
   [1, 1, "↘"],
@@ -1090,35 +1153,101 @@ const DIAGONAL_WAYS = [
   [-1, -1, "↖"],
 ];
 
-// The clues margin spot [r, c] can take, with the rules on: a Sandwich sum
-// left of a row or above a column, and a Little Killer sum each way a
-// diagonal of two cells or more runs into the grid from it.
-function spotKinds([r, c]) {
-  const kinds = [];
-  if (s.sandwich && ((c === -1 && r >= 0 && r <= 8) || (r === -1 && c >= 0 && c <= 8))) kinds.push({ kind: "sandwich", line: c === -1 ? r : 9 + c });
-  if (s.little) {
-    for (const [dr, dc, arrow] of DIAGONAL_WAYS) {
-      const cells = diagonalFrom(r + dr, c + dc, dr, dc);
-      if (cells.length >= 2) kinds.push({ kind: "little", cells, arrow });
-    }
-  }
-  return kinds;
+// A row or column seen from one side (VIEWS in variant.js), and the margin
+// spot [r, c] its clue sits in; -1 for a spot that is not beside one.
+function viewAt([r, c]) {
+  const along = (i) => i >= 0 && i <= 8;
+  if (c === -1 && along(r)) return r;
+  if (r === -1 && along(c)) return 9 + c;
+  if (c === 9 && along(r)) return 18 + r;
+  if (r === 9 && along(c)) return 27 + c;
+  return -1;
 }
+const viewSpot = (view) => {
+  const i = view % 9;
+  return [
+    [i, -1],
+    [-1, i],
+    [i, 9],
+    [9, i],
+  ][Math.floor(view / 9)];
+};
+const viewWords = (view) => `${view % 18 < 9 ? "row" : "column"} ${(view % 9) + 1} from the ${["left", "top", "right", "bottom"][Math.floor(view / 9)]}`;
+const arrowOf = (cells) => DIAGONAL_WAYS.find(([dr, dc]) => ROW[cells[1]] - ROW[cells[0]] === dr && COL[cells[1]] - COL[cells[0]] === dc)[2];
 
-// The margin spot a Sandwich or Little Killer clue sits in.
-const sandwichSpot = ({ line }) => (line < 9 ? [line, -1] : [-1, line - 9]);
-const littleSpot = ({ cells }) => [ROW[cells[0]] * 2 - ROW[cells[1]], COL[cells[0]] * 2 - COL[cells[1]]];
+// The clues outside the grid, each kept in a list of its own as lines are;
+// each key is also the name of the rule's switch. For each: its list, what
+// its value is called, its checks, the spot a clue sits in, what a spot can
+// take (each a clue short of its value), what it is called, and what Turn
+// calls it.
+const OUTSIDE = {
+  sandwich: {
+    list: "sandwiches",
+    key: "sum",
+    problem: sandwichProblem,
+    problems: SANDWICH_PROBLEMS,
+    spotOf: ({ line }) => viewSpot(line),
+    at: (spot) => {
+      const view = viewAt(spot);
+      return view >= 0 && view < 18 ? [{ line: view }] : [];
+    },
+    words: ({ line }) => `Sandwich sum for ${line < 9 ? `row ${line + 1}` : `column ${line - 8}`}`,
+    turn: () => "Sandwich",
+    place: "left of a row or above a column for a Sandwich sum",
+    means: "a Sandwich sum adds up the digits between a line's 1 and 9",
+  },
+  little: {
+    list: "littles",
+    key: "sum",
+    problem: littleProblem,
+    problems: LITTLE_PROBLEMS,
+    spotOf: ({ cells }) => [ROW[cells[0]] * 2 - ROW[cells[1]], COL[cells[0]] * 2 - COL[cells[1]]],
+    at: ([r, c]) =>
+      DIAGONAL_WAYS.map(([dr, dc]) => ({ cells: diagonalFrom(r + dr, c + dc, dr, dc) })).filter(({ cells }) => cells.length >= 2),
+    words: ({ cells }) => `Little Killer sum ${arrowOf(cells)} from ${where(cells[0])}`,
+    turn: ({ cells }) => `Diagonal ${arrowOf(cells)}`,
+    place: "round the edge for a Little Killer sum",
+    means: "a Little Killer sum, the diagonal its arrow points along",
+  },
+  skyscraper: {
+    list: "skyscrapers",
+    key: "count",
+    problem: skyscraperProblem,
+    problems: SKYSCRAPER_PROBLEMS,
+    spotOf: ({ view }) => viewSpot(view),
+    at: (spot) => (viewAt(spot) >= 0 ? [{ view: viewAt(spot) }] : []),
+    words: ({ view }) => `Skyscraper count for ${viewWords(view)}`,
+    turn: () => "Skyscraper",
+    place: "beside a row or column for a Skyscraper count",
+    means: "a Skyscraper count, the digits seen from that side, taller ones hiding shorter",
+  },
+  xsum: {
+    list: "xsums",
+    key: "sum",
+    problem: xsumProblem,
+    problems: XSUM_PROBLEMS,
+    spotOf: ({ view }) => viewSpot(view),
+    at: (spot) => (viewAt(spot) >= 0 ? [{ view: viewAt(spot) }] : []),
+    words: ({ view }) => `X-Sum for ${viewWords(view)}`,
+    turn: () => "X-Sum",
+    place: "beside a row or column for an X-Sum",
+    means: "an X-Sum, the first X digits from that side, X being the first",
+  },
+};
+const outsideOn = () => Object.keys(OUTSIDE).some((kind) => s[kind]);
+
+// The clues margin spot [r, c] can take, with the rules on: { kind, base },
+// base being the clue without its value.
+const spotKinds = (at) => Object.entries(OUTSIDE).flatMap(([kind, O]) => (s[kind] ? O.at(at).map((base) => ({ kind, base })) : []));
 const sameSpot = (a, b) => a[0] === b[0] && a[1] === b[1];
+// Whether a clue is the one `base` would make, whatever its value.
+const isBase = (clue, base) => Object.keys(base).every((f) => JSON.stringify(clue[f]) === JSON.stringify(base[f]));
 
 // Every margin spot, for the ones a clue can go in.
 const MARGIN = [];
 for (let r = -1; r <= 9; r++) for (let c = -1; c <= 9; c++) if (r < 0 || r > 8 || c < 0 || c > 8) MARGIN.push([r, c]);
 
-// What each kind of clue at a spot is called: "Sandwich sum for row 3".
-function kindWords(k) {
-  if (k.kind === "sandwich") return `Sandwich sum for ${k.line < 9 ? `row ${k.line + 1}` : `column ${k.line - 8}`}`;
-  return `Little Killer sum ${k.arrow} from ${where(k.cells[0])}`;
-}
+const kindWords = ({ kind, base }) => OUTSIDE[kind].words(base);
 
 function toggleOutMode() {
   if (outMode) return endCage(true);
@@ -1141,43 +1270,44 @@ function endOutside() {
   clearSpot();
 }
 
-// A tap in the margin: picks the spot, and the clue there if it has one.
-// Out of the Outside tool, it opens it first.
-function pickSpot(at) {
-  if (s.stage !== "enter" || !(s.sandwich || s.little)) return;
-  if (!outMode) toggleOutMode();
-  const kinds = spotKinds(at);
-  if (!kinds.length) {
-    clearSpot();
-    const places = [s.sandwich && "left of a row or above a column", s.little && "anywhere round the edge with a diagonal into the grid"].filter(Boolean);
-    return say(`No clue goes there. Sums go ${places.join(", or ")}.`);
-  }
-  spot = at;
-  const sandwich = s.sandwich && s.sandwiches.find((w) => sameSpot(sandwichSpot(w), at));
-  const little = s.little && s.littles.find((l) => sameSpot(littleSpot(l), at));
-  const held = sandwich || little;
-  choice = held ? kinds.findIndex((k) => (sandwich ? k.kind === "sandwich" : k.cells?.[0] === little.cells[0] && k.cells[1] === little.cells[1])) : 0;
-  $("outSum").value = held ? String(held.sum) : "";
-  note = "";
-  render();
-}
-
-// The clue already at the picked spot, of the rules on: { list, index }, or
+// The clue already at the picked spot, of the rules on: { kind, index }, or
 // null.
 function heldAtSpot() {
   if (!spot) return null;
   for (const [kind, O] of Object.entries(OUTSIDE)) {
     if (!s[kind]) continue;
-    const at = kind === "sandwich" ? sandwichSpot : littleSpot;
-    const index = s[O.list].findIndex((clue) => sameSpot(at(clue), spot));
-    if (index >= 0) return { list: O.list, index };
+    const index = s[O.list].findIndex((clue) => sameSpot(O.spotOf(clue), spot));
+    if (index >= 0) return { kind, index };
   }
   return null;
 }
 
-// Digits typed while a spot is picked go to its sum; "back" takes one off.
+const places = () => Object.entries(OUTSIDE).filter(([kind]) => s[kind]).map(([, O]) => O.place);
+
+// A tap in the margin: picks the spot, and the clue there if it has one.
+// Out of the Outside tool, it opens it first.
+function pickSpot(at) {
+  if (s.stage !== "enter" || !outsideOn()) return;
+  if (!outMode) toggleOutMode();
+  const kinds = spotKinds(at);
+  if (!kinds.length) {
+    clearSpot();
+    const beside = s.skyscraper || s.xsum ? "beside a row or column" : s.sandwich ? "left of a row or above a column" : "";
+    const round = s.little ? "round the edge with a diagonal into the grid" : "";
+    return say(`No clue goes there. Tap a spot ${[beside, round].filter(Boolean).join(", or ")}.`);
+  }
+  spot = at;
+  const held = heldAtSpot();
+  const clue = held && s[OUTSIDE[held.kind].list][held.index];
+  choice = held ? Math.max(0, kinds.findIndex((k) => k.kind === held.kind && isBase(clue, k.base))) : 0;
+  $("outSum").value = held ? String(clue[OUTSIDE[held.kind].key]) : "";
+  note = "";
+  render();
+}
+
+// Digits typed while a spot is picked go to its value; "back" takes one off.
 function typeOutSum(key) {
-  if (!spot) return say("Tap a spot round the edge of the grid first, then type its sum.");
+  if (!spot) return say("Tap a spot round the edge of the grid first, then type its number.");
   const box = $("outSum");
   box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-2);
   note = "";
@@ -1197,45 +1327,92 @@ function turnSpot() {
 function onOutAdd() {
   if (!spot) return;
   const text = $("outSum").value.trim();
-  if (!/^\d+$/.test(text)) return say("Type the sum first.");
-  const sum = Number(text);
+  if (!/^\d+$/.test(text)) return say("Type the number first.");
   const k = spotKinds(spot)[choice];
-  const parts = {
-    sandwiches: s.sandwiches.filter((w) => !sameSpot(sandwichSpot(w), spot)),
-    littles: s.littles.filter((l) => !sameSpot(littleSpot(l), spot)),
-  };
-  if (k.kind === "sandwich") parts.sandwiches.push({ line: k.line, sum });
-  else parts.littles.push({ cells: k.cells.slice(), sum });
-  const problem = k.kind === "sandwich" ? sandwichProblem(parts.sandwiches) : littleProblem(parts.littles);
-  if (problem) return say((k.kind === "sandwich" ? SANDWICH_PROBLEMS : LITTLE_PROBLEMS)[problem.why]);
-  parts.sandwiches.sort((a, b) => a.line - b.line);
+  const O = OUTSIDE[k.kind];
+  const parts = {};
+  for (const other of Object.values(OUTSIDE)) parts[other.list] = s[other.list].filter((clue) => !sameSpot(other.spotOf(clue), spot));
+  parts[O.list].push({ ...structuredClone(k.base), [O.key]: Number(text) });
+  const problem = O.problem(parts[O.list]);
+  if (problem) return say(O.problems[problem.why]);
   change(s.clues, parts);
   clearSpot();
-  say(`${kindWords(k)}: ${sum}. Tap the next spot, or Done.`);
+  say(`${kindWords(k)}: ${text}. Tap the next spot, or Done.`);
 }
 
 function onOutRemove() {
   const held = heldAtSpot();
   if (!held) return;
-  change(s.clues, { [held.list]: s[held.list].filter((_, i) => i !== held.index) });
+  const { list } = OUTSIDE[held.kind];
+  change(s.clues, { [list]: s[list].filter((_, i) => i !== held.index) });
   clearSpot();
-  say("Sum removed. Undo brings it back.");
+  say("Clue removed. Undo brings it back.");
 }
 
 // Margin spots open for a clue: those that can take one and have none yet.
 function openSpots() {
-  const taken = [...(s.sandwich ? s.sandwiches.map(sandwichSpot) : []), ...(s.little ? s.littles.map(littleSpot) : [])];
+  const taken = Object.entries(OUTSIDE).flatMap(([kind, O]) => (s[kind] ? s[O.list].map(O.spotOf) : []));
   return MARGIN.filter((at) => spotKinds(at).length && !taken.some((t) => sameSpot(t, at)));
 }
 
 function outStatus() {
   if (!spot) {
-    const places = [s.sandwich && "left of a row or above a column for a Sandwich sum", s.little && "round the edge for a Little Killer sum"].filter(Boolean);
-    return `Tap a spot ${places.join(", or ")}. A Sandwich sum adds up the digits between a line's 1 and 9; a Little Killer sum, the diagonal its arrow points along.`;
+    const means = Object.entries(OUTSIDE).filter(([kind]) => s[kind]).map(([, O]) => O.means);
+    return `Tap a spot ${places().join(", or ")}. ${capital(means.join("; "))}.`;
   }
   const kinds = spotKinds(spot);
   const turn = kinds.length > 1 ? " Turn picks what goes there." : "";
-  return `${kindWords(kinds[choice])}: type it, then ${heldAtSpot() ? "Change sum" : "Add sum"}.${turn}`;
+  return `${kindWords(kinds[choice])}: type it, then ${heldAtSpot() ? "Change" : "Add"}.${turn}`;
+}
+
+/* ---- a Jigsaw's regions ---- */
+
+// Whether the regions are still the 3x3 boxes, not yet cut.
+const boxesStill = () => s.regions.every((r, c) => r === BOX[c]);
+
+function toggleRegionMode() {
+  if (regionMode) return endCage(true);
+  endCage();
+  regionMode = true;
+  selected = null;
+  padDigit = 0;
+  note = "";
+  render();
+}
+
+function endRegions() {
+  regionMode = false;
+  brush = null;
+}
+
+// A tap in the Regions tool: with no region picked, or on the picked one,
+// picks the cell's region, or lets it go; otherwise the cell moves into the
+// picked region.
+function pickRegionCell(c) {
+  const region = s.regions[c];
+  if (brush == null || region === brush) {
+    brush = brush === region ? null : region;
+    note = "";
+    return render();
+  }
+  const next = s.regions.slice();
+  next[c] = brush;
+  change(s.clues, { regions: next });
+  render();
+}
+
+function onRegionReset() {
+  if (boxesStill()) return;
+  change(s.clues, { regions: Array.from(BOX) });
+  brush = null;
+  say("Back to the 3x3 boxes. Undo brings the regions back.");
+}
+
+function regionStatus() {
+  if (brush == null) return "Tap a cell to pick its region, then tap cells to move them into it. Each region needs nine cells, joined edge to edge.";
+  const size = s.regions.filter((r) => r === brush).length;
+  const need = size === 9 ? "" : ": it needs nine";
+  return `This region has ${plural(size, "cell")}${need}. Tap cells to move them in, or one of its own to let it go.`;
 }
 
 /* ---- drawing ---- */
@@ -1247,6 +1424,7 @@ function defaultStatus() {
     if (lineKind) return lineStatus();
     if (markMode) return markStatus();
     if (outMode) return outStatus();
+    if (regionMode) return regionStatus();
     if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
     if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
     if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
@@ -1259,6 +1437,13 @@ function defaultStatus() {
       return "A Sandwich puzzle: tap Outside, then a spot left of a row or above a column, and type the sum of the digits between its 1 and its 9.";
     }
     if (s.little && !s.littles.length) return "A Little Killer puzzle: tap Outside, then a spot round the edge, and type the sum of the diagonal its arrow points along.";
+    if (s.skyscraper && !s.skyscrapers.length) {
+      return "A Skyscrapers puzzle: tap Outside, then a spot beside a row or column, and type how many digits are seen from there, taller ones hiding shorter.";
+    }
+    if (s.xsum && !s.xsums.length) {
+      return "An X-Sums puzzle: tap Outside, then a spot beside a row or column, and type the sum of the first X digits from there, X being the first.";
+    }
+    if (s.jigsaw && boxesStill()) return "A Jigsaw puzzle: tap Regions to cut the grid into nine regions of nine cells, in place of the boxes.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
@@ -1327,13 +1512,24 @@ function render() {
     xvs: s.xv ? s.xvs : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
     littles: s.little ? s.littles : null,
-    margin: s.sandwich || s.little,
+    skyscrapers: s.skyscraper ? s.skyscrapers : null,
+    xsums: s.xsum ? s.xsums : null,
+    regions: regions(),
+    margin: outsideOn(),
     spots: outMode ? openSpots() : [],
     spot: outMode ? spot : null,
     path: lineKind ? path : [],
     pathKind: lineKind ?? "thermo",
     rules: s.rules,
-    picked: cageMode ? picked : lineKind ? new Set(path) : markMode && anchor != null ? new Set([anchor]) : null,
+    picked: cageMode
+      ? picked
+      : lineKind
+        ? new Set(path)
+        : markMode && anchor != null
+          ? new Set([anchor])
+          : regionMode && brush != null
+            ? new Set([...Array(81).keys()].filter((c) => s.regions[c] === brush))
+            : null,
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
@@ -1379,10 +1575,12 @@ function render() {
     lineBar: Boolean(lineKind),
     solverMarks: enter && (s.kropki || s.xv),
     markBar: markMode,
-    solverOutside: enter && (s.sandwich || s.little),
+    solverOutside: enter && outsideOn(),
     outBar: outMode,
+    solverRegions: enter && s.jigsaw,
+    regionBar: regionMode,
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && ![LINES, EDGES, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
+    solverCopy: !killer() && !s.jigsaw && ![LINES, EDGES, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -1405,7 +1603,8 @@ function render() {
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
     const { rule } = b.dataset;
-    const on = rule === "killer" || rule in LINES || rule in EDGES || rule in OUTSIDE ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
+    const switched = rule === "killer" || rule === "jigsaw" || rule in LINES || rule in EDGES || rule in OUTSIDE;
+    const on = switched ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
     b.setAttribute("aria-pressed", String(on));
   });
   $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
@@ -1416,17 +1615,19 @@ function render() {
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
   $("solverMarks").setAttribute("aria-pressed", String(markMode));
   $("solverOutside").setAttribute("aria-pressed", String(outMode));
+  $("solverRegions").setAttribute("aria-pressed", String(regionMode));
+  $("regionReset").disabled = boxesStill();
   if (outMode) {
     const kinds = spot ? spotKinds(spot) : [];
     const held = heldAtSpot();
     for (const id of ["outSum", "outAdd"]) $(id).classList.toggle("hidden", !spot);
     $("outTurn").classList.toggle("hidden", kinds.length < 2);
     $("outRemove").classList.toggle("hidden", !held);
-    $("outAddLabel").textContent = held ? "Change sum" : "Add sum";
+    $("outAddLabel").textContent = held ? "Change" : "Add";
     $("outAdd").disabled = !/^\d+$/.test($("outSum").value.trim());
     // Turn names what it turns the spot's clue into.
     const next = kinds[(choice + 1) % kinds.length];
-    if (next) $("outTurnLabel").textContent = next.kind === "sandwich" ? "Sandwich" : `Diagonal ${next.arrow}`;
+    if (next) $("outTurnLabel").textContent = OUTSIDE[next.kind].turn(next.base);
   }
   if (lineKind) {
     $("lineAddLabel").textContent = addLabel();
@@ -1489,6 +1690,7 @@ function onKey(e) {
   else if (outMode && (e.key === "Backspace" || e.key === "Delete")) typeOutSum("back");
   else if (outMode && e.key === "Enter") onOutAdd();
   else if (outMode && e.key === "Escape") endCage(true);
+  else if (regionMode && e.key === "Escape") endCage(true);
   else if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
   else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
@@ -1539,6 +1741,9 @@ export function initSolver({ reopen = true } = {}) {
   $("outTurn").addEventListener("click", turnSpot);
   $("outRemove").addEventListener("click", onOutRemove);
   $("outDone").addEventListener("click", () => endCage(true));
+  $("solverRegions").addEventListener("click", toggleRegionMode);
+  $("regionReset").addEventListener("click", onRegionReset);
+  $("regionDone").addEventListener("click", () => endCage(true));
   $("outSum").addEventListener("input", () => render());
   $("outSum").addEventListener("keydown", (e) => {
     if (e.key === "Enter") onOutAdd();

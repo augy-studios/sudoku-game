@@ -2,8 +2,9 @@
 // board whatever the theme, in the app's font, with the site's name under it,
 // and a variant puzzle's cages, thermometers, arrows, German Whispers and
 // renban lines, Kropki dots, XV marks, diagonals and windows as on screen.
-// Sandwich and Little Killer clues sit outside the grid, in a margin a cell
-// wide the image grows by.
+// Sandwich, Little Killer, Skyscraper and X-Sum clues sit outside the grid,
+// in a margin a cell wide the image grows by. A Jigsaw's regions take the
+// boxes' heavy lines and tint.
 
 import { variantName } from "./variant.js";
 
@@ -30,8 +31,8 @@ const RENBAN_PURPLE = "#dac6ee";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
 // variant: { cages, thermos, arrows, whispers, renbans, dots, xvs,
-// sandwiches, littles, rules } (variant.js), or nothing for a classic
-// puzzle.
+// sandwiches, littles, skyscrapers, xsums, regions, rules } (variant.js), or
+// nothing for a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
@@ -43,8 +44,11 @@ export async function drawPuzzle(grid, variant = null) {
   const xvs = variant?.xvs ?? [];
   const sandwiches = variant?.sandwiches ?? [];
   const littles = variant?.littles ?? [];
+  const skyscrapers = variant?.skyscrapers ?? [];
+  const xsums = variant?.xsums ?? [];
+  const regions = variant?.regions?.length ? variant.regions : null;
   // Room round the grid for clues outside it; the grid is drawn as without.
-  const margin = sandwiches.length || littles.length ? CELL : 0;
+  const margin = sandwiches.length || littles.length || skyscrapers.length || xsums.length ? CELL : 0;
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -61,9 +65,9 @@ export async function drawPuzzle(grid, variant = null) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.translate(margin, margin);
 
-  // Alternate boxes tinted, as on the board.
+  // Alternate boxes tinted, as on the board; a Jigsaw has none.
   ctx.fillStyle = BOX_ALT;
-  for (let b = 0; b < 9; b++) {
+  for (let b = 0; b < 9 && !regions; b++) {
     if ((Math.floor(b / 3) + (b % 3)) % 2 === 1) ctx.fillRect(PAD + (b % 3) * CELL * 3, PAD + Math.floor(b / 3) * CELL * 3, CELL * 3, CELL * 3);
   }
 
@@ -87,7 +91,29 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.stroke();
   };
   line(2, CELL_LINE, 1);
-  line(6, BOX_LINE, 3);
+  if (!regions) line(6, BOX_LINE, 3);
+  else {
+    // Round the whole, and along each side between two regions.
+    ctx.strokeStyle = BOX_LINE;
+    ctx.lineWidth = 6;
+    ctx.lineCap = "square";
+    ctx.strokeRect(PAD, PAD, BOARD, BOARD);
+    ctx.beginPath();
+    for (let c = 0; c < 81; c++) {
+      const x = PAD + (c % 9) * CELL;
+      const y = PAD + Math.floor(c / 9) * CELL;
+      if (c % 9 < 8 && regions[c + 1] !== regions[c]) {
+        ctx.moveTo(x + CELL, y);
+        ctx.lineTo(x + CELL, y + CELL);
+      }
+      if (c < 72 && regions[c + 9] !== regions[c]) {
+        ctx.moveTo(x, y + CELL);
+        ctx.lineTo(x + CELL, y + CELL);
+      }
+    }
+    ctx.stroke();
+    ctx.lineCap = "butt";
+  }
 
   if (rules & 1) {
     ctx.strokeStyle = DIAGONAL_INK;
@@ -218,10 +244,32 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.lineTo(bx, by - dr * h);
     ctx.stroke();
   }
+  // Skyscraper counts in a square, X-Sums in a circle, beside their row or
+  // column on the side they are seen from.
+  const viewAt = (view) => {
+    const i = view % 9;
+    return [spot(i, -1), spot(-1, i), spot(i, 9), spot(9, i)][Math.floor(view / 9)];
+  };
+  ctx.font = `${Math.round(CELL * 0.34)}px ${FONT}`;
+  ctx.lineWidth = 3;
+  for (const [clues, value, square] of [
+    [skyscrapers, "count", true],
+    [xsums, "sum", false],
+  ]) {
+    for (const clue of clues) {
+      const [x, y] = viewAt(clue.view);
+      const r = CELL * 0.27;
+      ctx.beginPath();
+      if (square) ctx.roundRect(x - r, y - r, r * 2, r * 2, CELL * 0.05);
+      else ctx.arc(x, y, r * 1.08, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillText(String(clue[value]), x, y);
+    }
+  }
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules });
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }

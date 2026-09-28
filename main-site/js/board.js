@@ -13,7 +13,10 @@
 // purple one. Kropki dots sit on the side two cells share, white or black,
 // and XV marks there as a letter. Sandwich and Little Killer clues sit
 // outside the grid, in a margin a cell wide the board then leaves round it,
-// a Little Killer's with a small arrow along its diagonal. Anti-knight and
+// a Little Killer's with a small arrow along its diagonal; so do Skyscraper
+// counts, in a small square, and X-Sums, in a small circle. A Jigsaw's
+// regions take the boxes' place: the boxes lose their edges and tint, and
+// each region gets a heavy line round it instead. Anti-knight and
 // anti-king have nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
@@ -129,7 +132,8 @@ export class BoardView {
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, thermos, arrows, whispers, renbans, dots,
-  // xvs, sandwiches and littles are a variant puzzle's, and rules its
+  // xvs, sandwiches, littles, skyscrapers, xsums and regions are a variant
+  // puzzle's, and rules its
   // switches (variant.js); picked, a Set of cells, are those being gathered
   // into a new cage, and path a line being drawn, as pathKind says:
   // "thermo", "arrow", "whisper" or "renban". margin leaves room round the
@@ -152,6 +156,12 @@ export class BoardView {
     this.xvs = view.xvs ?? [];
     this.sandwiches = view.sandwiches ?? [];
     this.littles = view.littles ?? [];
+    this.skyscrapers = view.skyscrapers ?? [];
+    this.xsums = view.xsums ?? [];
+    this.regions = view.regions ?? null;
+    this.root.classList.toggle("jigsaw", Boolean(this.regions));
+    // Its box for the peer highlight: a Jigsaw's region, or the 3x3 box.
+    const house = this.regions ?? BOX;
     this.spots = view.spots ?? [];
     this.spot = view.spot ?? null;
     this.root.parentElement.classList.toggle("margined", Boolean(view.margin));
@@ -169,7 +179,7 @@ export class BoardView {
       const v = values[c];
       const given = puzzle[c] !== 0;
       const wrong = view.wrong ? view.wrong.has(c) : !given && v !== 0 && v !== solution[c];
-      const peer = view.highlightPeers && sel != null && c !== sel && (ROW[c] === ROW[sel] || COL[c] === COL[sel] || BOX[c] === BOX[sel]);
+      const peer = view.highlightPeers && sel != null && c !== sel && (ROW[c] === ROW[sel] || COL[c] === COL[sel] || house[c] === house[sel]);
       // Notes holding the digit light up on their own, below.
       const same = view.highlightSame && focusDigit && v === focusDigit;
       const cls = [
@@ -227,16 +237,17 @@ export class BoardView {
     const whispers = this.whispers ?? [];
     const renbans = this.renbans ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? [])];
-    const outside = [this.sandwiches ?? [], this.littles ?? [], this.spots ?? [], this.spot];
+    const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, edges, outside, margin, path, this.pathKind]);
+    const regions = this.regions;
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, edges, outside, margin, regions, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, whispers, renbans, edges, path, ...outside.slice(0, 3)].some((list) => list.length);
-    if (!drawn && !diagonal && !this.spot) {
+    const drawn = [cages, thermos, arrows, whispers, renbans, edges, path, ...outside.slice(0, 5)].some((list) => list.length);
+    if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
     }
@@ -386,7 +397,34 @@ export class BoardView {
         `<path class="little-arrow" d="M${f(ax)} ${f(ay)}L${f(bx)} ${f(by)}${head}" stroke-width="${f(w * 0.04)}"/>`
       );
     });
-    const outsides = [...open, picked, ...sandwichSums, ...littleSums].join("");
-    layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}${outsides}`;
+    // Skyscraper counts in a square, X-Sums in a circle, at their view's spot:
+    // left, top, right or bottom of a row or column.
+    const viewSpot = (view) => {
+      const i = view % 9;
+      return [[i, -1], [-1, i], [i, 9], [9, i]][Math.floor(view / 9)];
+    };
+    const framed = (clues, value, shape) =>
+      clues.map((clue) => {
+        const { x, y, w } = spotAt(viewSpot(clue.view));
+        const r = w * 0.27;
+        const frame =
+          shape === "square"
+            ? `<rect class="outside-frame" x="${f(x - r)}" y="${f(y - r)}" width="${f(r * 2)}" height="${f(r * 2)}" rx="${f(w * 0.05)}"/>`
+            : `<circle class="outside-frame" cx="${f(x)}" cy="${f(y)}" r="${f(r * 1.08)}"/>`;
+        return `${frame}<text class="outside-sum" x="${f(x)}" y="${f(y)}" font-size="${f(w * 0.34)}">${clue[value]}</text>`;
+      });
+    const viewClues = [...framed(this.skyscrapers ?? [], "count", "square"), ...framed(this.xsums ?? [], "sum", "circle")];
+    const outsides = [...open, picked, ...sandwichSums, ...littleSums, ...viewClues].join("");
+    // A Jigsaw's regions: a heavy line along each side between two regions.
+    let walls = "";
+    if (regions) {
+      for (let c = 0; c < 81; c++) {
+        const { x, y, w, h } = rect(c);
+        if (c % 9 < 8 && regions[c + 1] !== regions[c]) walls += `M${f(x + w)} ${f(y)}V${f(y + h)}`;
+        if (c < 72 && regions[c + 9] !== regions[c]) walls += `M${f(x)} ${f(y + h)}H${f(x + w)}`;
+      }
+      walls = `<path class="region-line" d="${walls}"/>`;
+    }
+    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}${outsides}`;
   }
 }

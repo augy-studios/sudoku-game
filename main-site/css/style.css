@@ -350,6 +350,19 @@ body {
   background: var(--cell-bg);
 }
 .box.alt { background: var(--box-alt); }
+/* A Jigsaw: the boxes are no houses, so no edges or tint; board.js draws
+   the regions' edges over the cells instead. */
+.board.jigsaw .box,
+.board.jigsaw .box.alt {
+  border: 0;
+  background: var(--cell-bg);
+}
+.region-line {
+  fill: none;
+  stroke: var(--box-line);
+  stroke-width: 3;
+  stroke-linecap: square;
+}
 .cell {
   position: relative;
   display: grid;
@@ -474,6 +487,13 @@ body {
   font-family: inherit;
   text-anchor: middle;
   dominant-baseline: central;
+}
+/* A Skyscraper count's square, an X-Sum's circle. */
+.outside-frame {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  opacity: 0.7;
 }
 .little-arrow {
   fill: none;

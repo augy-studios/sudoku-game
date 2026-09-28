@@ -2,7 +2,7 @@
 // the API imports it too, to work out a made variant puzzle's answer.
 //
 // A variant is { cages, thermos, arrows, whispers, renbans, dots, xvs,
-// sandwiches, littles, rules }:
+// sandwiches, littles, skyscrapers, xsums, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -34,13 +34,23 @@
 //            a whole diagonal, from the edge the clue sits by to the far
 //            edge, two cells at least. Its digits add up to the sum, and may
 //            repeat where the rules allow.
+//   skyscrapers  Skyscraper clues outside the grid, [{ view, count }]: view
+//            a row or column seen from one side (VIEWS below). Reading from
+//            that side, count digits are each taller than every one before.
+//   xsums    X-Sum clues outside the grid, [{ view, sum }]: the first digit
+//            from that side, X, and the X digits from there, it included,
+//            add up to the sum.
+//   regions  a Jigsaw puzzle's regions in place of the 3x3 boxes: for each
+//            cell, 0 to 8, which region it is in. Each region is nine cells
+//            joined edge to edge, and holds 1 to 9.
 //   rules    switches, as bits (RULES below): Diagonal, both long
 //            diagonals hold 1 to 9; Anti-knight, cells a knight's move apart
 //            differ; Anti-king, cells touching at a corner differ; Windoku,
 //            four more 3x3 windows hold 1 to 9.
 //
 // Diagonals and windows are extra houses, like rows, columns and boxes; the
-// knight's and king's moves are extra pairs of cells that must differ.
+// knight's and king's moves are extra pairs of cells that must differ. A
+// Jigsaw's regions are houses in the boxes' place.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
@@ -59,8 +69,11 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
+  if (regions?.length) names.unshift("Jigsaw");
+  if (xsums?.length) names.unshift("X-Sums");
+  if (skyscrapers?.length) names.unshift("Skyscrapers");
   if (littles?.length) names.unshift("Little Killer");
   if (sandwiches?.length) names.unshift("Sandwich");
   if (xvs?.length) names.unshift("XV");
@@ -87,13 +100,14 @@ const WINDOW_CORNERS = [
 // in, pairs: per cell, the cells that must differ from it outside its
 // houses, peers: per cell, every cell that must differ from it }. Rows,
 // columns and boxes come first, in that order, as the classic solver has
-// them.
+// them; with a Jigsaw's `regions`, regions in the boxes' place.
 const layouts = new Map();
 
-export function layout(rules = 0) {
-  if (layouts.has(rules)) return layouts.get(rules);
+export function layout(rules = 0, regions = null) {
+  const key = `${rules}|${regions ? regions.join("") : ""}`;
+  if (layouts.has(key)) return layouts.get(key);
   const houses = [];
-  for (const [kind, of] of [["row", ROW], ["column", COL], ["box", BOX]]) {
+  for (const [kind, of] of [["row", ROW], ["column", COL], regions ? ["region", regions] : ["box", BOX]]) {
     for (let index = 0; index < 9; index++) houses.push({ kind, index, cells: [...Array(81).keys()].filter((c) => of[c] === index) });
   }
   if (has(rules, "diagonal")) {
@@ -130,8 +144,33 @@ export function layout(rules = 0) {
     peers.push([...housed, ...extra].sort((a, b) => a - b));
   }
   const out = { houses, housesOf, pairs, peers };
-  layouts.set(rules, out);
+  layouts.set(key, out);
+  // A maker trying one region after another makes a new layout each time.
+  if (layouts.size > 64) layouts.delete(layouts.keys().next().value);
   return out;
+}
+
+/* ---- a Jigsaw's regions ---- */
+
+// Whether regions are well formed: a region 0 to 8 for each cell, each
+// region nine cells, joined edge to edge. null if so, or what is wrong:
+// { why, region, size }.
+export function regionProblem(regions) {
+  if (!Array.isArray(regions) || regions.length !== 81 || !regions.every((r) => Number.isInteger(r) && r >= 0 && r <= 8)) return { why: "cell", region: -1 };
+  for (let region = 0; region < 9; region++) {
+    const cells = [...Array(81).keys()].filter((c) => regions[c] === region);
+    if (cells.length !== 9) return { why: "size", region, size: cells.length };
+    if (!joined(cells)) return { why: "apart", region };
+  }
+  return null;
+}
+
+// Regions numbered in order of their first cell, the same regions however
+// they were numbered before.
+export function sortRegions(regions) {
+  const order = [];
+  for (const r of regions) if (!order.includes(r)) order.push(r);
+  return regions.map((r) => order.indexOf(r));
 }
 
 /* ---- cages ---- */
@@ -501,6 +540,127 @@ export function littleProblem(littles) {
   return null;
 }
 
+// A row or column seen from one side, for a Skyscraper or X-Sum clue: 0 to
+// 8 each row from the left, 9 to 17 each column from the top, 18 to 26 each
+// row from the right and 27 to 35 each column from the bottom. Its cells,
+// nearest the clue first.
+export const VIEWS = [...SANDWICH_LINES, ...SANDWICH_LINES.map((cells) => cells.slice().reverse())];
+
+// Whether clues on views are well formed: a view and a value from `least`
+// to `most` under `key` each, no view twice. null if so, or what is wrong:
+// { why, at }.
+function viewProblem(clues, key, least, most) {
+  const seen = new Set();
+  for (let i = 0; i < clues.length; i++) {
+    const { view, [key]: value } = clues[i] ?? {};
+    if (!Number.isInteger(view) || view < 0 || view >= VIEWS.length) return { why: "view", at: i };
+    if (!Number.isInteger(value) || value < least || value > most) return { why: key, at: i };
+    if (seen.has(view)) return { why: "twice", at: i };
+    seen.add(view);
+  }
+  return null;
+}
+
+export const skyscraperProblem = (skyscrapers) => viewProblem(skyscrapers, "count", 1, 9);
+export const xsumProblem = (xsums) => viewProblem(xsums, "sum", 1, 45);
+
+// How many digits of a line, read from its first, are taller than every
+// one before them: as many as a Skyscraper clue there would count.
+export function seen(digits) {
+  let count = 0;
+  let top = 0;
+  for (const d of digits) {
+    if (d > top) {
+      count++;
+      top = d;
+    }
+  }
+  return count;
+}
+
+// Narrows each Skyscraper clue's view. The cell k places from the clue is
+// no taller than 10 - count + k, or too few could be seen past it; a count
+// of 1 is the 9 first. Then, over the digits already placed from the clue
+// on: no more seen than the count, and enough taller digits left for the
+// rest, with the 9 always seen; once one short, the next cell cannot be
+// seen unless it is the 9. Placed digits count as masks of one, and `free`
+// is narrowed in place, as in thermoBounds; false if the view cannot be.
+function skyscraperBounds(skyscrapers, g, free) {
+  for (const { view, count } of skyscrapers) {
+    const cells = VIEWS[view];
+    for (let k = 0; k < 9; k++) {
+      const m = BELOW[Math.min(10, 11 - count + k)] & (count === 1 && k === 0 ? 1 << 9 : ALL);
+      const c = cells[k];
+      if (g[c]) {
+        if (!(m & (1 << g[c]))) return false;
+      } else if (!(free[c] &= m)) return false;
+    }
+    let shown = 0;
+    let top = 0;
+    let k = 0;
+    for (; k < 9 && g[cells[k]]; k++) {
+      if (g[cells[k]] > top) {
+        top = g[cells[k]];
+        shown++;
+      }
+    }
+    if (top === 9 ? shown !== count : shown >= count || shown + 9 - top < count) return false;
+    if (k < 9 && shown === count - 1 && !(free[cells[k]] &= BELOW[top + 1] | (1 << 9))) return false;
+  }
+  return true;
+}
+
+// Narrows each X-Sum clue's view, as sandwichBounds does a sandwich: for
+// each digit X its first cell could be, whether the X - 1 cells after it
+// could add up to what X leaves of the sum with different digits, and if so
+// what each could then be. Placed digits count as masks of one, and `free`
+// is narrowed in place; false if no X is left.
+function xsumBounds(xsums, g, free) {
+  const allow = new Int32Array(9);
+  for (const { view, sum } of xsums) {
+    const cells = VIEWS[view];
+    const m = cells.map((c) => (g[c] ? 1 << g[c] : free[c]));
+    allow.fill(0);
+    let fits = false;
+    for (let x = 1; x <= 9; x++) {
+      if (!(m[0] & (1 << x))) continue;
+      let placed = 1 << x;
+      let rest = sum - x;
+      let left = 0;
+      let room = 0;
+      let ok = true;
+      for (let k = 1; k < x && ok; k++) {
+        const d = g[cells[k]];
+        if (!d) {
+          left++;
+          room |= m[k];
+        } else if (placed & (1 << d)) ok = false;
+        else {
+          placed |= 1 << d;
+          rest -= d;
+        }
+      }
+      if (!ok || rest < 0) continue;
+      let inner = 0;
+      for (const set of COMBOS[left][rest] ?? []) if (!(set & placed) && !(set & ~room)) inner |= set;
+      if (left ? !inner : rest) continue;
+      fits = true;
+      allow[0] |= 1 << x;
+      // placed holds X too, to keep it out of the sets; the cells after it
+      // hold the rest.
+      for (let k = 1; k < 9; k++) allow[k] |= k < x ? inner | (placed & ~(1 << x)) : ALL;
+    }
+    if (!fits) return false;
+    for (let k = 0; k < 9; k++) {
+      const c = cells[k];
+      if (g[c]) {
+        if (!(allow[k] & (1 << g[c]))) return false;
+      } else if (!(free[c] &= allow[k])) return false;
+    }
+  }
+  return true;
+}
+
 // The digits 2 to 8, which a sandwich's filling is made of, and MIDDLE[k][s]:
 // every set of k of them adding up to s.
 const INNER = ALL & ~(1 << 1) & ~(1 << 9);
@@ -600,6 +760,9 @@ const norm = (v) => ({
   xvs: v?.xvs ?? [],
   sandwiches: v?.sandwiches ?? [],
   littles: v?.littles ?? [],
+  skyscrapers: v?.skyscrapers ?? [],
+  xsums: v?.xsums ?? [],
+  regions: v?.regions?.length ? v.regions : null,
   rules: v?.rules ?? 0,
 });
 
@@ -608,8 +771,8 @@ const norm = (v) => ({
 // the clues outside; 0 for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules } = norm(variant);
-  const { peers } = layout(rules);
+  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
     let rest = cage.sum;
@@ -639,6 +802,8 @@ export function variantCandidates(grid, variant) {
   edgeBounds(xvs, grid, out);
   sandwichBounds(sandwiches, grid, out);
   littleBounds(littles, grid, out);
+  skyscraperBounds(skyscrapers, grid, out);
+  xsumBounds(xsums, grid, out);
   return out;
 }
 
@@ -659,8 +824,8 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, rules } = norm(variant);
-  const { houses, housesOf, pairs } = layout(rules);
+  const { cages, thermos, arrows, whispers, renbans, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { houses, housesOf, pairs } = layout(rules, regions);
   let steps = 0;
   const hm = new Int32Array(houses.length);
   const of = cageOf(cages);
@@ -715,6 +880,8 @@ function search(grid, variant, found) {
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;
     if (littles.length && !littleBounds(littles, g, free)) return null;
+    if (skyscrapers.length && !skyscraperBounds(skyscrapers, g, free)) return null;
+    if (xsums.length && !xsumBounds(xsums, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;
