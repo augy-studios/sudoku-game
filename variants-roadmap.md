@@ -36,11 +36,6 @@ Say, Equality): a new kind of group is one more entry in `CAGES` in
 | Connected Values | The group's cells holding any of the given digits join up edge to edge. | Cages tool |
 | Count Distinct | The first cell's digit counts how many different digits the rest hold. | Cages tool |
 
-## Lines
-
-All built: Sum Line, Region Sum Line and Value Indexing joined the others.
-A sum line cannot close in a loop yet, as the other solver's can.
-
 ## Marks between cells
 
 | Variant | Rule | Builds on |
@@ -66,6 +61,7 @@ A sum line cannot close in a loop yet, as the other solver's can.
 
 - **Dutch Whispers** is German Whispers with a difference of 4. It could be
   an option on the Whispers line rather than a new variant.
+- A **sum line** cannot close in a loop yet, as the other solver's can.
 - Not counted here: the other solver's general tools (Sum, All Different,
   Contain, Regex and NFA lines, custom pairs, Given, No Boxes, Region Size,
   Region Same Values, Replicate and the Or/And containers). They are for
@@ -73,9 +69,8 @@ A sum line cannot close in a loop yet, as the other solver's can.
 
 ## Suggested order
 
-1. Done: Sum Line, Region Sum Line and Value Indexing.
-2. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
+1. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
    cells on the Cages tool, which has kinds now.
-3. Counting Circles, Full Rank and Row/Column Indexing: each needs
+2. Counting Circles, Full Rank and Row/Column Indexing: each needs
    something new, marks in cells, a ranking of whole rows, or indexing.
-4. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
+3. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
