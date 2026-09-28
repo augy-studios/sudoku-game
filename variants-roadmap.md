@@ -1,7 +1,7 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 23 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 21 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
@@ -19,7 +19,7 @@ Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 `PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
 are all taken but I, which is easily misread, so a new variant's letters are
 **Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
-QQD, QHS, QNR, QDG, QAC, QSK and QSX. Q is only read with the two after it,
+QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE and QGM. Q is only read with the two after it,
 so every seed made before still reads as it did. Put the entry in `PARTS` or
 `RULES` where its letters should go.
 
@@ -63,8 +63,6 @@ so every seed made before still reads as it did. Put the entry in `PARTS` or
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Global Entropy | Every 2×2 square has one of 1–3, one of 4–6 and one of 7–9. | `ENTROPIC_KINDS`, from Entropic lines |
-| Global Mod | Every 2×2 square has one of 147, one of 258 and one of 369. | `MODULAR_KINDS`, from Modular lines |
 | Anti-taxicab | A digit X never has another X exactly X steps away along rows and columns. | New |
 | Dutch Flatmates | Every 5 has a 1 directly above it or a 9 directly below it. | New |
 
@@ -87,18 +85,16 @@ so every seed made before still reads as it did. Put the entry in `PARTS` or
 
 ## Suggested order
 
-1. Global Entropy and Global Mod: whole-grid switches, each 2×2 square
-   sorted into the kinds the Entropic and Modular lines already use.
-2. Anti-taxicab and Dutch Flatmates: whole-grid switches, each a new check
+1. Anti-taxicab and Dutch Flatmates: whole-grid switches, each a new check
    between cells, as the barred sides were.
-3. Double Arrow and Pill Arrow: both build on Arrow's circle and sum.
-4. Rellik Cage, Lunchbox, Look and Say and Equality Cage: cages with a
+2. Double Arrow and Pill Arrow: both build on Arrow's circle and sum.
+3. Rellik Cage, Lunchbox, Look and Say and Equality Cage: cages with a
    different clue. The Cages tool needs a kind per cage first, so one tool
    can draw them all.
-5. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
+4. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
    a total.
-6. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
+5. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
    cells on the Cages tool, once it has kinds.
-7. Counting Circles, Full Rank and Row/Column Indexing: each needs
+6. Counting Circles, Full Rank and Row/Column Indexing: each needs
    something new, marks in cells, a ranking of whole rows, or indexing.
-8. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
+7. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.

@@ -7,11 +7,23 @@
 //   made            -> { board, q, puzzles: [{ seed, level, players, top_score }] },
 //                      made puzzles with a board, most played first, those
 //                      whose seed holds q if there is one
+//   days, name      -> { board, name, dates: ["YYYY-MM-DD", ...] }, the days
+//                      whose daily a name has on the board, oldest first,
+//                      for the calendar and its streak
 // Public, no login, one row per name, cached briefly at the edge.
 
 import { endpoint, HttpError } from "../_lib/http.js";
 import { rest } from "../_lib/supabase.js";
+import { cleanName } from "../_lib/names.js";
 import { parseSeed } from "../../js/seed.js";
+
+// A name's days. Names are matched without case, as the boards match them;
+// _ is the one character a name can have that ilike reads as a wildcard.
+async function nameDays(name) {
+  const pattern = encodeURIComponent(name.replace(/_/g, "\\_"));
+  const rows = await rest(`sudoku_leaderboard?select=daily_date&mode=eq.daily&name=ilike.${pattern}&order=daily_date.asc&limit=5000`);
+  return [...new Set((rows ?? []).map((r) => r.daily_date))];
+}
 
 const LIMIT = 100;
 
@@ -54,8 +66,14 @@ async function madePuzzles(q) {
 
 export default endpoint("GET", async ({ req, res }) => {
   const board = req.query?.board ?? "best";
+  if (board === "days") {
+    const name = cleanName(req.query?.name);
+    const dates = await nameDays(name);
+    res.setHeader("Cache-Control", "public, max-age=0, s-maxage=30, stale-while-revalidate=60");
+    return { board, name, dates };
+  }
   const spec = BOARDS[board];
-  if (!spec) throw new HttpError(400, "bad_board", "board is best, total, daily or made.");
+  if (!spec) throw new HttpError(400, "bad_board", "board is best, total, daily, made or days.");
   if (board === "made" && req.query?.seed == null) {
     const puzzles = await madePuzzles(req.query?.q);
     res.setHeader("Cache-Control", "public, max-age=0, s-maxage=30, stale-while-revalidate=60");

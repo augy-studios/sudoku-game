@@ -9,6 +9,8 @@ import { parseSeed, puzzleFor } from "../main-site/js/seed.js";
 import { play } from "../main-site/js/record.js";
 import { readLog, settle, verify } from "../main-site/api/_lib/verify.js";
 import { tally, finalScore, timeBonus } from "../main-site/js/score.js";
+import { dailyDate } from "../main-site/api/_lib/daily.js";
+import { DAILY_FIRST, addDays } from "../main-site/js/calendar.js";
 
 let passed = 0;
 function test(name, fn) {
@@ -80,6 +82,19 @@ test("malformed logs are refused before anything runs", () => {
   refused("bad_log", () => readLog([["p", 99, 1, 0]]));
   refused("bad_log", () => readLog([["p", 1, 1, 0, 1]]));
   refused("bad_log", () => readLog("p1.1.0"));
+});
+
+// A daily can be any day from the first to tomorrow in UTC, which is today
+// somewhere; the calendar picks from those.
+test("a daily's date is any day from the first daily on", () => {
+  const utc = new Date().toISOString().slice(0, 10);
+  assert.equal(dailyDate(DAILY_FIRST), DAILY_FIRST);
+  assert.equal(dailyDate(addDays(utc, -40)), addDays(utc, -40));
+  assert.equal(dailyDate(` ${addDays(utc, 1)} `), addDays(utc, 1));
+  refused("bad_date", () => dailyDate(addDays(utc, 2)));
+  refused("bad_date", () => dailyDate(addDays(DAILY_FIRST, -1)));
+  refused("bad_date", () => dailyDate("2026-02-30"));
+  refused("bad_date", () => dailyDate(20260101));
 });
 
 console.log(`verify ok: ${passed} tests.`);

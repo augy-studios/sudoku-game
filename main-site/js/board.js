@@ -24,8 +24,8 @@
 // clues, in a dashed square, and Numbered Room clues, in a diamond. A Jigsaw's
 // regions take the boxes' place: the boxes lose their edges and tint, and
 // each region gets a heavy line round it instead. Anti-knight, anti-king,
-// Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV have
-// nothing to draw.
+// Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV, Global
+// Entropy and Global Mod have nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";

@@ -84,13 +84,18 @@
 //            cells sharing a side never hold consecutive digits; Strict
 //            Kropki, cells sharing a side with no dot there are neither
 //            consecutive nor one double the other; Strict XV, cells sharing
-//            a side with no X or V there add up to neither 10 nor 5.
+//            a side with no X or V there add up to neither 10 nor 5; Global
+//            Entropy, every 2x2 square holds a low, a middle and a high
+//            digit; Global Mod, every 2x2 square holds one each of 1 4 7,
+//            2 5 8 and 3 6 9.
 //
 // Diagonals, windows and disjoint groups are extra houses, like rows,
 // columns and boxes; the knight's and king's moves are extra pairs of cells
 // that must differ. A Jigsaw's regions are houses in the boxes' place, and
 // disjoint groups still go by the 3x3 boxes. The rules about sides are
-// sides barred from some marks' relations (barredSides below).
+// sides barred from some marks' relations (barredSides below), and the
+// rules about 2x2 squares sort each square's digits into kinds as entropic
+// and modular lines do (squareKinds below).
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
@@ -109,6 +114,8 @@ export const RULES = [
   { key: "anticonsecutive", bit: 32, letter: "QAC", name: "Anti-consecutive" },
   { key: "strictkropki", bit: 64, letter: "QSK", name: "Strict Kropki" },
   { key: "strictxv", bit: 128, letter: "QSX", name: "Strict XV" },
+  { key: "globalentropy", bit: 256, letter: "QGE", name: "Global Entropy" },
+  { key: "globalmod", bit: 512, letter: "QGM", name: "Global Mod" },
 ];
 export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
@@ -645,6 +652,66 @@ function kindBounds(lines, g, free, kinds) {
 }
 const entropicBounds = (entropics, g, free) => kindBounds(entropics, g, free, ENTROPIC_KINDS);
 const modularBounds = (modulars, g, free) => kindBounds(modulars, g, free, MODULAR_KINDS);
+
+// Global Entropy and Global Mod: every 2x2 square holds a digit of each of
+// the kinds an entropic or a modular line sorts digits into, so one kind
+// twice and the other two once. Each square's four cells, in reading order.
+export const SQUARES = [...Array(64).keys()].map((i) => {
+  const c = cellAt(i >> 3, i & 7);
+  return [c, c + 1, c + 9, c + 10];
+});
+const SQUARE_RULES = [
+  ["globalentropy", ENTROPIC_KINDS],
+  ["globalmod", MODULAR_KINDS],
+];
+// The kinds the switch rules sort every 2x2 square by, one list of three
+// masks for each rule on; empty if neither is.
+export const squareKinds = (rules = 0) => SQUARE_RULES.filter(([key]) => has(rules, key)).map(([, kinds]) => kinds);
+
+// FITS.get(kinds)[m]: the kinds, as bits 0 to 2, that digits in mask m are.
+const FITS = new Map(
+  SQUARE_RULES.map(([, kinds]) => {
+    const fits = new Uint8Array(1024);
+    for (let m = 0; m < 1024; m++) for (let k = 0; k < 3; k++) if (m & kinds[k]) fits[m] |= 1 << k;
+    return [kinds, fits];
+  })
+);
+// SQUARE_FITS[key], key four cells' kinds as three bits each, the first
+// cell's lowest: the kinds each can still be when the four hold all three
+// between them, packed the same way; 0 if they cannot.
+const SQUARE_FITS = new Uint16Array(4096);
+for (let way = 0; way < 81; way++) {
+  const ks = [way % 3, Math.floor(way / 3) % 3, Math.floor(way / 9) % 3, Math.floor(way / 27)];
+  if (ks.reduce((m, k) => m | (1 << k), 0) !== 7) continue;
+  const bits = ks.reduce((m, k, i) => m | (1 << (k + 3 * i)), 0);
+  for (let key = 0; key < 4096; key++) if ((key & bits) === bits) SQUARE_FITS[key] |= bits;
+}
+
+// Narrows each cell of every 2x2 square to the kinds it can be while the
+// square holds all three, for each list of kinds in `sorts`. Placed digits
+// count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if a square cannot hold all three.
+function squareBounds(sorts, g, free) {
+  for (const kinds of sorts) {
+    const fits = FITS.get(kinds);
+    for (const square of SQUARES) {
+      let key = 0;
+      for (let i = 0; i < 4; i++) {
+        const c = square[i];
+        key |= fits[g[c] ? 1 << g[c] : free[c]] << (3 * i);
+      }
+      const can = SQUARE_FITS[key];
+      if (!can) return false;
+      for (let i = 0; i < 4; i++) {
+        const c = square[i];
+        if (g[c]) continue;
+        const k = (can >> (3 * i)) & 7;
+        free[c] &= (k & 1 ? kinds[0] : 0) | (k & 2 ? kinds[1] : 0) | (k & 4 ? kinds[2] : 0);
+      }
+    }
+  }
+  return true;
+}
 
 /* ---- dots and marks between two cells ---- */
 
@@ -1202,8 +1269,9 @@ const norm = (v) => ({
 });
 
 // What can go in each empty cell, by every cell it must differ from, its
-// cage, its thermometers, arrows and other lines, its dots and marks, and
-// the clues outside; 0 for a filled cell. A cage allows digits not already
+// cage, its thermometers, arrows and other lines, its dots and marks, its
+// 2x2 squares under Global Entropy or Global Mod, and the clues outside; 0
+// for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
   const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
@@ -1244,6 +1312,7 @@ export function variantCandidates(grid, variant) {
   edgeBounds(signs, grid, out);
   quadBounds(quads, grid, out);
   barredBounds(barredSides(rules, dots, xvs), grid, out);
+  squareBounds(squareKinds(rules), grid, out);
   sandwichBounds(sandwiches, grid, out);
   littleBounds(littles, grid, out);
   skyscraperBounds(skyscrapers, grid, out);
@@ -1255,8 +1324,8 @@ export function variantCandidates(grid, variant) {
 
 // Depth first search. At each step every empty cell's candidates are worked
 // out from its houses, the cells it must differ from, its thermometers,
-// arrows and other lines, its dots and marks, the clues outside, and its
-// cage, where a
+// arrows and other lines, its dots and marks, its 2x2 squares, the clues
+// outside, and its cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
 // cage cannot do without and only one of its cells can take, goes there;
@@ -1273,6 +1342,7 @@ function search(grid, variant, found) {
   const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const barred = barredSides(rules, dots, xvs);
+  const sorts = squareKinds(rules);
   let steps = 0;
   const hm = new Int32Array(houses.length);
   const of = cageOf(cages);
@@ -1334,6 +1404,7 @@ function search(grid, variant, found) {
     if (signs.length && !edgeBounds(signs, g, free)) return null;
     if (quads.length && !quadBounds(quads, g, free)) return null;
     if (barred.length && !barredBounds(barred, g, free)) return null;
+    if (sorts.length && !squareBounds(sorts, g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;
     if (littles.length && !littleBounds(littles, g, free)) return null;
     if (skyscrapers.length && !skyscraperBounds(skyscrapers, g, free)) return null;

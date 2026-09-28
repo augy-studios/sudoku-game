@@ -11,7 +11,8 @@
 // puzzle's own board. With no seed, the server picks one at
 // `level`, and only those games earn the time bonuses: a seed the player
 // chose could have been solved beforehand. A daily's seed is the day's, from
-// a secret. max_hints is how many hints are free, 0 to 81, or null for all
+// a secret, for today or any day before it back to the first daily; each
+// scores in full, time bonuses included, the first time. max_hints is how many hints are free, 0 to 81, or null for all
 // of them; hints past it cost points, and none is ever refused.
 
 import { endpoint, HttpError, clientKey, limit } from "../_lib/http.js";

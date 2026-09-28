@@ -12,6 +12,7 @@ import { RULE_HELP, rulesOf } from "../main-site/js/rule-help.js";
 import { LEVEL_IDS } from "../main-site/js/levels.js";
 import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
+import { DAILY_FIRST, isDate, addDays, addMonths, monthWeeks, monthName, dayName, streaks } from "../main-site/js/calendar.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
 import {
@@ -53,6 +54,8 @@ import {
   SANDWICH_LINES,
   markKeeps,
   barredSides,
+  squareKinds,
+  SQUARES,
   touching,
   layout,
   RULES,
@@ -358,6 +361,9 @@ function keepsRules(grid, rules) {
   const { houses, pairs } = layout(rules);
   for (const { cells } of houses) if (new Set(cells.map((c) => grid[c])).size !== 9) return false;
   if (barredSides(rules).some(({ cells: [a, b], marks }) => marks.some((m) => markKeeps(m, grid[a], grid[b])))) return false;
+  for (const kinds of squareKinds(rules)) {
+    if (SQUARES.some((square) => new Set(square.map((c) => kinds.findIndex((m) => m & (1 << grid[c])))).size !== 3)) return false;
+  }
   return pairs.every((others, c) => others.every((o) => grid[o] !== grid[c]));
 }
 
@@ -409,6 +415,8 @@ test("rules puzzles solve, check, hint and carry their rules in seeds", () => {
     ["anticonsecutive", "QAC"],
     ["strictkropki", "QSK"],
     ["strictxv", "QSX"],
+    ["globalentropy", "QGE"],
+    ["globalmod", "QGM"],
   ]) {
     const rules = rule(key);
     const { puzzle, solution } = rulesPuzzle(rules);
@@ -1730,6 +1738,45 @@ test("the rules about sides clash, narrow and read back from seeds", () => {
   assert.equal(parseSeed(seed.text.replace("PQSK-", "PQS-")), null, "Q needs its two");
 });
 
+// Global Entropy and Global Mod: every 2x2 square sorted into the kinds
+// entropic and modular lines use, one kind twice and the others once.
+test("the rules about 2x2 squares clash, narrow and read back from seeds", () => {
+  const entropy = { rules: rule("globalentropy") };
+  const mod = { rules: rule("globalmod") };
+  assert.equal(SQUARES.length, 64);
+  assert.deepEqual(SQUARES[63], [70, 71, 79, 80]);
+  assert.equal(layout(entropy.rules).houses.length, 27, "no houses of their own");
+  assert.deepEqual(squareKinds(0), []);
+
+  // Three low digits in a square clash, and so do two low and two middle;
+  // two low and a middle leave the fourth cell high.
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 2, 9: 3 }), entropy)), [0, 1, 9]);
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 4, 9: 2, 10: 5 }), entropy)), [0, 1, 9, 10]);
+  assert.equal(clashes(placed({ 0: 1, 1: 2, 9: 3 })).size, 0, "not without the rule");
+  assert.equal(clashes(placed({ 0: 1, 1: 2, 9: 4 }), entropy).size, 0);
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 2, 9: 4 }), entropy)[10], ENTROPIC_KINDS[2]);
+  // A 1 above a 2 is in two squares, one either side: neither has room for
+  // another low digit, but a column further on does.
+  const cand = variantCandidates(placed({ 1: 1, 10: 2 }), entropy);
+  for (const c of [0, 2, 9, 11]) assert.equal(cand[c] & ENTROPIC_KINDS[0], 0, `no low digit at ${c}`);
+  assert.ok(cand[3] & ENTROPIC_KINDS[0]);
+
+  // Global Mod sorts by 1 4 7, 2 5 8 and 3 6 9 instead.
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 4, 9: 7 }), mod)), [0, 1, 9]);
+  assert.equal(clashes(placed({ 0: 1, 1: 2, 9: 3 }), mod).size, 0);
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 2, 9: 4 }), mod)[10], MODULAR_KINDS[2]);
+
+  // Both at once have a grid: each digit is one of each rule's kinds.
+  const both = entropy.rules | mod.rules;
+  const grid = variantSolve(new Array(81).fill(0), { rules: both });
+  assert.ok(grid && keepsRules(grid, both), "both have a grid");
+
+  // Their letters: QGE, then QGM, after the other switch rules.
+  assert.equal(seedVariantName("QGEQGM-H-BBBB"), "Global Entropy, Global Mod");
+  assert.equal(seedVariantName("QENQSXQGE-H-BBBB"), "Entropic, Strict XV, Global Entropy");
+  assert.equal(variantName({ entropics: [1], rules: entropy.rules }), "Entropic, Global Entropy");
+});
+
 // Entropic and modular lines alike, `kinds` sorting digits for each.
 function kindLinesTest(key, letter, kinds, made, { threes, twoAt, apart }) {
   const kind = (d) => kinds.findIndex((m) => m & (1 << d));
@@ -1905,6 +1952,44 @@ test("every solver step is the answer's digit", () => {
   }
   const pinned = puzzleFor(parseSeed("E-2345-6789"));
   assert.deepEqual(stepThrough(pinned.puzzle, pinned.solution), pinned.solution, "an Easy puzzle falls to singles");
+});
+
+// The daily calendar: its days, its months laid out from Monday, and runs
+// of days in a row, which a day filled in later mends.
+test("the daily calendar lays out months and counts streaks", () => {
+  assert.ok(isDate("2026-02-28") && isDate("2024-02-29"));
+  assert.ok(!isDate("2026-02-29") && !isDate("2026-9-01") && !isDate(null), "only real days, written in full");
+  assert.equal(addDays("2026-02-28", 1), "2026-03-01");
+  assert.equal(addDays("2026-01-01", -1), "2025-12-31");
+  assert.equal(addMonths("2026-01", -1), "2025-12");
+  assert.equal(addMonths("2025-12", 1), "2026-01");
+
+  // September 2026 starts on a Tuesday and ends on a Wednesday.
+  const weeks = monthWeeks("2026-09");
+  assert.equal(weeks.length, 5);
+  assert.deepEqual(weeks[0].slice(0, 2), [null, "2026-09-01"]);
+  assert.deepEqual(weeks[4].slice(1, 4), ["2026-09-29", "2026-09-30", null]);
+  assert.ok(weeks.every((w) => w.length === 7));
+  // February 2021 starts on a Monday and fills exactly four weeks.
+  assert.equal(monthWeeks("2021-02").length, 4);
+
+  assert.equal(monthName("2026-09"), "September 2026");
+  assert.equal(dayName("2026-09-12"), "12 Sep");
+  assert.equal(dayName("2026-09-12", true), "Saturday 12 September 2026");
+  assert.ok(isDate(DAILY_FIRST));
+
+  const today = "2026-09-29";
+  assert.deepEqual(streaks([], today), { current: 0, longest: 0 });
+  assert.deepEqual(streaks(["2026-09-27", "2026-09-28", "2026-09-29"], today), { current: 3, longest: 3 });
+  // Today still to play leaves yesterday's run going; a missed day ends it.
+  assert.deepEqual(streaks(["2026-09-27", "2026-09-28"], today), { current: 2, longest: 2 });
+  assert.deepEqual(streaks(["2026-09-26", "2026-09-27"], today), { current: 0, longest: 2 });
+  // Filling in the 25th joins two runs; the order they come in does not matter.
+  const gap = ["2026-09-29", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-26", "2026-09-27", "2026-09-28"];
+  assert.deepEqual(streaks(gap, today), { current: 4, longest: 4 });
+  assert.deepEqual(streaks([...gap, "2026-09-25", "2026-09-25"], today), { current: 8, longest: 8 });
+  // Across a month's end, and nonsense left out.
+  assert.deepEqual(streaks(["2026-08-31", "2026-09-01", "bad"], "2026-09-01"), { current: 2, longest: 2 });
 });
 
 console.log(`engine ok: ${passed} tests.`);

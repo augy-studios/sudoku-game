@@ -17,8 +17,8 @@
 // for quads, B for Sandwich clues, L for Little Killer clues, Y for
 // Skyscraper clues, U for X-Sum clues, QHS for Hidden Skyscraper clues, QNR
 // for Numbered Room clues and J for a Jigsaw's regions, which the seed then
-// carries too, and D, N, G, W, QDG, QAC, QSK and QSX for the switch rules
-// (variant.js). Once the single
+// carries too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE and QGM for the
+// switch rules (variant.js). Once the single
 // letters ran out, a new one became Q and two more: Q is read with the two
 // after it, and never alone, so a seed from before reads as it did.
 

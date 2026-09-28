@@ -45,6 +45,8 @@ import {
   regionProblem,
   markKeeps,
   barredSides,
+  squareKinds,
+  SQUARES,
   seen,
   SANDWICH_LINES,
   VIEWS,
@@ -104,7 +106,9 @@ export function bitCount(mask) {
 // the two digits either side of a dot, an XV mark or a Greater Than sign
 // they break; a quad's digits, once the digits it still needs outnumber
 // its empty cells; the two digits either side of a
-// side Anti-consecutive, Strict Kropki or Strict XV bars them from; a
+// side Anti-consecutive, Strict Kropki or Strict XV bars them from; the
+// digits of a kind repeated in a 2x2 square, under Global Entropy or Global
+// Mod, once the square has too few cells left for the kinds it lacks; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
 // fill it to some other sum; a Little Killer diagonal's digits once they go
 // past its sum, or fill it to some other sum; the digits of a Skyscraper
@@ -238,6 +242,17 @@ export function clashes(grid, variant = null) {
     if (grid[a] && grid[b] && marks.some((mark) => markKeeps(mark, grid[a], grid[b]))) {
       out.add(a);
       out.add(b);
+    }
+  }
+  for (const kinds of squareKinds(variant?.rules)) {
+    const kind = (d) => kinds.findIndex((m) => m & (1 << d));
+    for (const square of SQUARES) {
+      const filled = square.filter((c) => grid[c]);
+      const got = new Set(filled.map((c) => kind(grid[c])));
+      // Too few cells left for the kinds it has not got.
+      if (got.size + 4 - filled.length < 3) {
+        filled.filter((c) => filled.some((o) => o !== c && kind(grid[o]) === kind(grid[c]))).forEach((c) => out.add(c));
+      }
     }
   }
   for (const { line, sum } of variant?.sandwiches ?? []) {

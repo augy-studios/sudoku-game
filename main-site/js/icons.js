@@ -36,6 +36,8 @@ export const icons = {
   pause: svg(`<path d="M8 5v14M16 5v14"/>`),
   stepBack: svg(`<path d="M17 5v14L8 12Z"/><path d="M6 5v14"/>`),
   stepForward: svg(`<path d="M7 5v14l9-7Z"/><path d="M18 5v14"/>`),
+  chevronLeft: svg(`<path d="m15 18-6-6 6-6"/>`),
+  chevronRight: svg(`<path d="m9 18 6-6-6-6"/>`),
   skipBack: svg(`<path d="M19 6v12l-7-6ZM12 6v12l-7-6Z"/>`),
   skipForward: svg(`<path d="M5 6v12l7-6ZM12 6v12l7-6Z"/>`),
   copy: svg(`<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>`),

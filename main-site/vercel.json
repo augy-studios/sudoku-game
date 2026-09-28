@@ -9,7 +9,7 @@
     }],
     "functions": {
         "api/game/start.js": {
-            "includeFiles": "js/{levels,seed,sudoku}.js"
+            "includeFiles": "js/{levels,seed,sudoku,calendar}.js"
         },
         "api/game/finish.js": {
             "maxDuration": 30,

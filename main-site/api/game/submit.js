@@ -20,7 +20,7 @@ const REFUSALS = {
   same_name: [409, "Your opponent is already on the leaderboard for this race under that name. Pick another."],
   overlap: [409, "That game was played at the same time as another one already on the leaderboard under this name."],
   seed_used: [409, "That name already has this seed on the leaderboard. Try a new seed."],
-  daily_done: [409, "That name already has today's puzzle on the leaderboard."],
+  daily_done: [409, "That name already has that day's puzzle on the leaderboard."],
 };
 
 export default endpoint("POST", async ({ req, body }) => {

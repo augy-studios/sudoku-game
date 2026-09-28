@@ -119,6 +119,17 @@
                     <p class="field-note" id="playModeNote"></p>
                 </div>
 
+                <div class="field-group hidden" id="dailyGroup">
+                    <div class="cal-head">
+                        <button class="icon-btn small" id="calPrev" type="button" aria-label="Previous month"><span data-icon="chevronLeft"></span></button>
+                        <p class="field-label cal-title" id="calTitle" aria-live="polite"></p>
+                        <button class="icon-btn small" id="calNext" type="button" aria-label="Next month"><span data-icon="chevronRight"></span></button>
+                        <button class="btn btn-quiet pill cal-today" id="calToday" type="button">Today</button>
+                    </div>
+                    <div class="cal" id="calGrid" role="group" aria-labelledby="calTitle"></div>
+                    <p class="field-note" id="calNote" aria-live="polite"></p>
+                </div>
+
                 <div class="field-group" id="kindGroup">
                     <p class="field-label" id="kindLabel">Network game</p>
                     <div class="mode-toggle" id="kindPick" role="radiogroup" aria-labelledby="kindLabel">
@@ -280,6 +291,8 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="anticonsecutive">Anti-consecutive</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="strictkropki">Strict Kropki</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="strictxv">Strict XV</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="globalentropy">Global Entropy</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="globalmod">Global Mod</button>
                         </div>
                     </div>
                 </div>
@@ -505,7 +518,7 @@
             <div class="mode-toggle quarters" id="boardTabs" role="tablist" aria-label="Board">
                 <button class="mode-btn" type="button" role="tab" data-board="best" aria-selected="true" aria-controls="boardBody">Best score</button>
                 <button class="mode-btn" type="button" role="tab" data-board="total" aria-selected="false" aria-controls="boardBody">Total points</button>
-                <button class="mode-btn" type="button" role="tab" data-board="daily" aria-selected="false" aria-controls="boardBody">Today</button>
+                <button class="mode-btn" type="button" role="tab" data-board="daily" aria-selected="false" aria-controls="boardBody">Daily</button>
                 <button class="mode-btn" type="button" role="tab" data-board="made" aria-selected="false" aria-controls="boardBody">Puzzles</button>
             </div>
             <form id="madeSearch" class="guess made-search hidden" role="search" autocomplete="off">

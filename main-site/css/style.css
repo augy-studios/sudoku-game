@@ -238,6 +238,64 @@ body {
   padding: 12px 26px;
   font-size: 1rem;
 }
+
+/* The daily calendar: a month of days from Monday. A finished day is
+   tinted with a dot under its number, the day picked is filled, and today
+   has a ring, so each still reads when a day is two of them. */
+.cal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-title { flex: 1; text-align: center; }
+.cal-today { padding: 6px 12px; font-size: 0.8rem; }
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: var(--surface);
+}
+.cal-weekday {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  padding: 2px 0;
+}
+.cal-day {
+  position: relative;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  transition: background 0.15s ease;
+}
+.cal-day:not(:disabled):hover { background: var(--surface-strong); }
+.cal-day:disabled { color: var(--muted); opacity: 0.45; cursor: default; }
+.cal-day.done { background: color-mix(in srgb, var(--brand) 30%, var(--surface-strong)); }
+.cal-day.done::after {
+  content: "";
+  position: absolute;
+  bottom: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand-ink);
+}
+.cal-day.today { box-shadow: inset 0 0 0 1.5px var(--brand-ink); }
+/* The brand is pale, so a brand fill barely tells the picked day from a
+   finished one: it takes the brand's ink, with the page's colour on it. */
+.cal-day[aria-pressed="true"] {
+  background: var(--brand-ink);
+  color: var(--bg);
+}
+.cal-day[aria-pressed="true"]::after { background: var(--bg); }
+.cal-day.today[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--brand-ink), inset 0 0 0 3px var(--bg); }
 .start-btn svg { width: 18px; height: 18px; }
 .join {
   width: 100%;

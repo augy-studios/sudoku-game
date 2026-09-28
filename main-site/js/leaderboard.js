@@ -1,4 +1,4 @@
-// The leaderboard window: best score, total points, or today's daily, one
+// The leaderboard window: best score, total points, or a day's daily, one
 // row per name; and made puzzles, each with a board of its own, found by
 // searching their seeds.
 
@@ -6,6 +6,7 @@ import { api, localDate } from "./api.js";
 import { LEVELS } from "./levels.js";
 import { parseSeed, seedVariantName } from "./seed.js";
 import { escapeHtml, openModal, closeModal, copyText } from "./ui.js";
+import { dayName } from "./calendar.js";
 import { playSeed } from "./game.js";
 
 // "12:05", or "1:02:05" past an hour.
@@ -33,7 +34,7 @@ const BOARDS = {
   daily: {
     head: ["#", "Name", "Score", "Time"],
     row: (e) => [e.rank, e.name, e.score, formatTime(e.elapsed_ms)],
-    about: (date) => `Today's daily puzzle, ${date}. One entry per name.`,
+    about: (date) => `${date === localDate() ? "Today's daily puzzle" : "The daily puzzle"}, ${dayName(date, true)}. One entry per name.`,
   },
   made: {
     head: ["#", "Name", "Score", "Time"],
@@ -46,6 +47,7 @@ const $ = (id) => document.getElementById(id);
 
 let board = "best";
 let madeSeed = null; // a made puzzle's seed, when its board is open
+let dailyDate = null; // the day the daily board shows, null for today
 let loading = 0;
 
 // A made seed is long: its level and first groups say enough in a list.
@@ -106,7 +108,7 @@ async function load() {
   const note = $("boardNote");
   const ticket = ++loading;
   const spec = BOARDS[board];
-  const date = localDate();
+  const date = dailyDate ?? localDate();
   body.setAttribute("aria-busy", "true");
   note.textContent = spec.about(date);
 
@@ -122,7 +124,9 @@ async function load() {
     body.innerHTML = entries.length
       ? table(spec.head, entries.map(spec.row))
       : `<p class="board-empty">${
-          board === "daily" ? "Nobody has finished today's puzzle yet. Be the first." : "No scores yet. Finish a game and add yours."
+          board === "daily"
+            ? `Nobody has finished ${date === localDate() ? "today's" : "that day's"} puzzle yet. Be the first.`
+            : "No scores yet. Finish a game and add yours."
         }</p>`;
   } catch (err) {
     if (ticket !== loading) return;
@@ -156,9 +160,11 @@ async function onMadeAction(action) {
   }
 }
 
-// which: a board; for "made", seed opens that puzzle's board.
-export function openLeaderboard(which = board, seed = null) {
-  if (which === "made") madeSeed = seed ?? madeSeed;
+// which: a board; for "made", `pick` is the seed whose board to open, and
+// for "daily", the day, today's without one.
+export function openLeaderboard(which = board, pick = null) {
+  if (which === "made") madeSeed = pick ?? madeSeed;
+  dailyDate = which === "daily" ? pick : null;
   setTab(which);
   openModal("boardModal");
   load();

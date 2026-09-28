@@ -187,6 +187,16 @@ export const RULE_HELP = {
     rule: "Every X and V is given: two cells sharing a side with no mark between them never add up to 10 or to 5.",
     draw: "Nothing more to draw: put the marks down with XV, or none at all.",
   },
+  globalentropy: {
+    name: "Global Entropy",
+    rule: "Every 2×2 square of cells holds a low digit (1 to 3), a middle one (4 to 6) and a high one (7 to 9). Its fourth digit can be any of them.",
+    draw: "Nothing to draw: turning it on is all.",
+  },
+  globalmod: {
+    name: "Global Mod",
+    rule: "Every 2×2 square of cells holds a digit from each of 1 4 7, 2 5 8 and 3 6 9. Its fourth digit can be from any of them.",
+    draw: "Nothing to draw: turning it on is all.",
+  },
 };
 
 // The rules a variant uses, as keys of RULE_HELP in its order: those whose

@@ -35,6 +35,7 @@ the browser and the server always agree on a game.
 | `multiplayer.js` | Network games on top of `net.js`: hosting, joining, race and co-op. |
 | `qr.js` | QR encoder for the join link, from uwuPromptr, so it works offline. |
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
+| `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
 | `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
@@ -48,6 +49,18 @@ devices on one network, one hosting with a six character code, a link or a
 QR code, and the other joining. A network game is a **race** (the same
 puzzle, each on your own board, with the other player's progress shown
 above yours) or **co-op** (one board, both of you on it).
+
+**The daily calendar.** Daily shows a month at a time, from Monday, and any
+day from the first daily (`DAILY_FIRST` in `calendar.js`, the site's first
+day, 23 September 2025) to today can be picked, by tap or with the arrow
+keys, Home and End. An old day plays and scores exactly as it would have on
+the day: time bonuses, that day's board, and the name's total. A finished
+day is tinted with a dot: finished on this device (kept in
+`uwusudoku.days`), or on the board under the name in Settings. Runs of
+those are the streak, counted to today, or to yesterday while today is
+still to play; filling in a missed day mends a run, as the new-game screen
+says. The streak shows under the calendar and after a daily goes on the
+board.
 
 **Solver.** The fourth tab is for a puzzle from somewhere else. Type or
 paste it in (81 cells, 0 or . for blanks); typing moves on a cell at a time,
@@ -103,20 +116,24 @@ touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
 same place in each 3x3 box hold 1 to 9), Anti-consecutive (cells sharing a
 side are never consecutive), Strict Kropki (every dot is given: cells
-sharing a side with no dot are neither consecutive nor a double) and Strict
+sharing a side with no dot are neither consecutive nor a double), Strict
 XV (every X and V is given: cells sharing a side with no mark add up to
-neither 10 nor 5). Diagonals are drawn as faint lines and windows tinted,
+neither 10 nor 5), Global Entropy (every 2x2 square holds a low, a middle
+and a high digit) and Global Mod (every 2x2 square holds one each of 1 4 7,
+2 5 8 and 3 6 9). Diagonals are drawn as faint lines and windows tinted,
 on the board and in a saved image; the others have nothing to draw, so the
 level chip and the rules line name them. In variant.js, diagonals, windows
 and disjoint groups are extra houses, the knight's and king's moves extra
-pairs of cells that must differ, and the rules about sides barred sides:
+pairs of cells that must differ, the rules about sides barred sides:
 each side and the marks' relations its two digits must not keep, narrowed
-as a dot is (`barredSides`). So one solver handles
+as a dot is (`barredSides`), and the rules about 2x2 squares the kinds of
+entropic and modular lines, each square's cells narrowed to the kinds
+they can be while it holds all three (`squareKinds`). So one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, QEN, QMO,
-P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that
+P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE and QGM, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
@@ -406,7 +423,8 @@ beforehand, so it scores everything else.
 
 ## The leaderboard and anti-cheat
 
-Three boards: each name's best game, each name's total, and today's daily.
+Three boards: each name's best game, each name's total, and a day's daily
+(today's, or the day of the daily just played).
 Solo games, dailies and both sides of a race count. Co-op games and games
 finished with Solve do not. Made puzzles have a board each instead, under
 Puzzles, where they are listed most played first and found by searching
@@ -437,8 +455,10 @@ The database then refuses a submission that:
 | `same_name` | puts both sides of one race under one name |
 
 The daily's seed comes from `DAILY_SECRET` and the date, so it cannot be
-worked out in advance. A second daily ticket from the same browser on the
-same day plays without the time bonuses, since it could follow a first look.
+worked out in advance. Start takes any date from `DAILY_FIRST` to tomorrow
+in UTC, which is today somewhere; the calendar offers up to the player's
+own today. A second daily ticket from the same browser for the same day
+plays without the time bonuses, since it could follow a first look.
 
 What this cannot stop: somebody using a solver in another tab, or faking
 the times of each turn. Turn times come from the browser, and the server
@@ -480,9 +500,11 @@ if a visitor still has it, is replaced the same way, and its cache deleted.
 | `POST /api/game/submit` | `game_id, client_key, name, side, log` | `name, score, time_bonus, elapsed_ms, mistakes, hints, rank, best_score, total, games, total_rank, daily_rank` |
 | `POST /api/leaderboard/name` | `name` | `name`, cleaned, or a `400` saying why not |
 | `GET /api/leaderboard` | `?board=best`, `?board=total`, or `?board=daily&date=YYYY-MM-DD` | `board, entries`, cached 30 s |
+| `GET /api/leaderboard` | `?board=days&name=...` | `board, name, dates`: the days whose daily the name has on the board, oldest first, for the calendar; cached 30 s |
 
 `mode` is `solo`, `daily` or `race`. With no `seed`, start picks one at
-`level` (`E`, `M`, `H` or `X`); a daily takes the player's `date` instead.
+`level` (`E`, `M`, `H` or `X`); a daily takes the picked day's `date`
+instead, from `DAILY_FIRST` to tomorrow in UTC.
 `max_hints` is 0 to 81, or null for no limit. `side` is 0, or 1 for a race's
 guest. `log` is the game's moves as `[kind, cell, digit, ms]` arrays; see
 `js/record.js`. Errors are `{ error, message? }` with a matching status.

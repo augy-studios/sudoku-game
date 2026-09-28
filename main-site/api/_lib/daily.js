@@ -4,23 +4,21 @@
 import { createHmac } from "node:crypto";
 import { LEVEL_IDS } from "../../js/levels.js";
 import { bodyFromBytes, buildSeed } from "../../js/seed.js";
+import { DAILY_FIRST, isDate, addDays } from "../../js/calendar.js";
 import { HttpError } from "./http.js";
-
-const DAY_MS = 86400000;
 
 export function dailyConfigured() {
   return Boolean(process.env.DAILY_SECRET);
 }
 
-// "YYYY-MM-DD", the player's own date. Anything from yesterday to tomorrow
-// in UTC is accepted, which covers every time zone.
+// "YYYY-MM-DD", the player's own date: any day from the first daily on,
+// picked from the calendar, up to tomorrow in UTC, which is today somewhere.
+// An old day scores as it would have on the day.
 export function dailyDate(value) {
   const text = typeof value === "string" ? value.trim() : "";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  const at = m ? Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : NaN;
-  if (!m || new Date(at).toISOString().slice(0, 10) !== text) throw new HttpError(400, "bad_date");
-  const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
-  if (Math.abs(at - today) > DAY_MS) throw new HttpError(400, "bad_date", "That is not today's puzzle.");
+  if (!isDate(text)) throw new HttpError(400, "bad_date");
+  const tomorrow = addDays(new Date(Date.now()).toISOString().slice(0, 10), 1);
+  if (text < DAILY_FIRST || text > tomorrow) throw new HttpError(400, "bad_date", "There is no daily puzzle for that day.");
   return text;
 }
 

@@ -21,9 +21,11 @@ import { confetti } from "./confetti.js";
 import { openSolver } from "./solver.js";
 import { variantName, layout } from "./variant.js";
 import { puzzleText, parseGrid, checkClues, rateLevel } from "./steps.js";
+import { DAILY_FIRST, isDate, addDays, addMonths, monthWeeks, monthName, dayName, streaks } from "./calendar.js";
 
 const GAME_STORAGE = "uwusudoku.game";
 const SETUP_STORAGE = "uwusudoku.setup";
+const DAYS_STORAGE = "uwusudoku.days";
 // How long to wait for the server to pick a seed before starting offline.
 const START_WAIT_MS = 5000;
 const HINT_PRESETS = [0, 1, 3, 5];
@@ -68,7 +70,9 @@ function saveSetup() {
 
 function modeNote() {
   if (setup.mode === "solo") return "Scored on the leaderboard when the game starts while you are online.";
-  if (setup.mode === "daily") return "The same puzzle for everyone today, with its own leaderboard. Starting it needs a connection.";
+  if (setup.mode === "daily") {
+    return `The same puzzle for everyone on a day, with a board for each day. Pick today or any day since ${dayName(DAILY_FIRST, true)}: each scores in full, and filling in a missed day mends your streak. Starting one needs a connection.`;
+  }
   if (setup.mode === "create") return "Make your own puzzle: put the clues in, check it has exactly one answer, then share it as a seed, copy it, or save it as an image.";
   if (setup.mode === "solver") return "Stuck on a puzzle from a book, a newspaper or another app? Type it in for hints that say why, a check of your digits, or the whole answer. Not scored.";
   return setup.kind === "race"
@@ -109,6 +113,11 @@ function renderSetup() {
   // The solver and the maker open their own screen, and need none of this.
   const tool = setup.mode === "solver" || setup.mode === "create";
   $("levelGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
+  $("dailyGroup").classList.toggle("hidden", setup.mode !== "daily");
+  if (setup.mode === "daily") {
+    renderCalendar();
+    fetchBoardDays();
+  }
   $("kindGroup").classList.toggle("hidden", setup.mode !== "network");
   $("hintGroup").classList.toggle("hidden", tool);
   $("seedGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
@@ -122,7 +131,9 @@ function renderSetup() {
     : setup.mode === "network"
       ? "Host a game"
       : setup.mode === "daily"
-        ? "Start today's puzzle"
+        ? pickedDate() === localDate()
+          ? "Start today's puzzle"
+          : `Start the puzzle for ${dayName(pickedDate())}`
         : setup.mode === "solver"
           ? "Open the solver"
           : setup.mode === "create"
@@ -134,6 +145,142 @@ function renderSetup() {
   if (document.activeElement !== $("customHints")) $("customHints").value = String(setup.custom);
   $("hintNote").textContent = hintNote();
 }
+
+/* ---- the daily calendar ----
+   Every day from the first daily to today can be picked and played. A day
+   counts as finished once it was finished on this device, or its daily is
+   on the board under the name in Settings; runs of those make the streak. */
+
+// date: the day picked, null for today. month: the month shown, null for
+// the picked day's. local: days finished here. board: days on the board
+// under boardName, fetched at boardAt.
+const cal = { date: null, month: null, local: new Set(), board: new Set(), boardName: null, boardAt: 0 };
+const BOARD_DAYS_MS = 60000;
+
+function loadDays() {
+  const saved = store.getJSON(DAYS_STORAGE);
+  cal.local = new Set(Array.isArray(saved) ? saved.filter(isDate) : []);
+}
+
+function markDay(date) {
+  if (cal.local.has(date)) return;
+  cal.local.add(date);
+  store.set(DAYS_STORAGE, [...cal.local].sort());
+}
+
+// The day to play: the one picked while it is still in range, else today.
+function pickedDate() {
+  const today = localDate();
+  return cal.date && cal.date >= DAILY_FIRST && cal.date < today ? cal.date : today;
+}
+
+function finishedDays() {
+  const name = getSettings().name;
+  const board = name && cal.boardName?.toLowerCase() === name.toLowerCase() ? cal.board : [];
+  return new Set([...cal.local, ...board]);
+}
+
+// The days on the board under `name`, at most once a minute unless forced.
+async function fetchBoardDays(name = getSettings().name, force = false) {
+  if (!name) return;
+  const same = cal.boardName?.toLowerCase() === name.toLowerCase();
+  if (same && !force && Date.now() - cal.boardAt < BOARD_DAYS_MS) return;
+  cal.boardAt = Date.now();
+  try {
+    const r = await api.leaderboard("days", { name });
+    cal.boardName = r.name;
+    cal.board = new Set((r.dates ?? []).filter(isDate));
+    if (setup.mode === "daily") renderCalendar();
+  } catch {
+    // Offline, or a name the board refuses: the days finished here still show.
+  }
+}
+
+// "Streak: 3 days in a row, longest 7." for `days` finished.
+function streakText(days) {
+  const { current, longest } = streaks(days, localDate());
+  const n = (k) => `${k} ${k === 1 ? "day" : "days"}`;
+  if (current) return `Streak: ${n(current)} in a row${longest > current ? `, longest ${n(longest)}` : ""}.`;
+  return longest ? `No streak running. Your longest was ${n(longest)}.` : "Finish a day's puzzle to start a streak.";
+}
+
+function renderCalendar() {
+  const today = localDate();
+  const picked = pickedDate();
+  const first = DAILY_FIRST.slice(0, 7);
+  const last = today.slice(0, 7);
+  let month = cal.month ?? picked.slice(0, 7);
+  if (month < first) month = first;
+  if (month > last) month = last;
+  cal.month = month;
+  const done = finishedDays();
+
+  $("calTitle").textContent = monthName(month);
+  $("calPrev").disabled = month <= first;
+  $("calNext").disabled = month >= last;
+  $("calToday").disabled = picked === today && month === last;
+  const head = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => `<span class="cal-weekday" aria-hidden="true">${d.slice(0, 2)}</span>`);
+  const dates = monthWeeks(month).flat();
+  // The one day Tab stops at: the picked day, or this month's first open one.
+  const stop = dates.includes(picked) ? picked : dates.find((date) => date && date >= DAILY_FIRST && date <= today);
+  const days = dates.map((date) => {
+    if (!date) return `<span aria-hidden="true"></span>`;
+    const open = date >= DAILY_FIRST && date <= today;
+    const classes = ["cal-day", done.has(date) ? "done" : "", date === today ? "today" : ""].filter(Boolean).join(" ");
+    const label = `${dayName(date, true)}${date === today ? ", today" : ""}${done.has(date) ? ", finished" : ""}`;
+    return `<button class="${classes}" type="button" data-date="${date}" aria-label="${label}" aria-pressed="${date === picked}"
+      tabindex="${date === stop ? 0 : -1}"${open ? "" : " disabled"}>${Number(date.slice(8))}</button>`;
+  });
+  $("calGrid").innerHTML = [...head, ...days].join("");
+  const name = getSettings().name;
+  $("calNote").textContent =
+    streakText(done) + (name ? "" : " Counted on this device until a finished daily goes on the board under your name.");
+}
+
+// Picks a day, showing its month, and keeps focus on it for the keyboard.
+function pickDay(date, focus = false) {
+  const today = localDate();
+  if (date < DAILY_FIRST) date = DAILY_FIRST;
+  if (date > today) date = today;
+  cal.date = date === today ? null : date;
+  cal.month = date.slice(0, 7);
+  renderSetup();
+  if (focus) $("calGrid").querySelector(`[data-date="${date}"]`)?.focus();
+}
+
+function initCalendar() {
+  loadDays();
+  $("calPrev").addEventListener("click", () => {
+    cal.month = addMonths(cal.month, -1);
+    renderCalendar();
+  });
+  $("calNext").addEventListener("click", () => {
+    cal.month = addMonths(cal.month, 1);
+    renderCalendar();
+  });
+  $("calToday").addEventListener("click", () => pickDay(localDate()));
+  $("calGrid").addEventListener("click", (e) => {
+    const day = e.target.closest("[data-date]");
+    if (day && !day.disabled) pickDay(day.dataset.date);
+  });
+  // Arrows step a day or a week, Home and End go to the first daily and
+  // today, as a date picker's do.
+  const STEPS = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+  $("calGrid").addEventListener("keydown", (e) => {
+    const picked = pickedDate();
+    let next = null;
+    if (e.key in STEPS) next = addDays(picked, STEPS[e.key]);
+    else if (e.key === "Home") next = DAILY_FIRST;
+    else if (e.key === "End") next = localDate();
+    if (!next) return;
+    e.preventDefault();
+    pickDay(next, true);
+  });
+}
+
+// How a daily is named on its chip and in its result: "today's puzzle", or
+// "the puzzle for 12 Sep".
+const dailyLabel = (date) => (!date || date === localDate() ? "today's puzzle" : `the puzzle for ${dayName(date)}`);
 
 function shake(input) {
   input.classList.remove("shake");
@@ -206,26 +353,26 @@ export async function launch({ mode, role = null, level = "M", seed = null, maxH
   return startGame({ mode, role, seed: newSeed(level), maxHints, ticket: "offline" });
 }
 
-// Today's puzzle comes from the server, so it needs a connection.
+// The picked day's puzzle comes from the server, so it needs a connection.
 async function launchDaily(maxHints) {
   if (launching) return;
   setLaunching(true);
   let t = null;
   let problem = "";
   try {
-    t = await withTimeout(api.start({ mode: "daily", date: localDate(), maxHints }), START_WAIT_MS * 2);
+    t = await withTimeout(api.start({ mode: "daily", date: pickedDate(), maxHints }), START_WAIT_MS * 2);
   } catch (err) {
     problem =
       err.code === "offline" || err.message === "timeout"
-        ? "Today's puzzle needs a connection. Try again once you are online."
+        ? "The daily puzzle needs a connection. Try again once you are online."
         : err.message && err.message !== err.code
           ? err.message
-          : "Today's puzzle did not load. Try again in a moment.";
+          : "The daily puzzle did not load. Try again in a moment.";
   }
   setLaunching(false);
   const seed = t && parseSeed(t.seed);
   if (!seed) {
-    $("playModeNote").textContent = problem || "Today's puzzle did not load. Try again in a moment.";
+    $("playModeNote").textContent = problem || "The daily puzzle did not load. Try again in a moment.";
     return;
   }
   startGame({ mode: "daily", seed, date: t.date, maxHints, gameId: t.game_id, ticket: "ok", serverSeed: t.server_seed === true });
@@ -558,7 +705,8 @@ function currentTally() {
 
 function renderChips(over) {
   const level = LEVELS[g.seed.level].name;
-  const kind = { daily: "Daily", race: "Race", coop: "Co-op" }[g.mode] ?? (variantName(g.seed) || (g.seed.made ? "Made" : ""));
+  const daily = g.date && g.date !== localDate() ? `Daily ${dayName(g.date)}` : "Daily";
+  const kind = { daily, race: "Race", coop: "Co-op" }[g.mode] ?? (variantName(g.seed) || (g.seed.made ? "Made" : ""));
   $("levelChip").textContent = kind ? `${kind}, ${level}` : level;
   renderTimer();
   const t = currentTally();
@@ -726,6 +874,8 @@ function renderScoreLine() {
 
 function finish(fresh) {
   const s = getSettings();
+  // A day finished without Solve counts on the calendar, board or not.
+  if (g.mode === "daily" && g.date && res.complete && !res.solved) markDay(g.date);
   selected = null;
   padDigit = 0;
   notesMode = false;
@@ -867,7 +1017,15 @@ async function submitAs(name, auto = false) {
     g.elapsed = r.elapsed_ms;
     const games = r.games === 1 ? "1 game" : `${r.games} games`;
     const bonus = r.time_bonus ? `, with +${r.time_bonus}% for time` : "";
-    const daily = r.daily_rank ? ` Ranked ${r.daily_rank} on today's puzzle.` : "";
+    let daily = r.daily_rank ? ` Ranked ${r.daily_rank} on ${dailyLabel(game.date)}.` : "";
+    if (game.mode === "daily" && game.date) {
+      // The name's days, which the board may not show this one in yet.
+      await fetchBoardDays(r.name, true);
+      if (game !== g) return;
+      if (cal.boardName?.toLowerCase() === r.name.toLowerCase()) cal.board.add(game.date);
+      const { current } = streaks(finishedDays(), localDate());
+      if (current) daily += ` Daily streak: ${current} ${current === 1 ? "day" : "days"}.`;
+    }
     g.submittedText = game.seed.made
       ? `Added as ${r.name} for ${r.score} points. Ranked ${r.seed_rank} on this puzzle's board.`
       : `Added as ${r.name} for ${r.score} points${bonus}. Best ${r.best_score}, ranked ${r.rank}. ` +
@@ -1242,6 +1400,7 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   board = new BoardView($("board"), { onSelect: selectCell });
   replayer = new Replay(board);
   loadSetup();
+  initCalendar();
 
   pick("modePick", "pick", "mode");
   pick("levelPick", "level", "level");
@@ -1295,7 +1454,8 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   $("resultBoardBtn").addEventListener("click", () => {
     const seed = (watching ?? g)?.seed;
     if (seed?.made) openLeaderboard("made", seed.text);
-    else openLeaderboard(g?.mode === "daily" ? "daily" : undefined);
+    else if (g?.mode === "daily") openLeaderboard("daily", g.date);
+    else openLeaderboard();
   });
   $("shareBtn").addEventListener("click", onShare);
   const shownSeed = () => (watching ?? g)?.seed;
