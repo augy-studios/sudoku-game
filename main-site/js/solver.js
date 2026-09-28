@@ -42,7 +42,8 @@
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
-import { madeSeed, parseSeed, puzzleFor } from "./seed.js";
+import { madeSeed, parseSeed, parseCode, puzzleFor } from "./seed.js";
+import { findSeed, fetchCode, seedLabel, CODE_TROUBLE } from "./api.js";
 import {
   cageProblem,
   rellikProblem,
@@ -316,7 +317,10 @@ function settle() {
     return;
   }
   solution = check.solution;
-  if (s.stage === "made") made = madeSeed(rateLevel(s.clues, variant()), s.clues, variant());
+  if (s.stage === "made") {
+    made = madeSeed(rateLevel(s.clues, variant()), s.clues, variant());
+    showMadeCode();
+  }
 }
 
 function load(which) {
@@ -927,6 +931,7 @@ function pasteText(text) {
   // A seed brings its puzzle, and a made one its rules and drawn parts.
   const seed = parseGrid(text) ? null : parseSeed(text);
   if (seed) return openSeed(seed, "Pasted");
+  if (parseCode(text)) return openCode(text);
   const next = parseGrid(text);
   if (!next) return say("That paste is not a puzzle. It needs 81 cells in reading order: digits for clues, and 0 or . for blanks.");
   change(next);
@@ -946,9 +951,25 @@ async function onCopy() {
   flash("solverCopyLabel", (await copyText(puzzleText(s.clues))) ? "Copied" : "Copy failed", "Copy puzzle");
 }
 
+// A pasted short code, looked up, then opened as its seed.
+async function openCode(text) {
+  say("Looking up that short seed…");
+  const found = await findSeed(text);
+  if (s.stage !== "enter") return;
+  if (!found.seed) return say(CODE_TROUBLE[found.why]);
+  openSeed(found.seed, "Pasted");
+}
+
+// The made seed's short code, once it comes: shown in its place, and what
+// Copy seed copies.
+function showMadeCode() {
+  const seed = made;
+  fetchCode(seed).then((code) => code && made === seed && render());
+}
+
 async function onSeedCopy() {
   if (!made) return;
-  flash("solverSeedCopyLabel", (await copyText(made.text)) ? "Copied" : "Copy failed", "Copy seed");
+  flash("solverSeedCopyLabel", (await copyText(seedLabel(made))) ? "Copied" : "Copy failed", "Copy seed");
 }
 
 // The clues as a PNG, to print or send.
@@ -963,8 +984,8 @@ async function onImage() {
   flash("solverImageLabel", ok ? "Saved" : "Save failed", "Save image");
 }
 
-// The Open a seed box.
-function onSeedOpen() {
+// The Open a seed box. A short code is looked up first.
+async function onSeedOpen() {
   const box = $("solverSeedInput");
   const text = box.value.trim();
   if (s.stage !== "enter") return;
@@ -972,9 +993,14 @@ function onSeedOpen() {
     seedNote = "Type or paste a seed first, such as one from Copy seed.";
     return render();
   }
-  const seed = parseSeed(text);
+  if (parseCode(text)) {
+    seedNote = "Looking up that short seed…";
+    render();
+  }
+  const { seed, why } = await findSeed(text);
+  if (s.stage !== "enter") return;
   if (!seed) {
-    seedNote = "That is not a seed, or not one with a single answer. Seeds look like H-BXK4-M9TR; a made puzzle's are longer.";
+    seedNote = CODE_TROUBLE[why] ?? "That is not a seed, or not one with a single answer. Seeds look like H-BXK4-M9TR; a made puzzle's are longer.";
     box.classList.remove("shake");
     void box.offsetWidth;
     box.classList.add("shake");
@@ -1032,6 +1058,7 @@ function onGo() {
   if (creating()) {
     s.stage = "made";
     made = madeSeed(rateLevel(s.clues, variant()), s.clues, variant());
+    showMadeCode();
     save();
     return say(`It has exactly one answer, so it is a proper puzzle. ${madeSummary()}`);
   }
@@ -2174,7 +2201,7 @@ const TITLES = {
 const FOOTS = {
   solver: "Not scored, and nothing leaves this browser. Paste takes 81 cells in reading order, with 0 or . for blanks, or a seed.",
   create: "Paste takes 81 cells in reading order, with 0 or . for blanks, or a seed. A made puzzle gets a leaderboard of its own.",
-  made: "The seed carries the whole puzzle: paste it into the Seed box on the new-game screen to play it. Played solo, it scores on its own board, never the main ones.",
+  made: "Paste the seed into the Seed box on the new-game screen to play it; a short one needs a connection the first time. Played solo, it scores on its own board, never the main ones.",
 };
 
 // A kind of line to draw, with its rule on: all but the one being changed,
@@ -2259,7 +2286,7 @@ function render() {
 
   $("solverTitle").textContent = TITLES[mode][stage];
   $("solverStatus").textContent = note || defaultStatus();
-  $("solverSeed").textContent = made ? `Seed ${made.text}` : "";
+  $("solverSeed").textContent = made ? `Seed ${seedLabel(made)}` : "";
   $("solverSeed").classList.toggle("hidden", !made);
   $("solverFoot").textContent = stage === "made" ? FOOTS.made : FOOTS[mode];
 

@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { RULE_HELP, rulesOf } from "../main-site/js/rule-help.js";
 import { LEVEL_IDS } from "../main-site/js/levels.js";
-import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName } from "../main-site/js/seed.js";
+import { newSeed, parseSeed, puzzleFor, madeSeed, seedVariantName, parseCode, codeText, needsCode, bodyFromBytes, CODE_LENGTH } from "../main-site/js/seed.js";
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { DAILY_FIRST, isDate, addDays, addMonths, monthWeeks, monthName, dayName, streaks } from "../main-site/js/calendar.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
@@ -277,6 +277,25 @@ test("made puzzles' seeds carry the puzzle", () => {
   loose[loose.findIndex(Boolean)] = 0;
   assert.equal(parseSeed(madeSeed("M", loose).text), null, "a puzzle with two answers is no seed");
   assert.equal(parseSeed("M-BBBB-BBBB-BBBB"), null, "nor is an empty grid");
+});
+
+// Short codes stand for long made seeds, and are never taken for a seed of
+// either kind, nor either kind for one.
+test("short codes read forgivingly and are never taken for seeds", () => {
+  assert.deepEqual(parseCode(" h-b7k4q-m9trz "), { level: "H", code: "B7K4QM9TRZ", text: "H-B7K4Q-M9TRZ" });
+  assert.equal(codeText("X", "B7K4QM9TRZ"), "X-B7K4Q-M9TRZ");
+  assert.equal(parseSeed("H-B7K4Q-M9TRZ"), null, "not a seed");
+  for (const bad of ["Q-B7K4Q-M9TRZ", "H-B7K4Q-M9TR", "H-B7K4Q-M9TRZZ", "H-B7K4Q-M9TR0", "H-B7K4Q-M9TRA", "", null]) assert.equal(parseCode(bad), null, String(bad));
+  assert.equal(parseCode("H-BXK4-M9TR"), null, "a generated seed is not a code");
+  const made = madeSeed("H", puzzleFor(parseSeed("E-2345-6789")).puzzle);
+  assert.ok(needsCode(made.text), `a made seed of ${made.text.length} characters has a code`);
+  assert.ok(!needsCode("H-BXK4-M9TR"), "a generated one never does");
+  assert.equal(parseCode(made.text), null);
+  // Ten characters from random bytes, from the seed alphabet.
+  const code = bodyFromBytes(new Uint8Array(32).map((_, i) => i * 7), CODE_LENGTH);
+  assert.equal(code.length, CODE_LENGTH);
+  assert.ok(parseCode(`M${code}`));
+  assert.equal(bodyFromBytes(new Uint8Array(4), CODE_LENGTH), null, "too few bytes");
 });
 
 test("clues are checked for exactly one answer", () => {

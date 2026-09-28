@@ -8,7 +8,9 @@
 //
 // A puzzle someone made has a seed too, a longer one that carries the
 // puzzle itself rather than what to generate: see madeSeed below. It has
-// `made: true`, and scores only on its own board. A made variant puzzle's
+// `made: true`, and scores only on its own board. Past twenty characters it
+// is shared as a short code the server looks up, as in "H-B7K4Q-M9TRZ"
+// (short codes, below). A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
 // QRC for Rellik cages, QLB for lunchboxes, QLS for Look and Say cages, QEC
 // for Equality cages,
@@ -101,17 +103,17 @@ export function randomSource(seedNumber) {
   };
 }
 
-// Eight seed characters from random bytes. Bytes at or above the limit would
-// make some characters likelier, so they are skipped. Returns null if the
-// bytes run out first.
-export function bodyFromBytes(bytes) {
+// Eight seed characters from random bytes, or `length`. Bytes at or above
+// the limit would make some characters likelier, so they are skipped.
+// Returns null if the bytes run out first.
+export function bodyFromBytes(bytes, length = BODY_LENGTH) {
   const limit = 256 - (256 % ALPHABET.length);
   let body = "";
   for (const byte of bytes) {
-    if (body.length === BODY_LENGTH) break;
+    if (body.length === length) break;
     if (byte < limit) body += ALPHABET[byte % ALPHABET.length];
   }
-  return body.length === BODY_LENGTH ? body : null;
+  return body.length === length ? body : null;
 }
 
 function randomBody() {
@@ -767,6 +769,33 @@ export function parseSeed(input, level = null) {
   }
   if (level && LEVEL_IDS.includes(level) && isBody(raw)) return buildSeed(level, raw);
   return null;
+}
+
+/* ---- short codes ---- */
+
+// A made seed longer than CODE_OVER characters is shared as a short code:
+// its level and CODE_LENGTH seed characters, written "H-B7K4Q-M9TRZ". The
+// server keeps the whole seed each code stands for (api/seed/), so a code
+// needs a connection to open the first time. It is longer than a generated
+// seed's eight characters and shorter than a made seed's twelve, so
+// parseSeed never takes one for a seed, and never returns one.
+export const CODE_OVER = 20;
+export const CODE_LENGTH = 10;
+
+// Whether a seed's text is long enough to be shared by a short code: only a
+// made seed ever is.
+export const needsCode = (text) => typeof text === "string" && text.length > CODE_OVER;
+
+// A short code as it is written, from its level and its characters.
+export const codeText = (level, code) => `${level}-${code.slice(0, 5)}-${code.slice(5)}`;
+
+// A short code from whatever was typed, forgiving about case, spaces and
+// dashes as parseSeed is: { level, code, text }, or null if it is not one.
+export function parseCode(input) {
+  const raw = String(input ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const code = raw.slice(1);
+  if (raw.length !== CODE_LENGTH + 1 || !LEVEL_IDS.includes(raw[0]) || ![...code].every((ch) => ALPHABET.includes(ch))) return null;
+  return { level: raw[0], code, text: codeText(raw[0], code) };
 }
 
 // The seed's puzzle and its solution. Generating takes a few milliseconds,

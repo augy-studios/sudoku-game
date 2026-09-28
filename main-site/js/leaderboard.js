@@ -2,9 +2,9 @@
 // row per name; and made puzzles, each with a board of its own, found by
 // searching their seeds.
 
-import { api, localDate } from "./api.js";
+import { api, localDate, findSeed, knownCode } from "./api.js";
 import { LEVELS } from "./levels.js";
-import { parseSeed, seedVariantName } from "./seed.js";
+import { parseSeed, parseCode, seedVariantName } from "./seed.js";
 import { escapeHtml, openModal, closeModal, copyText } from "./ui.js";
 import { dayName } from "./calendar.js";
 import { playSeed } from "./game.js";
@@ -47,10 +47,12 @@ const $ = (id) => document.getElementById(id);
 
 let board = "best";
 let madeSeed = null; // a made puzzle's seed, when its board is open
+let madeCode = null; // and its short code, if it has one
 let dailyDate = null; // the day the daily board shows, null for today
 let loading = 0;
 
-// A made seed is long: its level and first groups say enough in a list.
+// A made seed is long: in a list, its short code, or else its level and
+// first groups, say enough.
 const shortSeed = (text) => (text.length > 16 ? `${text.slice(0, 14)}…` : text);
 
 function setTab(next) {
@@ -75,13 +77,13 @@ function renderPuzzles(data) {
   const puzzles = data.puzzles ?? [];
   if (!puzzles.length) {
     return `<p class="board-empty">${
-      data.q ? "No made puzzle with a board has a seed like that. Paste a whole seed to open its board." : "Nobody has played a made puzzle yet. Make one in the Create tab."
+      data.q ? "No made puzzle with a board has a seed like that. Paste a whole seed or a short one to open its board." : "Nobody has played a made puzzle yet. Make one in the Create tab."
     }</p>`;
   }
   return `<ul class="made-list">${puzzles
     .map(
       (p) => `<li><button class="made-row" type="button" data-seed="${escapeHtml(p.seed)}">
-        <span class="made-row-seed">${escapeHtml(shortSeed(p.seed))}</span>
+        <span class="made-row-seed">${escapeHtml(p.code ?? shortSeed(p.seed))}</span>
         <span class="made-row-info">${escapeHtml([seedVariantName(p.seed), LEVELS[p.level]?.name].filter(Boolean).join(", "))}, ${p.players} ${p.players === 1 ? "player" : "players"}, best ${p.top_score}</span>
       </button></li>`
     )
@@ -91,8 +93,9 @@ function renderPuzzles(data) {
 // One made puzzle's board, with its seed, and a way to play it.
 function renderMade(data) {
   const entries = data.entries ?? [];
+  madeCode = data.code ?? knownCode(madeSeed);
   return `<div class="made-head">
-      <p class="made-seed">Seed ${escapeHtml(madeSeed)}</p>
+      <p class="made-seed">Seed ${escapeHtml(madeCode ?? madeSeed)}</p>
       <div class="round-actions">
         <button class="btn btn-primary pill" type="button" data-made="play">Play it</button>
         <button class="btn btn-quiet pill" type="button" data-made="copy">Copy seed</button>
@@ -138,10 +141,12 @@ async function load() {
   }
 }
 
-// A whole made seed opens its board straight away; anything else searches.
-function onSearch(e) {
+// A whole made seed, or a short code once looked up, opens its board
+// straight away; anything else searches, short codes included.
+async function onSearch(e) {
   e.preventDefault();
-  const seed = parseSeed($("madeQuery").value);
+  const q = $("madeQuery").value;
+  const { seed } = parseCode(q) ? await findSeed(q) : { seed: parseSeed(q) };
   madeSeed = seed?.made ? seed.text : null;
   load();
 }
@@ -152,7 +157,7 @@ async function onMadeAction(action) {
     madeSeed = null;
     load();
   } else if (action === "copy") {
-    msg.textContent = (await copyText(madeSeed)) ? "Seed copied." : "Copy failed.";
+    msg.textContent = (await copyText(madeCode ?? madeSeed)) ? "Seed copied." : "Copy failed.";
   } else if (action === "play") {
     const seed = parseSeed(madeSeed);
     if (seed && playSeed(seed)) closeModal("boardModal");

@@ -5,7 +5,8 @@
 // Run: node scripts/test-verify.mjs
 
 import assert from "node:assert/strict";
-import { parseSeed, puzzleFor } from "../main-site/js/seed.js";
+import { parseSeed, puzzleFor, madeSeed, parseCode } from "../main-site/js/seed.js";
+import { longSeed, newCode } from "../main-site/api/_lib/codes.js";
 import { play } from "../main-site/js/record.js";
 import { readLog, settle, verify } from "../main-site/api/_lib/verify.js";
 import { tally, finalScore, timeBonus } from "../main-site/js/score.js";
@@ -95,6 +96,18 @@ test("a daily's date is any day from the first daily on", () => {
   refused("bad_date", () => dailyDate(addDays(DAILY_FIRST, -1)));
   refused("bad_date", () => dailyDate("2026-02-30"));
   refused("bad_date", () => dailyDate(20260101));
+});
+
+test("only a long made seed gets a short code, and codes are fresh", () => {
+  const made = madeSeed("H", puzzle);
+  assert.equal(longSeed(made.text.toLowerCase()).text, made.text, "read as any seed is");
+  refused("bad_seed", () => longSeed(seed.text));
+  refused("bad_seed", () => longSeed(made.text.slice(0, -2)));
+  refused("bad_seed", () => longSeed(null));
+  refused("bad_seed", () => longSeed(`${made.text}${"B".repeat(4000)}`));
+  const codes = new Set(Array.from({ length: 50 }, newCode));
+  assert.equal(codes.size, 50);
+  for (const code of codes) assert.ok(parseCode(`H${code}`), code);
 });
 
 console.log(`verify ok: ${passed} tests.`);

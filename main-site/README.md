@@ -39,7 +39,7 @@ the browser and the server always agree on a game.
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
 | `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say and Equality cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
-| `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
+| `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
 ## The game
@@ -565,6 +565,9 @@ if a visitor still has it, is replaced the same way, and its cache deleted.
 | `POST /api/leaderboard/name` | `name` | `name`, cleaned, or a `400` saying why not |
 | `GET /api/leaderboard` | `?board=best`, `?board=total`, or `?board=daily&date=YYYY-MM-DD` | `board, entries`, cached 30 s |
 | `GET /api/leaderboard` | `?board=days&name=...` | `board, name, dates`: the days whose daily the name has on the board, oldest first, for the calendar; cached 30 s |
+| `GET /api/leaderboard` | `?board=made&seed=...`, or `?board=made&q=...` | `board, seed, code, entries` for one made puzzle's board; `board, q, puzzles` (each with its `code`) for the list or a search, which also matches short codes; cached 30 s |
+| `POST /api/seed/shorten` | `seed` | `seed, code`: a made seed longer than 20 characters, checked as any seed is, and its short code, the same one every time |
+| `GET /api/seed/lookup` | `?code=H-B7K4Q-M9TRZ` | `seed`, the whole seed the code stands for; cached for good, or a `404` |
 
 `mode` is `solo`, `daily` or `race`. With no `seed`, start picks one at
 `level` (`E`, `M`, `H` or `X`); a daily takes the picked day's `date`
@@ -572,8 +575,23 @@ instead, from `DAILY_FIRST` to tomorrow in UTC.
 `max_hints` is 0 to 81, or null for no limit. `side` is 0, or 1 for a race's
 guest. `log` is the game's moves as `[kind, cell, digit, ms]` arrays; see
 `js/record.js`. Errors are `{ error, message? }` with a matching status.
-Start and finish are limited to 60 an address per 10 minutes, and submit to
-30.
+Start and finish are limited to 60 an address per 10 minutes, and submit and
+shorten to 30.
+
+**Short seeds.** A made seed carries the whole puzzle, so a big variant's
+runs to hundreds of characters. One longer than 20 is shared as a short
+code instead: its level and ten seed characters, `H-B7K4Q-M9TRZ`, never
+taken for a generated seed (eight) or a made one (twelve or more). The
+`sudoku_seed_codes` table (`migrations/003_seed_codes.sql`) holds the whole
+seed each code stands for. Create asks for a made puzzle's code as soon as
+it checks out, and a game of a long made seed shows its code on the seed
+chip and the result; Copy seed copies the code, or the whole seed while
+there is no connection. The seed box on the new-game screen, Create's Open
+a seed and Paste, and the made-puzzles search all take a code and look it
+up. Everything underneath keeps the whole seed: start tickets, boards,
+saved games and replay links. A browser keeps the last 100 codes it has
+made or opened (`uwusudoku.seedCodes`), so those open offline too; any other
+code needs a connection the first time.
 
 ## Environment variables (Vercel)
 

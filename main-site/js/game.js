@@ -7,12 +7,12 @@
 // the same way.
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
-import { newSeed, parseSeed, puzzleFor, madeSeed } from "./seed.js";
+import { newSeed, parseSeed, parseCode, puzzleFor, madeSeed } from "./seed.js";
 import { play, toWire, fromWire, unpackLog, packReplay, unpackReplay } from "./record.js";
 import { tally, liveScore, finalScore, timeBonus, TIME_BONUS_MAX } from "./score.js";
 import { BoardView } from "./board.js";
 import { Replay } from "./replay.js";
-import { api, localDate } from "./api.js";
+import { api, localDate, findSeed, fetchCode, knownCode, seedLabel, CODE_TROUBLE } from "./api.js";
 import { getSettings, onSettingsChange, saveSettings } from "./settings.js";
 import { openLeaderboard, formatTime } from "./leaderboard.js";
 import { copyText, hydrateIcons, store, fillRuleHelp } from "./ui.js";
@@ -289,16 +289,20 @@ function shake(input) {
   input.focus();
 }
 
-// What the seed box holds: a seed, or a whole puzzle with one answer, as
-// Copy puzzle writes it, which plays as a made puzzle. null if neither.
-function seedFromInput(text) {
-  const seed = parseSeed(text, setup.level);
-  if (seed) return seed;
+// What the seed box holds: a seed, a short code, which is looked up, or a
+// whole puzzle with one answer, as Copy puzzle writes it, which plays as a
+// made puzzle. { seed }, or { seed: null, why } as findSeed has it.
+async function seedFromInput(text) {
+  const found = await findSeed(text, setup.level);
+  if (found.seed || found.why !== "bad") return found;
   const grid = parseGrid(text);
-  return grid && checkClues(grid).ok ? madeSeed(rateLevel(grid), grid) : null;
+  return grid && checkClues(grid).ok ? { seed: madeSeed(rateLevel(grid), grid) } : found;
 }
 
-function onStart() {
+let lookingUp = false;
+
+async function onStart() {
+  if (lookingUp) return;
   if (setup.mode === "solver" || setup.mode === "create") return openSolver(setup.mode);
   const maxHints = maxHintsFromSetup();
   if (maxHints === undefined) {
@@ -308,10 +312,19 @@ function onStart() {
   if (setup.mode === "daily") return launchDaily(maxHints);
 
   const typed = $("seedInput").value.trim() !== "";
-  const seed = typed ? seedFromInput($("seedInput").value) : null;
-  if (typed && !seed) {
-    $("seedNote").textContent = "That is not a seed, or a puzzle with one answer. Seeds look like H-BXK4-M9TR.";
-    return shake($("seedInput"));
+  let seed = null;
+  if (typed) {
+    const text = $("seedInput").value;
+    if (parseCode(text)) $("seedNote").textContent = "Looking up that short seed…";
+    lookingUp = true;
+    const found = await seedFromInput(text);
+    lookingUp = false;
+    seed = found.seed;
+    if (!seed) {
+      $("seedNote").textContent = CODE_TROUBLE[found.why] ?? "That is not a seed, or a puzzle with one answer. Seeds look like H-BXK4-M9TR.";
+      return shake($("seedInput"));
+    }
+    $("seedNote").textContent = SEED_NOTE;
   }
   if (setup.mode === "network") {
     net?.host({ kind: setup.kind, level: setup.level, seed, maxHints });
@@ -429,7 +442,18 @@ export function startGame(opts) {
   persist();
   update({ fresh: true });
   if (g.ticket === "pending") fetchTicket(g);
+  showCode(g.seed);
   return g;
+}
+
+// A long made seed's short code, on the seed chip and the result once it
+// comes; until it does, or with no connection, they offer the seed itself.
+function showCode(seed) {
+  fetchCode(seed).then((code) => {
+    if (!code || (watching ?? g)?.seed !== seed) return;
+    $("seedChip").textContent = seedChipText(seed);
+    if ($("resultSeed").textContent === `Seed ${seed.text}`) $("resultSeed").textContent = `Seed ${code}`;
+  });
 }
 
 // The ticket for a game on a seed the player chose. It never earns the time
@@ -738,10 +762,10 @@ function renderRules(seed) {
   fillRuleHelp($("rulesList"), keys);
 }
 
-// A made puzzle's seed is too long for a chip, so its chip only offers to
-// copy it.
+// A made puzzle's seed is too long for a chip, so its chip shows its short
+// code, or only offers to copy it.
 function seedChipText(seed) {
-  return seed.made ? "Copy seed" : seed.text;
+  return seed.made ? (knownCode(seed.text) ?? "Copy seed") : seed.text;
 }
 
 function renderPad(over) {
@@ -886,7 +910,7 @@ function finish(fresh) {
   padDigit = 0;
   notesMode = false;
   renderResultHead();
-  $("resultSeed").textContent = `Seed ${g.seed.text}`;
+  $("resultSeed").textContent = `Seed ${seedLabel(g.seed)}`;
   $("copySeedLabel").textContent = "Copy seed";
   $("shareLabel").textContent = "Share replay";
 
@@ -1155,7 +1179,7 @@ function watch(link) {
   $("resultTitle").textContent = result.solved ? "Solved with Solve" : result.complete ? "Solved" : "Unfinished game";
   $("resultReason").textContent = `${t.mistakes} ${t.mistakes === 1 ? "mistake" : "mistakes"}, ${t.hints} ${t.hints === 1 ? "hint" : "hints"}, ${link.log.length} moves.`;
   $("resultScore").textContent = META_TEXT[link.meta];
-  $("resultSeed").textContent = `Seed ${link.seed.text}`;
+  $("resultSeed").textContent = `Seed ${seedLabel(link.seed)}`;
   $("copySeedLabel").textContent = "Copy seed";
   $("shareLabel").textContent = "Share replay";
   $("againBtn").classList.remove("hidden");
@@ -1167,6 +1191,7 @@ function watch(link) {
   $("resultPuzzleBtn").classList.toggle("hidden", Boolean(variantName(link.seed)));
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
+  showCode(link.seed);
   replayer.load(
     {
       puzzle,
@@ -1230,7 +1255,7 @@ function playWatchedSeed() {
   setup.mode = "solo";
   setup.level = seed.level;
   saveSetup();
-  $("seedInput").value = seed.text;
+  $("seedInput").value = seedLabel(seed);
   showPanel("setup");
   renderSetup();
   $("startBtn").focus();
@@ -1437,9 +1462,10 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
 
   $("seedInput").addEventListener("input", () => {
     $("seedNote").textContent = SEED_NOTE;
-    // A pasted seed says its own level, a made puzzle's included.
+    // A pasted seed says its own level, a made puzzle's and a short code's
+    // included.
     const raw = $("seedInput").value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-    const level = raw.length === 9 ? raw[0] : raw.length > 9 ? parseSeed(raw)?.level : null;
+    const level = raw.length === 9 ? raw[0] : raw.length > 9 ? (parseCode(raw) ?? parseSeed(raw))?.level : null;
     if (LEVEL_IDS.includes(level) && level !== setup.level) {
       setup.level = level;
       renderSetup();
@@ -1480,7 +1506,7 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   $("copySeedBtn").addEventListener("click", async () => {
     const seed = shownSeed();
     if (!seed) return;
-    $("copySeedLabel").textContent = (await copyText(seed.text)) ? "Copied" : "Copy failed";
+    $("copySeedLabel").textContent = (await copyText(seedLabel(seed))) ? "Copied" : "Copy failed";
   });
   // The puzzle as it started, for the solver or another app.
   const copyPuzzle = (labelId) => async () => {
@@ -1496,7 +1522,7 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
     const seed = shownSeed();
     if (!seed) return;
     const chip = $("seedChip");
-    const ok = await copyText(seed.text);
+    const ok = await copyText(seedLabel(seed));
     chip.textContent = ok ? "Seed copied" : "Copy failed";
     setTimeout(() => shownSeed() && (chip.textContent = seedChipText(shownSeed())), 1200);
   });
