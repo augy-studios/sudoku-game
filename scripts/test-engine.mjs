@@ -23,6 +23,9 @@ import {
   cageProblem,
   thermoProblem,
   arrowProblem,
+  doubleProblem,
+  pillProblem,
+  PILL_ARROW_MOST,
   whisperProblem,
   renbanProblem,
   palindromeProblem,
@@ -1054,6 +1057,142 @@ test("lockout lines are checked, solved and carried in seeds", () => {
   assert.equal(variantName(all), "Zipper, Between, Lockout");
 });
 
+// A double arrow of `length` cells: the cells after the first circle adding
+// up to less than it and a 9 could, then the last cell, the other circle,
+// making up the difference.
+const fitsDouble = (length) => (line, o, sol) => {
+  const inner = line.slice(1).reduce((t, c) => t + sol[c], 0);
+  if (line.length < length - 1) return inner + sol[o] < sol[line[0]] + 9;
+  return sol[line[0]] + sol[o] === inner;
+};
+const doublePuzzle = () => linesOfLengths("doubles", 61, fitsDouble, [4, 3]);
+
+test("double arrows are checked, solved and carried in seeds", () => {
+  assert.equal(doubleProblem([[20, 30, 40]]), null);
+  assert.equal(doubleProblem([[0, 1]]).why, "length", "a cell between the circles at least");
+
+  const made = doublePuzzle();
+  for (const t of made.doubles) {
+    const inner = t.slice(1, -1).reduce((s, c) => s + made.solution[c], 0);
+    assert.equal(inner, made.solution[t[0]] + made.solution[t.at(-1)], `the circles' total along ${t}`);
+  }
+  assert.ok(made.doubles.some((t) => t.length === 4));
+  linesRoundTrip("doubles", "QDA", made);
+
+  // Two circles make 2 at least, so the one cell between is never 1, and
+  // neither circle is 9; circles 2 and 3 leave it 5.
+  const t = [20, 30, 40];
+  const open = variantCandidates(placed({}), { doubles: [t] });
+  assert.equal(open[30], ALL_DIGITS & ~digitsMask(1));
+  assert.equal(open[20], ALL_DIGITS & ~digitsMask(9));
+  assert.equal(variantCandidates(placed({ 20: 2, 30: 5 }), { doubles: [t] })[40], digitsMask(3));
+
+  // Full and off the circles' total clashes, and so does a full line short
+  // of the least the circles could make.
+  assert.deepEqual(sorted(clashes(placed({ 20: 2, 30: 9, 40: 3 }), { doubles: [t] })), [20, 30, 40]);
+  assert.equal(clashes(placed({ 20: 2, 30: 5, 40: 3 }), { doubles: [t] }).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 20: 5, 30: 3 }), { doubles: [t] })), [20, 30]);
+  assert.equal(clashes(placed({ 20: 5, 30: 7 }), { doubles: [t] }).size, 0, "the other circle could be 2");
+});
+
+// Pill arrows laid through a solved grid: a pill of `size` cells, then an
+// arrow walked from beside it until its digits add up to the pill's number,
+// of `most` cells at most, none sharing a cell with another in `used`.
+function layPills(solution, rand, { count = 8, size = 2, most = 12, used = new Set() } = {}) {
+  const pills = [];
+  for (let tries = 0; pills.length < count && tries < 5000; tries++) {
+    const first = Math.floor(rand() * 81);
+    const along = rand() < 0.5 ? 1 : 9;
+    const pill = Array.from({ length: size }, (_, j) => first + j * along);
+    if (pill.at(-1) > 80 || (along === 1 && first % 9 > 9 - size) || pill.some((c) => used.has(c))) continue;
+    const value = pill.reduce((n, c) => n * 10 + solution[c], 0);
+    const arrow = [];
+    let total = 0;
+    while (total < value && arrow.length < most) {
+      const next = [...Array(81).keys()].filter(
+        (o) =>
+          (arrow.length ? touching(arrow.at(-1), o) : pill.some((p) => touching(p, o))) &&
+          !pill.includes(o) &&
+          !arrow.includes(o) &&
+          !used.has(o) &&
+          total + solution[o] <= value
+      );
+      if (!next.length) break;
+      const o = next[Math.floor(rand() * next.length)];
+      arrow.push(o);
+      total += solution[o];
+    }
+    if (total !== value) continue;
+    [...pill, ...arrow].forEach((c) => used.add(c));
+    pills.push({ pill, arrow });
+  }
+  return pills;
+}
+
+function pillPuzzle() {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(67);
+  const pills = layPills(solution, rand);
+  return { puzzle: thinOut(solution, { pills }, rand), solution, pills };
+}
+
+test("pill arrows are checked, solved and carried in seeds", () => {
+  assert.equal(pillProblem([{ pill: [0, 1], arrow: [10, 20] }]), null);
+  assert.equal(pillProblem([{ pill: [0, 9, 18], arrow: [19] }]), null, "down a column, the arrow from beside any pill cell");
+  assert.equal(pillProblem([{ pill: [1, 0], arrow: [10] }]).why, "pill", "in reading order");
+  assert.equal(pillProblem([{ pill: [8, 9], arrow: [17] }]).why, "pill", "not round onto the next row");
+  assert.equal(pillProblem([{ pill: [0, 2], arrow: [10] }]).why, "pill", "side by side");
+  assert.equal(pillProblem([{ pill: [0, 1], arrow: [] }]).why, "length");
+  assert.equal(pillProblem([{ pill: [0, 1], arrow: [10, 1] }]).why, "loop");
+  assert.equal(pillProblem([{ pill: [0, 1], arrow: [30] }]).why, "apart");
+
+  const made = pillPuzzle();
+  for (const { pill, arrow } of made.pills) {
+    const total = arrow.reduce((s, c) => s + made.solution[c], 0);
+    assert.equal(total, made.solution[pill[0]] * 10 + made.solution[pill[1]], `the pill's number along ${arrow}`);
+  }
+  assert.ok(made.pills.some(({ pill }) => pill[1] - pill[0] === 9), "down a column too");
+  linesRoundTrip("pills", "QPA", made);
+
+  // An arrow of two cells adds up to 18 at most, so its pill is 11 to 18:
+  // a 1 first, never a 9 second, and each arrow cell 2 or more.
+  const two = { pills: [{ pill: [0, 1], arrow: [9, 10] }] };
+  const cand = variantCandidates(placed({}), two);
+  assert.equal(cand[0], digitsMask(1));
+  assert.equal(cand[1], ALL_DIGITS & ~digitsMask(9));
+  assert.equal(cand[9], ALL_DIGITS & ~digitsMask(1));
+  // A three-digit pill with thirteen cells of arrow, 117 at most, starts 1 1.
+  const long = [9, 10, 11, 12, 13, 14, 15, 16, 17, 26, 25, 24, 23];
+  const three = variantCandidates(placed({}), { pills: [{ pill: [0, 1, 2], arrow: long }] });
+  assert.deepEqual([three[0], three[1]], [digitsMask(1), digitsMask(1)]);
+
+  // A full arrow off the pill's number clashes, with the pill; a full arrow
+  // short of the least an unfinished pill could be does too.
+  const p = { pills: [{ pill: [0, 1], arrow: [11, 12] }] };
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 2, 11: 9, 12: 8 }), p)), [0, 1, 11, 12]);
+  assert.equal(clashes(placed({ 0: 1, 1: 3, 11: 6, 12: 7 }), p).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 11: 4, 12: 5 }), p)), [0, 11, 12]);
+  assert.equal(clashes(placed({ 0: 2, 11: 9 }), p).size, 0, "not yet full");
+
+  // Seeds carry a pill of three too, here with every clue given.
+  const threes = layPills(made.solution, seeded(89), { count: 1, size: 3, most: PILL_ARROW_MOST });
+  assert.equal(threes.length, 1, "a pill of three laid");
+  assert.ok(threes[0].arrow.length >= 13);
+  const full = parseSeed(madeSeed("H", made.solution, { pills: [...threes, ...made.pills] }).text);
+  assert.deepEqual(full?.pills, [...threes, ...made.pills]);
+
+  // With arrows and double arrows on the same grid: A, then QDA, then QPA.
+  const { arrows } = arrowPuzzle();
+  const { doubles } = doublePuzzle();
+  const all = { arrows, doubles, pills: made.pills };
+  const mixed = parseSeed(madeSeed("H", made.solution.map((d, c) => (c % 2 ? d : 0)), all).text);
+  assert.ok(mixed, "the three together read back");
+  assert.match(mixed.text, /^AQDAQPA-H-/);
+  assert.deepEqual([mixed.arrows, mixed.doubles, mixed.pills], [arrows, doubles, made.pills]);
+  assert.equal(variantName(all), "Arrow, Double Arrow, Pill Arrow");
+  assert.equal(seedVariantName("KAQDAQPASD-H-BBBB"), "Killer, Arrow, Double Arrow, Pill Arrow, German Whispers, Diagonal");
+});
+
 // Every side two cells share, the first cell first: each cell's right-hand
 // neighbour, then the one below, in reading order.
 const SIDES = [...Array(81).keys()].flatMap((c) => [...(c % 9 < 8 ? [[c, c + 1]] : []), ...(c < 72 ? [[c, c + 9]] : [])]);
@@ -1910,6 +2049,8 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const crossing = { count: 2, max: 3, used: new Set() };
     const entropics = layLines(solution, seeded(43), fitsKinds(ENTROPIC_KINDS)(), crossing);
     const modulars = layLines(solution, seeded(47), fitsKinds(MODULAR_KINDS)(), crossing);
+    const doubles = layLines(solution, seeded(79), fitsDouble(3), { ...crossing, min: 3 });
+    const pills = layPills(solution, seeded(83), { count: 2, used: crossing.used });
     // A few dots and marks, never two on one side.
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
@@ -1927,9 +2068,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     // Their own numbers, so the parts laid before come out as they did.
     const hiddens = layViews(solution, seeded(71), hiddenOf, 0.3, [...VIEWS.keys()], taken).filter((clue) => clue.height);
     const rooms = layViews(solution, seeded(73), roomOf, 0.3, [...VIEWS.keys()], taken);
-    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
+    const variant = { cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
     const name = keys.join(", ");
-    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+    const lists = ["thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -1942,12 +2083,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASROZCFQENQMOPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTAQDAQPASROZCFQENQMOPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
+    for (const list of ["cages", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
       assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     }
     assert.deepEqual(puzzleFor(back).solution, solution);
@@ -1970,7 +2111,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
+  for (const list of ["cages", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

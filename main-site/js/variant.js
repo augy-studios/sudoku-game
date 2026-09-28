@@ -1,9 +1,10 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, thermos, arrows, whispers, renbans, palindromes,
-// zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
-// sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules }:
+// A variant is { cages, thermos, arrows, doubles, pills, whispers, renbans,
+// palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
+// signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
+// regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -15,6 +16,14 @@
 //            digits along the arrow, past the circle, add up to the
 //            circle's digit, and may repeat where the rules allow. Arrows
 //            may share cells, and circles.
+//   doubles  double arrows, paths like a thermometer's of three cells or
+//            more with a circle at each end: the digits between add up to
+//            the two circles' digits together. They may share cells.
+//   pills    pill arrows, [{ pill, arrow }]: pill two or three cells side
+//            by side along a row or a column, in reading order, and arrow a
+//            path like a thermometer's from a cell touching the pill. The
+//            pill's digits, read in that order, are a number, and the
+//            arrow's add up to it. They may share cells, and pills.
 //   whispers German Whispers lines, paths like a thermometer's: digits next
 //            to each other on one differ by at least 5, so no 5 is ever on
 //            one. They may share cells.
@@ -93,7 +102,8 @@
 //
 // Diagonals, windows and disjoint groups are extra houses, like rows,
 // columns and boxes; the knight's and king's moves are extra pairs of cells
-// that must differ. A Jigsaw's regions are houses in the boxes' place, and
+// that must differ. Double arrows and pill arrows are sums that balance
+// (scales below). A Jigsaw's regions are houses in the boxes' place, and
 // disjoint groups still go by the 3x3 boxes. The rules about sides are
 // sides barred from some marks' relations (barredSides below), the rules
 // about 2x2 squares sort each square's digits into kinds as entropic and
@@ -129,7 +139,7 @@ export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key =
 const has = hasRule;
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
+export function variantName({ cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (rooms?.length) names.unshift("Numbered Room");
@@ -150,6 +160,8 @@ export function variantName({ cages, thermos, arrows, whispers, renbans, palindr
   if (palindromes?.length) names.unshift("Palindrome");
   if (renbans?.length) names.unshift("Renban");
   if (whispers?.length) names.unshift("German Whispers");
+  if (pills?.length) names.unshift("Pill Arrow");
+  if (doubles?.length) names.unshift("Double Arrow");
   if (arrows?.length) names.unshift("Arrow");
   if (thermos?.length) names.unshift("Thermo");
   if (cages?.length) names.unshift("Killer");
@@ -343,6 +355,8 @@ function lineProblem(lines, least = 2) {
 
 export const thermoProblem = lineProblem;
 export const arrowProblem = lineProblem;
+// A circle at each end, and a cell between at least.
+export const doubleProblem = (lines) => lineProblem(lines, 3);
 export const whisperProblem = lineProblem;
 export const renbanProblem = lineProblem;
 export const palindromeProblem = lineProblem;
@@ -356,6 +370,53 @@ export const modularProblem = (lines) => lineProblem(lines, 3);
 // How far apart a lockout line's diamonds are at least, as most puzzles
 // have it.
 export const LOCKOUT_GAP = 4;
+
+// The most cells a pill arrow's arrow has. A three-digit pill is 111 at
+// least, which is more than twelve 9s, so its arrow needs thirteen cells at
+// least; this leaves room past that.
+export const PILL_ARROW_MOST = 27;
+
+// Whether pill arrows are well formed: forty at most, each a pill of two or
+// three cells side by side along a row or a column, in reading order, and
+// an arrow of one to PILL_ARROW_MOST cells, the first touching some cell of
+// the pill and each after it the one before, none twice or in the pill.
+// null if so, or what is wrong: { why, line }.
+export function pillProblem(pills) {
+  if (pills.length > 40) return { why: "count", line: 40 };
+  const onBoard = (cells) => cells.every((c) => Number.isInteger(c) && c >= 0 && c <= 80);
+  for (let i = 0; i < pills.length; i++) {
+    const { pill, arrow } = pills[i] ?? {};
+    if (!Array.isArray(pill) || pill.length < 2 || pill.length > 3 || !onBoard(pill)) return { why: "pill", line: i };
+    const along = pill[1] - pill[0];
+    if ((along !== 1 && along !== 9) || !pill.every((c, j) => !j || (c - pill[j - 1] === along && (along === 9 || ROW[c] === ROW[pill[0]])))) {
+      return { why: "pill", line: i };
+    }
+    if (!Array.isArray(arrow) || !arrow.length || arrow.length > PILL_ARROW_MOST) return { why: "length", line: i };
+    if (!onBoard(arrow)) return { why: "cell", line: i };
+    const seen = new Set(pill);
+    for (let j = 0; j < arrow.length; j++) {
+      const c = arrow[j];
+      if (seen.has(c)) return { why: "loop", line: i };
+      seen.add(c);
+      if (j ? !touching(arrow[j - 1], c) : !pill.some((p) => touching(p, c))) return { why: "apart", line: i };
+    }
+  }
+  return null;
+}
+
+// Double arrows and pill arrows as sums that balance: [{ cells, weights }],
+// each cell's digit times its weight adding up to 0 over the cells. A
+// double arrow's circles weigh 1 and the cells between -1; a pill's digits
+// weigh 100, 10 and 1 as a number's do, and its arrow's -1. The cells a
+// weight is over 0 for make the total; the others add up to it.
+export function scales(doubles = [], pills = []) {
+  const out = [];
+  for (const t of doubles) out.push({ cells: t.slice(), weights: t.map((_, i) => (i === 0 || i === t.length - 1 ? 1 : -1)) });
+  for (const { pill, arrow } of pills) {
+    out.push({ cells: [...pill, ...arrow], weights: [...pill.map((_, i) => 10 ** (pill.length - 1 - i)), ...arrow.map(() => -1)] });
+  }
+  return out;
+}
 
 // ABOVE[k]: the digits over k, for k 0 to 9. BELOW[k]: those under it, for
 // k 1 to 10. LOW and HIGH: a mask's least and greatest digit.
@@ -430,6 +491,42 @@ function arrowBounds(arrows, g, free) {
       const m = free[c] & between(LOW[cm] - (hi - HIGH[free[c]]), HIGH[cm] - (lo - LOW[free[c]]));
       if (!m) return false;
       free[c] = m;
+    }
+  }
+  return true;
+}
+
+// Squeezes each scale (scales above) as arrowBounds squeezes an arrow: the
+// least and the most its weighted digits can add up to must take in 0, and
+// each cell keeps the digits that leave the others some way to get there,
+// at their most and at their least. Placed digits count as masks of one, and
+// `free` is narrowed in place, as in thermoBounds; false if a scale cannot
+// balance.
+function scaleBounds(list, g, free) {
+  for (const { cells, weights } of list) {
+    let lo = 0;
+    let hi = 0;
+    for (let i = 0; i < cells.length; i++) {
+      const m = g[cells[i]] ? 1 << g[cells[i]] : free[cells[i]];
+      if (!m) return false;
+      const w = weights[i];
+      lo += w * (w > 0 ? LOW[m] : HIGH[m]);
+      hi += w * (w > 0 ? HIGH[m] : LOW[m]);
+    }
+    if (lo > 0 || hi < 0) return false;
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (g[c]) continue;
+      const w = weights[i];
+      const m = free[c];
+      // What this cell's weighted digit may be: the others' total, taken
+      // from 0, at their most and at their least.
+      const least = w * (w > 0 ? HIGH[m] : LOW[m]) - hi;
+      const most = w * (w > 0 ? LOW[m] : HIGH[m]) - lo;
+      const [from, to] = w > 0 ? [Math.ceil(least / w), Math.floor(most / w)] : [Math.ceil(most / w), Math.floor(least / w)];
+      const n = m & between(from, to);
+      if (!n) return false;
+      free[c] = n;
     }
   }
   return true;
@@ -1300,6 +1397,8 @@ const norm = (v) => ({
   cages: v?.cages ?? [],
   thermos: v?.thermos ?? [],
   arrows: v?.arrows ?? [],
+  doubles: v?.doubles ?? [],
+  pills: v?.pills ?? [],
   whispers: v?.whispers ?? [],
   renbans: v?.renbans ?? [],
   palindromes: v?.palindromes ?? [],
@@ -1329,7 +1428,7 @@ const norm = (v) => ({
 // cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1354,6 +1453,7 @@ export function variantCandidates(grid, variant) {
   }
   thermoBounds(thermos, grid, out);
   arrowBounds(arrows, grid, out);
+  scaleBounds(scales(doubles, pills), grid, out);
   whisperBounds(whispers, grid, out);
   renbanBounds(renbans, grid, out);
   palindromeBounds(palindromes, grid, out);
@@ -1397,8 +1497,9 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
+  const balances = scales(doubles, pills);
   const barred = barredSides(rules, dots, xvs);
   const sorts = squareKinds(rules);
   const taxicab = has(rules, "antitaxicab");
@@ -1451,6 +1552,7 @@ function search(grid, variant, found) {
     }
     if (thermos.length && !thermoBounds(thermos, g, free)) return null;
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
+    if (balances.length && !scaleBounds(balances, g, free)) return null;
     if (whispers.length && !whisperBounds(whispers, g, free)) return null;
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
     if (palindromes.length && !palindromeBounds(palindromes, g, free)) return null;

@@ -15,7 +15,9 @@
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
 // cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
-// way with the Arrows tool, from the circle; Whispers, Renban, Palindrome,
+// way with the Arrows tool, from the circle; Double Arrow adds double
+// arrows, from one circle to the other; Pill Arrow adds pill arrows, a pill
+// of two or three cells and then its arrow; Whispers, Renban, Palindrome,
 // Zipper, Between, Lockout, Entropic and Modular add German Whispers,
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // drawn the same way again with their own tools, a between line from one circle to the other and a lockout line from
@@ -44,6 +46,9 @@ import {
   cageOf,
   thermoProblem,
   arrowProblem,
+  doubleProblem,
+  pillProblem,
+  PILL_ARROW_MOST,
   whisperProblem,
   renbanProblem,
   palindromeProblem,
@@ -96,7 +101,8 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, whisper, renban, palindrome, zipper, between,
+// killer, thermo, arrow, doublearrow, pillarrow, whisper, renban,
+// palindrome, zipper, between,
 // lockout, entropic, modular, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each kind of line, dot, mark and outside clue
@@ -110,6 +116,8 @@ const fresh = () => ({
   killer: false,
   thermo: false,
   arrow: false,
+  doublearrow: false,
+  pillarrow: false,
   whisper: false,
   renban: false,
   palindrome: false,
@@ -133,6 +141,8 @@ const fresh = () => ({
   cages: [],
   thermos: [],
   arrows: [],
+  doubles: [],
+  pills: [],
   whispers: [],
   renbans: [],
   palindromes: [],
@@ -172,6 +182,9 @@ let editing = -1;
 let lineKind = null;
 let path = [];
 let editingLine = -1;
+// The Pills tool's pill size, 2 or 3: the path's first that many cells are
+// the pill, and the rest its arrow.
+let pillSize = 2;
 // The Marks tool: on, the cell picked for a mark on one of its sides, and
 // the corner picked for a quad, by the top left of its four cells.
 let markMode = false;
@@ -204,6 +217,8 @@ const killer = () => s.killer;
 const cages = () => (killer() && s.cages.length ? s.cages : null);
 const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
+const doubles = () => (s.doublearrow && s.doubles.length ? s.doubles : null);
+const pills = () => (s.pillarrow && s.pills.length ? s.pills : null);
 const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
 const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
 const palindromes = () => (s.palindrome && s.palindromes.length ? s.palindromes : null);
@@ -224,7 +239,7 @@ const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
 const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
+  Boolean(cages() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -232,6 +247,8 @@ const variant = () =>
         cages: cages() ?? [],
         thermos: thermos() ?? [],
         arrows: arrows() ?? [],
+        doubles: doubles() ?? [],
+        pills: pills() ?? [],
         whispers: whispers() ?? [],
         renbans: renbans() ?? [],
         palindromes: palindromes() ?? [],
@@ -337,6 +354,8 @@ function hintText(step, reveal) {
       ...(cages() ? ["cage"] : []),
       ...(thermos() ? ["thermometers"] : []),
       ...(arrows() ? ["arrows"] : []),
+      ...(doubles() ? ["double arrows"] : []),
+      ...(pills() ? ["pill arrows"] : []),
       ...(whispers() ? ["whisper lines"] : []),
       ...(renbans() ? ["renban lines"] : []),
       ...(palindromes() ? ["palindrome lines"] : []),
@@ -373,6 +392,8 @@ function problemText(check) {
   if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
   if (why === "thermos") return THERMO_PROBLEMS[check.problem.why];
   if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
+  if (why === "doubles") return DOUBLE_PROBLEMS[check.problem.why];
+  if (why === "pills") return PILL_PROBLEMS[check.problem.why];
   if (why === "whispers") return WHISPER_PROBLEMS[check.problem.why];
   if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
   if (why === "palindromes") return PALINDROME_PROBLEMS[check.problem.why];
@@ -415,6 +436,8 @@ function clashText() {
   if (cages()) extra.push("twice in a cage, or past a cage's sum");
   if (thermos()) extra.push("not rising along a thermometer");
   if (arrows()) extra.push("not adding up to an arrow's circle");
+  if (doubles()) extra.push("not adding up to a double arrow's two circles");
+  if (pills()) extra.push("not adding up to a pill arrow's pill");
   if (whispers()) extra.push("less than 5 apart next to each other on a whisper line");
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
   if (palindromes()) extra.push("not the same from either end of a palindrome line");
@@ -450,6 +473,23 @@ const ARROW_PROBLEMS = {
   cell: "An arrow has a cell off the board.",
   loop: "An arrow cannot cross itself.",
   apart: "Each cell of an arrow must touch the one before it.",
+};
+
+const DOUBLE_PROBLEMS = {
+  count: "There is room for forty double arrows.",
+  length: "A double arrow needs three to nine cells, its circles included: one between them at least.",
+  cell: "A double arrow has a cell off the board.",
+  loop: "A double arrow cannot cross itself.",
+  apart: "Each cell of a double arrow must touch the one before it.",
+};
+
+const PILL_PROBLEMS = {
+  count: "There is room for forty pill arrows.",
+  pill: "A pill is two or three cells side by side, along a row or down a column.",
+  length: `A pill arrow's arrow needs one to ${PILL_ARROW_MOST} cells.`,
+  cell: "A pill arrow has a cell off the board.",
+  loop: "A pill arrow cannot cross itself or its pill.",
+  apart: "A pill arrow's arrow starts beside its pill, and each cell must touch the one before it.",
 };
 
 const WHISPER_PROBLEMS = {
@@ -795,7 +835,7 @@ function openSeed(found, how) {
   const parts = { cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages };
   for (const [kind, L] of Object.entries(LINES)) {
     s[kind] = Boolean(seed[L.list]);
-    parts[L.list] = seed[L.list] ? seed[L.list].map((t) => t.slice()) : s[L.list];
+    parts[L.list] = seed[L.list] ? seed[L.list].map(copyLine) : s[L.list];
   }
   for (const [kind, E] of Object.entries(EDGES)) {
     s[kind] = Boolean(seed[E.list]);
@@ -897,6 +937,8 @@ function onGo() {
   if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
   if (s.thermo && !s.thermos.length) return say("Draw a thermometer first: tap Thermos, then the bulb and each next cell.");
   if (s.arrow && !s.arrows.length) return say("Draw an arrow first: tap Arrows, then the circle and each cell along it.");
+  if (s.doublearrow && !s.doubles.length) return say("Draw a double arrow first: tap Doubles, then a circle, each cell along it, and the other circle.");
+  if (s.pillarrow && !s.pills.length) return say("Draw a pill arrow first: tap Pills, then the pill's cells and each cell along its arrow.");
   if (s.whisper && !s.whispers.length) return say("Draw a whisper line first: tap Whispers, then each cell along it.");
   if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
   if (s.palindrome && !s.palindromes.length) return say("Draw a palindrome line first: tap Palindromes, then each cell along it.");
@@ -1170,6 +1212,31 @@ const LINES = {
     problem: arrowProblem,
     problems: ARROW_PROBLEMS,
   },
+  doublearrow: {
+    list: "doubles",
+    short: "double arrow",
+    name: "double arrow",
+    title: "Double arrow",
+    a: "A double arrow",
+    start: "circle",
+    least: 3,
+    started: "One circle placed. Tap each next cell; the last one is the other circle. The digits between add up to the two circles' together.",
+    problem: doubleProblem,
+    problems: DOUBLE_PROBLEMS,
+  },
+  // Kept as { pill, arrow }, not a path: pathOf and copyLine below.
+  pillarrow: {
+    list: "pills",
+    short: "pill arrow",
+    name: "pill arrow",
+    title: "Pill arrow",
+    a: "A pill arrow",
+    start: "pill",
+    pill: true,
+    started: "Pill placed. Tap the arrow's first cell, beside the pill: the digits along the arrow add up to the pill's number.",
+    problem: pillProblem,
+    problems: PILL_PROBLEMS,
+  },
   whisper: {
     list: "whispers",
     short: "whisper",
@@ -1275,6 +1342,11 @@ function toggleLineMode(kind) {
   render();
 }
 
+// A line as the tool draws it, a path from its first cell: a pill arrow's
+// pill and then its arrow, any other the line itself. copyLine copies one.
+const pathOf = (t) => (t.pill ? [...t.pill, ...t.arrow] : t);
+const copyLine = (t) => (t.pill ? { pill: t.pill.slice(), arrow: t.arrow.slice() } : t.slice());
+
 // Leaves the line tool, dropping any path not added.
 function endLine() {
   lineKind = null;
@@ -1283,32 +1355,60 @@ function endLine() {
 }
 
 // A tap in a line tool: with no path, a cell of a line picks it up, and
-// then its first cell starts another line there, for lines that share a
-// bulb, a circle or an end; the path's last cell takes that step back;
-// otherwise the cell is the next step, if it touches the last.
+// then its first cell (any of a pill's) starts another line there, for
+// lines that share a bulb, a circle, an end or a pill; the path's last cell
+// takes that step back; otherwise the cell is the next step, if it can be.
 function pickLineCell(c) {
   const L = LINES[lineKind];
   const lines = s[L.list];
   if (!path.length) {
-    const i = lines.findIndex((t) => t.includes(c));
+    const i = lines.findIndex((t) => pathOf(t).includes(c));
     if (i >= 0) {
       editingLine = i;
-      path = lines[i].slice();
+      path = pathOf(lines[i]).slice();
+      if (L.pill) pillSize = lines[i].pill.length;
       note = "";
       return render();
     }
   }
-  if (editingLine >= 0 && c === path[0]) {
+  const head = path.slice(0, L.pill ? pillSize : 1);
+  if (editingLine >= 0 && head.includes(c)) {
     editingLine = -1;
-    path = [c];
+    path = head;
     note = "";
     return render();
   }
   if (c === path.at(-1)) return stepBack();
   if (path.includes(c)) return say(L.problems.loop);
-  if (path.length && !touching(path.at(-1), c)) return say("The next cell must touch the last one, along a side or at a corner.");
-  if (path.length === 9) return say(`${L.a} has nine cells at most.`);
+  const why = L.pill ? pillStep(c) : path.length && !touching(path.at(-1), c) ? "The next cell must touch the last one, along a side or at a corner." : "";
+  if (why) return say(why);
+  if (path.length === most(L)) return say(`${L.a} has ${most(L) === 9 ? "nine" : most(L)} cells at most.`);
   path.push(c);
+  note = "";
+  render();
+}
+
+// Why cell c cannot come next on a pill arrow being drawn, or "": the
+// pill's cells go side by side in a straight line, then the arrow starts
+// beside any of them, each cell after touching the one before.
+function pillStep(c) {
+  const n = path.length;
+  if (!n) return "";
+  const last = path.at(-1);
+  if (n < pillSize) {
+    const straight = n < 2 || c - last === last - path[n - 2];
+    return beside(Math.min(last, c), Math.max(last, c)) && straight ? "" : "A pill's cells sit side by side in a straight line, along a row or down a column.";
+  }
+  if (n === pillSize) return path.some((o) => touching(o, c)) ? "" : "The arrow starts beside the pill, along a side or at a corner.";
+  return touching(last, c) ? "" : "The next cell must touch the last one, along a side or at a corner.";
+}
+
+// The Pills tool's size button: a pill of 2 cells or of 3, keeping those of
+// the pill's cells already tapped that still fit.
+function turnPill() {
+  const next = pillSize === 2 ? 3 : 2;
+  path = path.slice(0, Math.min(pillSize, next));
+  pillSize = next;
   note = "";
   render();
 }
@@ -1321,21 +1421,30 @@ function stepBack() {
 
 function lineStatus() {
   const L = LINES[lineKind];
+  if (L.pill && path.length < pillSize) {
+    if (path.length) return `${path.length} of the pill's ${pillSize} cells. Tap the next, beside it in a straight line.`;
+    return `Tap the pill's ${pillSize} cells, side by side, then each cell along its arrow. Pill of ${pillSize} changes its size. Tap a pill arrow already drawn to change it.`;
+  }
+  if (L.pill && path.length === pillSize) return L.started;
   if (!path.length) return `Tap the ${L.start}, then each next cell in order. Tap ${L.a.toLowerCase()} already drawn to change it.`;
   if (path.length === 1) return L.started;
   const again = editingLine >= 0 ? ` Tap its ${L.start} to start another from it.` : "";
   return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}. Tapping the last cell takes it back.${again}`;
 }
 
-// The fewest cells a kind of line has.
-const least = (L) => L.least ?? 2;
+// The fewest and the most cells a kind of line has, a pill arrow's pill
+// included.
+const least = (L) => (L.pill ? pillSize + 1 : L.least ?? 2);
+const most = (L) => (L.pill ? pillSize + PILL_ARROW_MOST : 9);
 
 function onLineAdd() {
   const L = LINES[lineKind];
   if (path.length < least(L)) {
+    if (L.pill) return say(`A pill arrow needs its pill of ${pillSize} cells and one cell of arrow at least.`);
     return say(least(L) === 2 ? `${L.a} needs two cells at least: the ${L.start} and one more.` : `${L.a} needs ${least(L) === 3 ? "three" : least(L)} cells at least.`);
   }
-  const next = s[L.list].filter((_, i) => i !== editingLine).concat([path.slice()]);
+  const line = L.pill ? { pill: path.slice(0, pillSize).sort((a, b) => a - b), arrow: path.slice(pillSize) } : path.slice();
+  const next = s[L.list].filter((_, i) => i !== editingLine).concat([line]);
   const problem = L.problem(next);
   if (problem) return say(L.problems[problem.why]);
   const n = path.length;
@@ -1804,6 +1913,12 @@ function defaultStatus() {
     if (regionMode) return regionStatus();
     if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
     if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
+    if (s.doublearrow && !s.doubles.length) {
+      return "A double arrow puzzle: tap Doubles, then a circle, each cell along the line and the other circle. The digits between add up to the two circles' together.";
+    }
+    if (s.pillarrow && !s.pills.length) {
+      return "A pill arrow puzzle: tap Pills, then the pill's cells and each cell along its arrow. The pill's digits make a number, like 17, that the arrow's add up to.";
+    }
     if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
     if (s.renban && !s.renbans.length) return "A renban puzzle: tap Renbans, then each cell along a line. Its digits are a run, like 3 4 5, in any order.";
     if (s.palindrome && !s.palindromes.length) {
@@ -1914,6 +2029,8 @@ function render() {
     cages: killer() ? s.cages : null,
     thermos: shownLines("thermo"),
     arrows: shownLines("arrow"),
+    doubles: shownLines("doublearrow"),
+    pills: shownLines("pillarrow"),
     whispers: shownLines("whisper"),
     renbans: shownLines("renban"),
     palindromes: shownLines("palindrome"),
@@ -1938,6 +2055,7 @@ function render() {
     spot: outMode ? spot : null,
     path: lineKind ? path : [],
     pathKind: lineKind ?? "thermo",
+    pathPill: pillSize,
     rules: s.rules,
     picked: cageMode
       ? picked
@@ -1991,6 +2109,8 @@ function render() {
     cageBar: cageMode,
     solverThermos: enter && s.thermo,
     solverArrows: enter && s.arrow,
+    solverDoubles: enter && s.doublearrow,
+    solverPills: enter && s.pillarrow,
     solverWhispers: enter && s.whisper,
     solverRenbans: enter && s.renban,
     solverPalindromes: enter && s.palindrome,
@@ -2035,6 +2155,8 @@ function render() {
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
   $("solverThermos").setAttribute("aria-pressed", String(lineKind === "thermo"));
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
+  $("solverDoubles").setAttribute("aria-pressed", String(lineKind === "doublearrow"));
+  $("solverPills").setAttribute("aria-pressed", String(lineKind === "pillarrow"));
   $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
   $("solverPalindromes").setAttribute("aria-pressed", String(lineKind === "palindrome"));
@@ -2064,6 +2186,8 @@ function render() {
     $("lineRemoveLabel").textContent = `Remove ${LINES[lineKind].short}`;
     $("lineRemove").classList.toggle("hidden", editingLine < 0);
     $("lineAdd").disabled = path.length < least(LINES[lineKind]);
+    $("linePill").classList.toggle("hidden", !LINES[lineKind].pill);
+    $("linePillLabel").textContent = `Pill of ${pillSize}`;
   }
   if (cageMode) {
     $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
@@ -2173,6 +2297,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverCages").addEventListener("click", toggleCageMode);
   $("solverThermos").addEventListener("click", () => toggleLineMode("thermo"));
   $("solverArrows").addEventListener("click", () => toggleLineMode("arrow"));
+  $("solverDoubles").addEventListener("click", () => toggleLineMode("doublearrow"));
+  $("solverPills").addEventListener("click", () => toggleLineMode("pillarrow"));
   $("solverWhispers").addEventListener("click", () => toggleLineMode("whisper"));
   $("solverRenbans").addEventListener("click", () => toggleLineMode("renban"));
   $("solverPalindromes").addEventListener("click", () => toggleLineMode("palindrome"));
@@ -2196,6 +2322,7 @@ export function initSolver({ reopen = true } = {}) {
     if (e.key === "Enter") onOutAdd();
   });
   $("lineAdd").addEventListener("click", onLineAdd);
+  $("linePill").addEventListener("click", turnPill);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));
   $("cageAdd").addEventListener("click", onCageAdd);

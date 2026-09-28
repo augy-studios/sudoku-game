@@ -39,6 +39,18 @@ export const RULE_HELP = {
     rule: "The digits along each arrow add up to the digit in its circle. They may repeat if nothing else stops them.",
     draw: "Tap Arrows, then the circle and each cell along the arrow, and tap Add arrow.",
   },
+  doublearrow: {
+    name: "Double Arrow",
+    list: "doubles",
+    rule: "The digits along a line between two circles add up to the two circles' digits together, like 4 5 between a 3 and a 6. They may repeat if nothing else stops them.",
+    draw: "Tap Doubles, then one circle, each cell along the line, and the other circle last, and tap Add double arrow.",
+  },
+  pillarrow: {
+    name: "Pill Arrow",
+    list: "pills",
+    rule: "The digits in a pill, read left to right or top to bottom, make a number, and the digits along its arrow add up to it, like a pill of 1 7 with 9 8 along the arrow. They may repeat if nothing else stops them.",
+    draw: "Tap Pills, pick a pill of 2 or 3 cells, tap the pill's cells, then each cell along the arrow from beside the pill, and tap Add pill arrow.",
+  },
   whisper: {
     name: "German Whispers",
     list: "whispers",

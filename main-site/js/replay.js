@@ -70,7 +70,7 @@ export class Replay {
   }
 
   // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
-  // whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
+  // doubles?, pills?, whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
   // entropics?, modulars?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
   // rules? }.
   // view: { highlightSame }.
@@ -125,6 +125,8 @@ export class Replay {
       rules: this.game.rules ?? 0,
       thermos: this.game.thermos ?? null,
       arrows: this.game.arrows ?? null,
+      doubles: this.game.doubles ?? null,
+      pills: this.game.pills ?? null,
       whispers: this.game.whispers ?? null,
       renbans: this.game.renbans ?? null,
       palindromes: this.game.palindromes ?? null,

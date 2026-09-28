@@ -52,6 +52,10 @@ export const icons = {
   share: svg(`<path d="M12 15V3.5M7.5 8 12 3.5 16.5 8"/><path d="M8 11H6.5A2.5 2.5 0 0 0 4 13.5v5A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-5a2.5 2.5 0 0 0-2.5-2.5H16"/>`),
   thermo: svg(`<circle cx="7.5" cy="16.5" r="3.5"/><path d="M10 14 18.5 5.5"/>`),
   arrow: svg(`<circle cx="7.5" cy="16.5" r="3.5"/><path d="M10 14 19 5M13.5 5H19v5.5"/>`),
+  // A line between two circles, thin as an arrow.
+  doublearrow: svg(`<circle cx="5.5" cy="12" r="3"/><circle cx="18.5" cy="12" r="3"/><path d="M8.5 12h7" stroke-width="1.4"/>`),
+  // A pill of two cells, and an arrow off it.
+  pillarrow: svg(`<rect x="2.5" y="12.5" width="11" height="6" rx="3"/><path d="M11 12.5 19 4.5M14 4.5h5v5"/>`),
   // A line zigzagging high and low, as whispers' digits do.
   whisper: svg(`<path d="M4 17 8.5 7l4 10 4-10L20 15" stroke-width="2.6"/>`),
   // A grid cut into two uneven regions, as a Jigsaw's are.

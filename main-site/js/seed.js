@@ -10,9 +10,10 @@
 // puzzle itself rather than what to generate: see madeSeed below. It has
 // `made: true`, and scores only on its own board. A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
-// T for thermometers, A for arrows, S for German Whispers lines, R for
-// renban lines, O for palindrome lines, Z for zipper lines, C for between
-// lines, F for lockout lines, QEN for entropic lines, QMO for modular
+// T for thermometers, A for arrows, QDA for double arrows, QPA for pill
+// arrows, S for German Whispers lines, R for renban lines, O for
+// palindrome lines, Z for zipper lines, C for between lines, F for
+// lockout lines, QEN for entropic lines, QMO for modular
 // lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
 // for quads, B for Sandwich clues, L for Little Killer clues, Y for
 // Skyscraper clues, U for X-Sum clues, QHS for Hidden Skyscraper clues, QNR
@@ -30,6 +31,10 @@ import {
   cageProblem,
   thermoProblem,
   arrowProblem,
+  doubleProblem,
+  pillProblem,
+  PILL_ARROW_MOST,
+  touching,
   whisperProblem,
   renbanProblem,
   palindromeProblem,
@@ -176,8 +181,12 @@ function decodeGrid(body) {
    order of their first cell. Cages are joined edge to edge, so the shared
    edges give back the cages exactly. Then thermometers: how many, and for
    each its length, its bulb, and which way each step goes. Then arrows, the
-   same way, from the circle, and German Whispers, renban, palindrome,
-   zipper, between, lockout, entropic and modular lines the same way again. Then Kropki dots, and then XV marks, as whichever is
+   same way, from the circle, and double arrows the same way. Then pill
+   arrows: how many, and for each its pill's size, first cell and which way
+   it runs, then its arrow's length, the pill cell it starts beside, which
+   way it steps from there and each step after. Then German Whispers,
+   renban, palindrome, zipper, between, lockout, entropic and modular lines
+   as thermometers are. Then Kropki dots, and then XV marks, as whichever is
    shorter: how many, and for each its side and which of the two marks it
    is; or for every side, its mark or none; and Greater Than signs the same
    way. Then quads: how many, and for each its corner, how many digits and
@@ -264,12 +273,23 @@ function writeLines(digits, lines) {
   digits.push([lines.length, MAX_LINES + 1]);
   for (const t of lines) {
     digits.push([t.length - 2, 8], [t[0], 81]);
-    for (let i = 1; i < t.length; i++) {
-      const dr = Math.floor(t[i] / 9) - Math.floor(t[i - 1] / 9);
-      const dc = (t[i] % 9) - (t[i - 1] % 9);
-      digits.push([STEPS.findIndex(([r, c]) => r === dr && c === dc), 8]);
-    }
+    for (let i = 1; i < t.length; i++) digits.push([stepOf(t[i - 1], t[i]), 8]);
   }
+}
+
+// Which of STEPS goes from cell a to cell b, touching it.
+function stepOf(a, b) {
+  const dr = Math.floor(b / 9) - Math.floor(a / 9);
+  const dc = (b % 9) - (a % 9);
+  return STEPS.findIndex(([r, c]) => r === dr && c === dc);
+}
+
+// The cell step k of STEPS goes to from cell a, or -1 off the board.
+function stepFrom(a, k) {
+  const [dr, dc] = STEPS[k];
+  const r = Math.floor(a / 9) + dr;
+  const c = (a % 9) + dc;
+  return r < 0 || r > 8 || c < 0 || c > 8 ? -1 : r * 9 + c;
 }
 
 // The other way, from `take`, which reads the next digit; null if a line
@@ -281,16 +301,57 @@ function readLines(take) {
     const length = take(8) + 2;
     const t = [take(81)];
     for (let j = 1; j < length; j++) {
-      const [dr, dc] = STEPS[take(8)];
-      const r = Math.floor(t[j - 1] / 9) + dr;
-      const c = (t[j - 1] % 9) + dc;
-      if (r < 0 || r > 8 || c < 0 || c > 8) return null;
-      t.push(r * 9 + c);
+      const c = stepFrom(t[j - 1], take(8));
+      if (c < 0) return null;
+      t.push(c);
     }
     lines.push(t);
   }
   return lines;
 }
+
+// Which way a pill runs from its first cell: along its row, or down its
+// column.
+const ALONG = [1, 9];
+
+// Pill arrows: how many, then each one's pill's size, first cell and which
+// way it runs, its arrow's length, the pill cell it starts beside, and its
+// steps from there.
+function writePills(digits, pills) {
+  digits.push([pills.length, MAX_LINES + 1]);
+  for (const { pill, arrow } of pills) {
+    const from = pill.findIndex((c) => touching(c, arrow[0]));
+    digits.push([pill.length - 2, 2], [pill[0], 81], [ALONG.indexOf(pill[1] - pill[0]), 2], [arrow.length - 1, PILL_ARROW_MOST], [from, 3]);
+    [pill[from], ...arrow].forEach((c, i, t) => i && digits.push([stepOf(t[i - 1], c), 8]));
+  }
+}
+
+// The other way; null if an arrow steps off the board, or starts beside a
+// pill cell there is not. A pill that runs off the board, or round onto the
+// next row, reads as written, so that checking it refuses the seed.
+function readPills(take) {
+  const out = [];
+  const count = take(MAX_LINES + 1);
+  for (let i = 0; i < count; i++) {
+    const size = take(2) + 2;
+    const first = take(81);
+    const along = ALONG[take(2)];
+    const pill = Array.from({ length: size }, (_, j) => first + j * along);
+    const length = take(PILL_ARROW_MOST) + 1;
+    const from = take(3);
+    if (from >= size || pill[from] > 80) return null;
+    const arrow = [];
+    for (let j = 0, at = pill[from]; j < length; j++) {
+      at = stepFrom(at, take(8));
+      if (at < 0) return null;
+      arrow.push(at);
+    }
+    out.push({ pill, arrow });
+  }
+  return out;
+}
+
+const copyPills = (pills) => pills.map((p) => ({ pill: p.pill.slice(), arrow: p.arrow.slice() }));
 
 // Dots or XV marks, `marks` naming their two kinds: a flag, then either how
 // many and each one's side and kind, or every side's kind, 0 for none;
@@ -527,6 +588,8 @@ const PARTS = [
   { list: "cages", letter: "K", name: "Killer", problem: cageProblem, write: writeCages, read: readCages, sort: sortCages },
   lines("thermos", "T", "Thermo", thermoProblem),
   lines("arrows", "A", "Arrow", arrowProblem),
+  lines("doubles", "QDA", "Double Arrow", doubleProblem),
+  { list: "pills", letter: "QPA", name: "Pill Arrow", problem: pillProblem, write: writePills, read: readPills, sort: copyPills },
   lines("whispers", "S", "German Whispers", whisperProblem),
   lines("renbans", "R", "Renban", renbanProblem),
   lines("palindromes", "O", "Palindrome", palindromeProblem),
@@ -574,8 +637,8 @@ function prefixFor(parts, rules) {
   );
 }
 
-// The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
-// renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
+// The seed of a made puzzle. variant: { cages, thermos, arrows, doubles,
+// pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
 // dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens,
 // rooms, regions, rules } for a variant puzzle (variant.js), or nothing for
 // a classic one.

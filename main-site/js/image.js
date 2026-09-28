@@ -1,6 +1,7 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a variant puzzle's cages, thermometers, arrows, German Whispers,
+// and a variant puzzle's cages, thermometers, arrows, double and pill
+// arrows, German Whispers,
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // Kropki dots, Greater Than signs, quads, XV
 // marks, diagonals and windows as on screen.
@@ -8,7 +9,7 @@
 // in a margin a cell wide the image grows by. A Jigsaw's regions take the
 // boxes' heavy lines and tint.
 
-import { variantName } from "./variant.js";
+import { variantName, touching } from "./variant.js";
 
 const CELL = 112;
 const PAD = 36;
@@ -39,8 +40,8 @@ const BETWEEN_TEAL = "#6cc0cf";
 const LOCKOUT_BROWN = "#c2a07f";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, whispers, renbans, palindromes,
-// zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
+// variant: { cages, thermos, arrows, doubles, pills, whispers, renbans,
+// palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
 // sandwiches,
 // littles, skyscrapers, xsums, hiddens, rooms, regions, rules } (variant.js), or nothing for
 // a classic puzzle.
@@ -49,6 +50,8 @@ export async function drawPuzzle(grid, variant = null) {
   const rules = variant?.rules ?? 0;
   const thermos = variant?.thermos ?? [];
   const arrows = variant?.arrows ?? [];
+  const doubles = variant?.doubles ?? [];
+  const pills = variant?.pills ?? [];
   const whispers = variant?.whispers ?? [];
   const renbans = variant?.renbans ?? [];
   const palindromes = variant?.palindromes ?? [];
@@ -181,29 +184,79 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.arc(...at(t[0]), CELL * 0.36, 0, Math.PI * 2);
     ctx.fill();
   }
-  // As on the board: a ring round the circle, a line from its edge, a head.
-  for (const a of arrows) {
-    const ring = CELL * 0.4;
+  // An arrow's head at the second point, pointing on from the first.
+  const head = ([fx, fy], [ex, ey]) => {
     const h = CELL * 0.2;
-    const [x0, y0] = at(a[0]);
-    const [x1, y1] = at(a[1]);
-    const len = Math.hypot(x1 - x0, y1 - y0);
-    const [ex, ey] = at(a.at(-1));
-    const [fx, fy] = at(a.at(-2));
     const n = Math.hypot(ex - fx, ey - fy);
     const ux = (ex - fx) / n;
     const uy = (ey - fy) / n;
-    ctx.strokeStyle = ARROW_GREY;
-    ctx.lineWidth = CELL * 0.05;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.moveTo(ex - ux * h - uy * h, ey - uy * h + ux * h);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(ex - ux * h + uy * h, ey - uy * h - ux * h);
+  };
+  ctx.strokeStyle = ARROW_GREY;
+  ctx.lineWidth = CELL * 0.05;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  // As on the board: a ring round the circle, a line from its edge, a head.
+  for (const a of arrows) {
+    const ring = CELL * 0.4;
+    const [x0, y0] = at(a[0]);
+    const [x1, y1] = at(a[1]);
+    const len = Math.hypot(x1 - x0, y1 - y0);
     ctx.beginPath();
     ctx.arc(x0, y0, ring, 0, Math.PI * 2);
     ctx.moveTo(x0 + ((x1 - x0) / len) * ring, y0 + ((y1 - y0) / len) * ring);
     a.slice(1).forEach((c) => ctx.lineTo(...at(c)));
-    ctx.moveTo(ex - ux * h - uy * h, ey - uy * h + ux * h);
-    ctx.lineTo(ex, ey);
-    ctx.lineTo(ex - ux * h + uy * h, ey - uy * h - ux * h);
+    head(at(a.at(-2)), at(a.at(-1)));
+    ctx.stroke();
+  }
+  // Double arrows: a ring round each end, and a line from the edge of one
+  // to the edge of the other.
+  for (const t of doubles) {
+    const ring = CELL * 0.4;
+    const points = t.map(at);
+    const edge = ([x0, y0], [x1, y1]) => {
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      return [x0 + ((x1 - x0) / len) * ring, y0 + ((y1 - y0) / len) * ring];
+    };
+    ctx.beginPath();
+    for (const [x, y] of [points[0], points.at(-1)]) {
+      ctx.moveTo(x + ring, y);
+      ctx.arc(x, y, ring, 0, Math.PI * 2);
+    }
+    [edge(points[0], points[1]), ...points.slice(1, -1), edge(points.at(-1), points.at(-2))].forEach((p, i) => (i ? ctx.lineTo(...p) : ctx.moveTo(...p)));
+    ctx.stroke();
+  }
+  // Pill arrows, as on the board: a box with round ends round the pill, and
+  // an arrow from its edge, off the pill cell it starts beside.
+  for (const { pill, arrow } of pills) {
+    const r = CELL * 0.4;
+    const [a, b] = [at(pill[0]), at(pill.at(-1))];
+    const flat = a[1] === b[1];
+    // Along one side from the first cell to the last, round its end, and
+    // back along the other side and round the first's.
+    const turn = flat ? -Math.PI / 2 : 0;
+    const rim = ([x, y], angle) => [x + r * Math.cos(angle), y + r * Math.sin(angle)];
+    ctx.beginPath();
+    ctx.moveTo(...rim(a, turn));
+    ctx.lineTo(...rim(b, turn));
+    ctx.arc(...b, r, turn, turn + Math.PI);
+    ctx.lineTo(...rim(a, turn + Math.PI));
+    ctx.arc(...a, r, turn + Math.PI, turn + Math.PI * 2);
+    ctx.closePath();
+    const first = arrow[0];
+    const off = pill.find((c) => touching(c, first) && (c % 9 === first % 9 || Math.floor(c / 9) === Math.floor(first / 9))) ?? pill.find((c) => touching(c, first));
+    const [px, py] = at(off);
+    const [qx, qy] = at(first);
+    const len = Math.hypot(qx - px, qy - py);
+    const [ux, uy] = [(qx - px) / len, (qy - py) / len];
+    const [along, across] = flat ? [ux, uy] : [uy, ux];
+    const out = (off === pill[0] && along < 0) || (off === pill.at(-1) && along > 0);
+    const k = out ? r : r / Math.abs(across);
+    ctx.moveTo(px + ux * k, py + uy * k);
+    arrow.forEach((c) => ctx.lineTo(...at(c)));
+    head(arrow.length > 1 ? at(arrow.at(-2)) : [px, py], at(arrow.at(-1)));
     ctx.stroke();
   }
   // As on the board: a ring or a diamond round each end, and a line from
@@ -384,7 +437,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
+  const name = variantName({ cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
   return canvas;
 }

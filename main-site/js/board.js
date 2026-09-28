@@ -8,7 +8,10 @@
 // puzzle has a faint line along each long diagonal, and a Windoku puzzle
 // tints its four windows. Thermometers are a thick grey line from a round
 // bulb, faint enough to read digits through, and arrows a thin one from a
-// ring round the circle's digit to a head. German Whispers lines are a
+// ring round the circle's digit to a head. A double arrow is a thin grey
+// line between rings round both ends' digits, and a pill arrow a box with
+// round ends round the pill's digits, with an arrow from its edge. German
+// Whispers lines are a
 // green line as thick as a thermometer's, with no bulb, renban lines a
 // purple one, palindrome lines a blue one, zipper lines a pink one,
 // entropic lines a gold one and modular lines an orange one.
@@ -29,7 +32,7 @@
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
-import { layout, RULES } from "./variant.js";
+import { layout, touching, RULES } from "./variant.js";
 
 const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
 const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
@@ -139,13 +142,14 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages, thermos, arrows, whispers, renbans,
-  // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-  // signs, quads, sandwiches, hiddens, rooms, littles, skyscrapers, xsums and regions are a variant
-  // puzzle's, and
+  // digits by the solution. cages, thermos, arrows, doubles, pills,
+  // whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+  // modulars, dots, xvs, signs, quads, sandwiches, hiddens, rooms, littles,
+  // skyscrapers, xsums and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, as pathKind says:
-  // "thermo", "arrow", "whisper", "renban", "palindrome", "zipper",
+  // "thermo", "arrow", "doublearrow", "pillarrow" (its first pathPill cells
+  // the pill), "whisper", "renban", "palindrome", "zipper",
   // "between", "lockout", "entropic" or "modular". margin leaves room round the
   // grid for clues outside it; spots, margin spots [r, c] to show as open
   // for a clue, and spot the one picked.
@@ -160,6 +164,8 @@ export class BoardView {
     this.rules = view.rules ?? 0;
     this.thermos = view.thermos ?? [];
     this.arrows = view.arrows ?? [];
+    this.doubles = view.doubles ?? [];
+    this.pills = view.pills ?? [];
     this.whispers = view.whispers ?? [];
     this.renbans = view.renbans ?? [];
     this.palindromes = view.palindromes ?? [];
@@ -187,6 +193,7 @@ export class BoardView {
     this.root.parentElement.classList.toggle("margined", Boolean(view.margin));
     this.path = view.path ?? [];
     this.pathKind = view.pathKind ?? "thermo";
+    this.pathPill = view.pathPill ?? 2;
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
@@ -254,6 +261,8 @@ export class BoardView {
     const cages = this.cages ?? [];
     const thermos = this.thermos ?? [];
     const arrows = this.arrows ?? [];
+    const doubles = this.doubles ?? [];
+    const pills = this.pills ?? [];
     const whispers = this.whispers ?? [];
     const renbans = this.renbans ?? [];
     const palindromes = this.palindromes ?? [];
@@ -269,11 +278,11 @@ export class BoardView {
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, outside, margin, regions, path, this.pathKind]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, outside, margin, regions, path, this.pathKind, this.pathPill]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, path, ...outside.slice(0, -1)].some((list) => list.length);
+    const drawn = [cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, path, ...outside.slice(0, -1)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -339,6 +348,15 @@ export class BoardView {
         `<circle cx="${f(points[0].x)}" cy="${f(points[0].y)}" r="${f(w * 0.36)}"/></g>`
       );
     };
+    // An arrow's head at `end`, pointing on from `from`.
+    const head = (from, end, w) => {
+      // A hidden board's cells measure nothing, so every length is 0.
+      const n = Math.hypot(end.x - from.x, end.y - from.y) || 1;
+      const ux = (end.x - from.x) / n;
+      const uy = (end.y - from.y) / n;
+      const h = w * 0.2;
+      return `M${f(end.x - ux * h - uy * h)} ${f(end.y - uy * h + ux * h)}L${f(end.x)} ${f(end.y)}L${f(end.x - ux * h + uy * h)} ${f(end.y - uy * h - ux * h)}`;
+    };
     // Arrows: a ring round the circle's digit, a line from its edge through
     // the other cells' middles, and a head at the last.
     const arrow = (a, cls) => {
@@ -349,22 +367,47 @@ export class BoardView {
       let line = "";
       if (points.length > 1) {
         const [p, q] = points;
-        // A hidden board's cells measure nothing, so every length is 0.
         const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
         line = `M${f(p.x + ((q.x - p.x) / len) * ring)} ${f(p.y + ((q.y - p.y) / len) * ring)}`;
         line += points.slice(1).map((o) => `L${f(o.x)} ${f(o.y)}`).join("");
-        const end = points.at(-1);
-        const from = points.at(-2);
-        const n = Math.hypot(end.x - from.x, end.y - from.y) || 1;
-        const ux = (end.x - from.x) / n;
-        const uy = (end.y - from.y) / n;
-        const h = w * 0.2;
-        line += `M${f(end.x - ux * h - uy * h)} ${f(end.y - uy * h + ux * h)}L${f(end.x)} ${f(end.y)}L${f(end.x - ux * h + uy * h)} ${f(end.y - uy * h - ux * h)}`;
+        line += head(points.at(-2), points.at(-1), w);
       }
       return (
         `<g class="${cls}" stroke-width="${f(w * 0.06)}"><circle cx="${f(points[0].x)}" cy="${f(points[0].y)}" r="${f(ring)}"/>` +
         `<path d="${line}"/></g>`
       );
+    };
+    // Pill arrows: a box with round ends round the pill's digits, and an
+    // arrow from its edge, off the pill cell it starts beside (one it shares
+    // a side with, if any), through the arrow's cells to a head. While the
+    // pill's cells go in, the box round those so far.
+    const pillArrow = ({ pill, arrow: cells }, cls) => {
+      if (!pill.length) return "";
+      const [a, b] = [centre(pill[0]), centre(pill.at(-1))];
+      const w = a.w;
+      const r = w * 0.4;
+      const box =
+        `<rect x="${f(Math.min(a.x, b.x) - r)}" y="${f(Math.min(a.y, b.y) - r)}" ` +
+        `width="${f(Math.abs(b.x - a.x) + 2 * r)}" height="${f(Math.abs(b.y - a.y) + 2 * r)}" rx="${f(r)}"/>`;
+      let line = "";
+      if (cells.length) {
+        const first = cells[0];
+        const off = pill.find((c) => touching(c, first) && (ROW[c] === ROW[first] || COL[c] === COL[first])) ?? pill.find((c) => touching(c, first)) ?? pill[0];
+        const p = centre(off);
+        const q = centre(first);
+        const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+        const ux = (q.x - p.x) / len;
+        const uy = (q.y - p.y) / len;
+        // Along the pill and across it. The line leaves through a round
+        // end, r from an end cell's middle, or through a flat side, r
+        // across the pill.
+        const [along, across] = pill.length < 2 || ROW[pill[0]] === ROW[pill[1]] ? [ux, uy] : [uy, ux];
+        const out = pill.length < 2 || (off === pill[0] && along < 0) || (off === pill.at(-1) && along > 0);
+        const k = out ? r : r / (Math.abs(across) || 1);
+        line = `M${f(p.x + ux * k)} ${f(p.y + uy * k)}` + cells.map((c) => centre(c)).map((o) => `L${f(o.x)} ${f(o.y)}`).join("");
+        line += head(cells.length > 1 ? centre(cells.at(-2)) : p, centre(cells.at(-1)), w);
+      }
+      return `<g class="${cls}" stroke-width="${f(w * 0.06)}">${box}<path d="${line}"/></g>`;
     };
     // German Whispers, renban, palindrome, zipper, entropic and modular
     // lines: through the cells' middles, no more. A line of one cell, while it is drawn, is a
@@ -379,7 +422,7 @@ export class BoardView {
     // and a line from the edge of one through the other cells' middles to
     // the edge of the other. A line of one cell, while it is drawn, is its
     // first end alone.
-    const ended = (shape) => (t, cls) => {
+    const ended = (shape, width = 0.1) => (t, cls) => {
       if (!t.length) return "";
       const points = t.map(centre);
       const w = points[0].w;
@@ -403,11 +446,19 @@ export class BoardView {
         d = through.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("");
       }
       const ends = points.length > 1 ? [points[0], points.at(-1)] : points;
-      return `<g class="${cls}" stroke-width="${f(w * 0.06)}">${ends.map(end).join("")}<path d="${d}" stroke-width="${f(w * 0.1)}"/></g>`;
+      return `<g class="${cls}" stroke-width="${f(w * 0.06)}">${ends.map(end).join("")}<path d="${d}" stroke-width="${f(w * width)}"/></g>`;
     };
     const ring = ended("ring");
     const diamond = ended("diamond");
-    const draw = { thermo, arrow, whisper: line, renban: line, palindrome: line, zipper: line, entropic: line, modular: line, between: ring, lockout: diamond };
+    // A double arrow: a ring at each end, as a between line has, and a line
+    // as thin as an arrow's.
+    const doubleArrow = ended("ring", 0.06);
+    // A pill arrow being drawn is its path, the pill first.
+    const pathPill = (t, cls) => {
+      const n = this.pathPill;
+      return pillArrow({ pill: t.slice(0, n).sort((p, q) => p - q), arrow: t.slice(n) }, cls);
+    };
+    const draw = { thermo, arrow, doublearrow: doubleArrow, pillarrow: pathPill, whisper: line, renban: line, palindrome: line, zipper: line, entropic: line, modular: line, between: ring, lockout: diamond };
     const kind = this.pathKind;
     const pending = draw[kind](path, `${kind} ${kind}-pending`);
     const marks =
@@ -421,6 +472,8 @@ export class BoardView {
       lockouts.map((t) => diamond(t, "lockout")).join("") +
       thermos.map((t) => thermo(t, "thermo")).join("") +
       arrows.map((a) => arrow(a, "arrow")).join("") +
+      doubles.map((t) => doubleArrow(t, "doublearrow")).join("") +
+      pills.map((t) => pillArrow(t, "pillarrow")).join("") +
       pending;
     // Dots, XV marks and signs, over everything, at the middle of the side.
     const onSides = edges

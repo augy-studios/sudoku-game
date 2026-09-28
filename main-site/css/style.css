@@ -521,15 +521,20 @@ body {
   stroke: var(--warn);
   opacity: 0.45;
 }
-/* Arrows: thin, so darker than a thermometer to read as well. */
-.arrow {
+/* Arrows, double arrows and pill arrows: thin, so darker than a
+   thermometer to read as well. */
+.arrow,
+.doublearrow,
+.pillarrow {
   fill: none;
   stroke: var(--muted-strong);
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: 0.6;
 }
-.arrow-pending {
+.arrow-pending,
+.doublearrow-pending,
+.pillarrow-pending {
   stroke: var(--warn);
   opacity: 0.8;
 }

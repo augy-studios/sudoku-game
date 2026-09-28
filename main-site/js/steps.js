@@ -4,12 +4,11 @@
 // in sudoku.js. A set of candidates is a mask with digits as bits 1 to 9,
 // the same as a cell's notes, so the board can draw one as the other.
 //
-// Each takes a variant, { cages, thermos, arrows, whispers, renbans,
-// palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-// signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
-// regions, rules }
-// (variant.js), as an optional last argument; without one the rules are the
-// classic ones.
+// Each takes a variant, { cages, thermos, arrows, doubles, pills,
+// whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+// modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers,
+// xsums, hiddens, rooms, regions, rules } (variant.js), as an optional last
+// argument; without one the rules are the classic ones.
 
 import { PEERS, countSolutions, findSolutions } from "./sudoku.js";
 import {
@@ -19,6 +18,9 @@ import {
   cageProblem,
   thermoProblem,
   arrowProblem,
+  doubleProblem,
+  pillProblem,
+  scales,
   whisperProblem,
   renbanProblem,
   palindromeProblem,
@@ -57,7 +59,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+const DRAWN = ["cages", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -93,7 +95,10 @@ export function bitCount(mask) {
 // a thermometer that do not rise fast enough from the bulb: two cells three
 // steps apart need digits at least three apart; an arrow's digits, with
 // its circle's, once they go past the circle (or past 9 with the circle
-// empty), or fill the arrow to some other sum; digits next to each other on
+// empty), or fill the arrow to some other sum; the digits between a double
+// arrow's circles, and those along a pill arrow, with the circles' or the
+// pill's, once they go past the most those could make, or fill the line
+// short of the least; digits next to each other on
 // a German Whispers line less than 5 apart; a renban line's digits that
 // repeat, or all of them once they spread wider than the line is long; two
 // digits the same way in from either end of a palindrome line that differ;
@@ -154,6 +159,23 @@ export function clashes(grid, variant = null) {
       filled.forEach((c) => out.add(c));
       if (grid[circle]) out.add(circle);
     }
+  }
+  // The cells weighing over 0 make the total, their empty ones at their
+  // least and their most; the others add up to it.
+  for (const { cells, weights } of scales(variant?.doubles, variant?.pills)) {
+    let lo = 0;
+    let hi = 0;
+    let total = 0;
+    let full = true;
+    cells.forEach((c, i) => {
+      const w = weights[i];
+      if (w > 0) {
+        lo += w * (grid[c] || 1);
+        hi += w * (grid[c] || 9);
+      } else if (grid[c]) total -= w * grid[c];
+      else full = false;
+    });
+    if (total > hi || (full && total < lo)) cells.filter((c) => grid[c]).forEach((c) => out.add(c));
   }
   for (const t of variant?.whispers ?? []) {
     for (let i = 1; i < t.length; i++) {
@@ -390,7 +412,8 @@ export const MIN_CLUES = 17;
 
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
-// "cages", "thermos", "arrows", "whispers", "renbans", "palindromes",
+// "cages", "thermos", "arrows", "doubles", "pills", "whispers", "renbans",
+// "palindromes",
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs",
 // "signs", "quads",
 // "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms" or
@@ -422,6 +445,13 @@ export function checkClues(clues, variant = null) {
   if (variant?.arrows?.length) {
     const problem = arrowProblem(variant.arrows);
     if (problem) return { ok: false, why: "arrows", problem };
+  }
+  for (const [list, partProblem] of [
+    ["doubles", doubleProblem],
+    ["pills", pillProblem],
+  ]) {
+    const problem = variant?.[list]?.length && partProblem(variant[list]);
+    if (problem) return { ok: false, why: list, problem };
   }
   if (variant?.whispers?.length) {
     const problem = whisperProblem(variant.whispers);

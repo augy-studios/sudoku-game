@@ -1,7 +1,7 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 19 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 17 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
@@ -19,7 +19,7 @@ Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 `PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
 are all taken but I, which is easily misread, so a new variant's letters are
 **Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
-QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF. Q is only read with the two after it,
+QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA and QPA. Q is only read with the two after it,
 so every seed made before still reads as it did. Put the entry in `PARTS` or
 `RULES` where its letters should go.
 
@@ -40,10 +40,8 @@ so every seed made before still reads as it did. Put the entry in `PARTS` or
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Double Arrow | The digits between the two end circles add up to the circles' sum. | Arrow |
 | Sum Line | The line splits into segments that each add up to a given sum. | Line tool, with a sum |
 | Region Sum Line | The line's segment in each box it passes through adds up to the same total. | Line tool, boxes or regions |
-| Pill Arrow | Like Arrow, but the total is a two or three-digit number read across a pill of cells. | Arrow |
 | Value Indexing | Points from a digit X to the next X; the second cell says how far along it is. | Line tool |
 
 ## Marks between cells
@@ -78,14 +76,13 @@ so every seed made before still reads as it did. Put the entry in `PARTS` or
 
 ## Suggested order
 
-1. Double Arrow and Pill Arrow: both build on Arrow's circle and sum.
-2. Rellik Cage, Lunchbox, Look and Say and Equality Cage: cages with a
+1. Rellik Cage, Lunchbox, Look and Say and Equality Cage: cages with a
    different clue. The Cages tool needs a kind per cage first, so one tool
    can draw them all.
-3. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
+2. Sum Line, Region Sum Line and Value Indexing: lines, the first two with
    a total.
-4. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
+3. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
    cells on the Cages tool, once it has kinds.
-5. Counting Circles, Full Rank and Row/Column Indexing: each needs
+4. Counting Circles, Full Rank and Row/Column Indexing: each needs
    something new, marks in cells, a ranking of whole rows, or indexing.
-6. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
+5. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.

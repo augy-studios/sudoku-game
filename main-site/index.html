@@ -250,6 +250,8 @@
                         <div class="rule-group-btns">
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="thermo">Thermo</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="arrow">Arrow</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="doublearrow">Double Arrow</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="pillarrow">Pill Arrow</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="whisper">Whispers</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="renban">Renban</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="palindrome">Palindrome</button>
@@ -316,6 +318,7 @@
 
                 <!-- The line tools share it; solver.js names the buttons. -->
                 <div id="lineBar" class="cage-bar hidden">
+                    <button id="linePill" class="btn btn-quiet pill hidden" type="button"><span id="linePillLabel">Pill of 2</span></button>
                     <button id="lineAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="lineAddLabel">Add thermo</span></button>
                     <button id="lineRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span><span id="lineRemoveLabel">Remove thermo</span></button>
                     <button id="lineDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
@@ -360,6 +363,8 @@
                     <button id="solverCages" class="tool-btn" type="button" aria-pressed="false"><span data-icon="cage"></span><span>Cages</span></button>
                     <button id="solverThermos" class="tool-btn" type="button" aria-pressed="false"><span data-icon="thermo"></span><span>Thermos</span></button>
                     <button id="solverArrows" class="tool-btn" type="button" aria-pressed="false"><span data-icon="arrow"></span><span>Arrows</span></button>
+                    <button id="solverDoubles" class="tool-btn" type="button" aria-pressed="false"><span data-icon="doublearrow"></span><span>Doubles</span></button>
+                    <button id="solverPills" class="tool-btn" type="button" aria-pressed="false"><span data-icon="pillarrow"></span><span>Pills</span></button>
                     <button id="solverWhispers" class="tool-btn" type="button" aria-pressed="false"><span data-icon="whisper"></span><span>Whispers</span></button>
                     <button id="solverRenbans" class="tool-btn" type="button" aria-pressed="false"><span data-icon="renban"></span><span>Renbans</span></button>
                     <button id="solverPalindromes" class="tool-btn" type="button" aria-pressed="false"><span data-icon="palindrome"></span><span>Palindromes</span></button>

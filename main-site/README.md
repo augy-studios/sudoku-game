@@ -38,7 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -109,7 +109,7 @@ while the clues go in, how to draw it), and in a Rules box over the board
 in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
-any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
+any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
 Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
@@ -137,18 +137,19 @@ and a cell with no 1 possible above it and no 9 below cannot be 5. So one solver
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, QEN, QMO,
+seed starts with its rules' letters, K, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO,
 P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages, thermometers,
-arrows, whisper lines, renban lines, palindrome lines, zipper lines,
+arrows, double arrows, pill arrows, whisper lines, renban lines, palindrome lines, zipper lines,
 between lines, lockout lines, entropic lines, modular lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
 clues or regions (a line as its length, its first cell and each step's
-direction; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Sandwich
+direction; a pill arrow as its pill's size, first cell and way, then its
+arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Sandwich
 sums as every row's and column's sum or none; Little Killer sums as each
 one's first cell, way and sum; regions as which neighbours share one). The
 others' carry the clues only.
@@ -182,6 +183,33 @@ with the others at their most and at their least. An arrow past its circle
 (or past 9 with the circle empty), or full and adding up to something else,
 shows as a clash. On the board and in a saved image, an arrow is a thin
 line from a ring round the circle's digit to a head.
+
+**Double Arrow and Pill Arrow.** A double arrow has a circle at each end,
+and the digits between add up to the two circles' digits together: 4 5
+between a 3 and a 6. A pill arrow's pill is two or three cells side by
+side along a row or down a column, its digits read left to right or top to
+bottom as a number, and the digits along its arrow add up to that number:
+a pill of 1 7 with 9 8 along the arrow. Digits may repeat on either where
+the rules allow. The Doubles tool draws a double arrow as Betweens draws a
+between line, from one circle to the other, three to nine cells long. The
+Pills tool takes the pill's cells first, side by side in a straight line,
+Pill of 2 switching it to 3 and back, then the arrow from any cell beside
+the pill, up to 27 cells (`PILL_ARROW_MOST`), since a three-digit pill is
+111 at least and needs thirteen. Tapping a pill cell of one picked up
+starts another arrow from the same pill. Up to forty of each, and they may
+share cells. In variant.js both are sums that balance (`scales`): each cell
+has a weight, a circle 1, a pill digit 100, 10 or 1 as a number's are, and
+a cell between the circles or along the arrow -1, and the weighted digits
+add up to 0. The solver squeezes each as an arrow: the least and most the
+weighted digits can make must take in 0, and each cell keeps the digits
+that leave the others some way to get there. So a pill of two with two
+cells of arrow starts with a 1, and a three-digit pill with thirteen starts
+1 1. Digits between the circles or along the arrow that go past the most
+the circles or the pill could make, or fill it short of the least, show as
+a clash, with the circles' or the pill's. On the board and in a saved image, a double arrow is a thin grey
+line between rings round both ends' digits, and a pill arrow a box with
+round ends round the pill's digits, with a thin arrow from its edge to a
+head.
 
 **German Whispers and Renban.** On a whisper line, digits next to each
 other differ by at least 5, so no 5 is ever on one. On a renban line, the
