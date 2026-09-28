@@ -10,13 +10,26 @@
 // puzzle itself rather than what to generate: see madeSeed below. It has
 // `made: true`, and scores only on its own board. A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
-// T for thermometers, A for arrows, S for German Whispers lines and R for
-// renban lines, which the seed then carries too, and D, N, G and W for the
-// switch rules (variant.js).
+// T for thermometers, A for arrows, S for German Whispers lines, R for
+// renban lines, P for Kropki dots and V for XV marks, which the seed then
+// carries too, and D, N, G and W for the switch rules (variant.js).
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
 import { generate, solve, countSolutions, COL } from "./sudoku.js";
-import { variantSolve, variantSolutions, cageProblem, thermoProblem, arrowProblem, whisperProblem, renbanProblem, RULES } from "./variant.js";
+import {
+  variantSolve,
+  variantSolutions,
+  cageProblem,
+  thermoProblem,
+  arrowProblem,
+  whisperProblem,
+  renbanProblem,
+  dotProblem,
+  xvProblem,
+  DOT_MARKS,
+  XV_MARKS,
+  RULES,
+} from "./variant.js";
 
 // No vowels, and no 0 O 1 I, as for pairing codes: a seed read aloud cannot
 // be misheard and cannot spell a word.
@@ -127,8 +140,8 @@ function decodeGrid(body) {
   return digits === 0n ? grid : null;
 }
 
-/* A made killer, thermo or arrow puzzle's seed is one number too, read as a
-   run of mixed radix digits, first digit lowest: for each cell whether it
+/* A made puzzle with anything drawn on it has a seed of one number too, read
+   as a run of mixed radix digits, first digit lowest: for each cell whether it
    holds a clue, then the clues. A killer's cages follow: for each cell
    whether it is in a cage, then for each pair of caged neighbours (right,
    then below) whether they share a cage, then each cage's sum, cages in
@@ -136,8 +149,10 @@ function decodeGrid(body) {
    edges give back the cages exactly. Then thermometers: how many, and for
    each its length, its bulb, and which way each step goes. Then arrows, the
    same way, from the circle, and German Whispers lines and renban lines the
-   same way again. Each part is there only when the seed's
-   letters say so, so a seed from before a part came reads as it did. */
+   same way again. Then Kropki dots, and then XV marks, as whichever is
+   shorter: how many, and for each its side and which of the two marks it
+   is; or for every side, its mark or none. Each part is there only when the
+   seed's letters say so, so a seed from before a part came reads as it did. */
 
 function packDigits(digits) {
   let n = 0n;
@@ -169,6 +184,11 @@ function* neighbourPairs() {
   }
 }
 
+// The 144 sides two cells share, in that order, and each one's place in it
+// by its cells.
+const SIDES = [...neighbourPairs()];
+const SIDE_AT = new Map(SIDES.map(([a, b], i) => [a * 81 + b, i]));
+
 // The eight ways a line can step, corners included.
 const STEPS = [
   [-1, -1],
@@ -182,24 +202,23 @@ const STEPS = [
 ];
 const MAX_LINES = 40;
 
-// cages and each kind of line: null when the puzzle has none, so the reader
-// knows from the seed's letters what to read.
-function encodeParts(grid, cages, thermos, arrows, whispers, renbans) {
+// parts: { cages, thermos, ... } as PARTS names them, each a list, empty
+// when the puzzle has none, so the reader knows from the seed's letters what
+// to read.
+function encodeParts(grid, parts) {
   const digits = [];
   for (let c = 0; c < 81; c++) digits.push([grid[c] ? 1 : 0, 2]);
   for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, 9]);
-  if (cages) {
-    const of = new Array(81).fill(-1);
-    cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
-    for (let c = 0; c < 81; c++) digits.push([of[c] >= 0 ? 1 : 0, 2]);
-    for (const [a, b] of neighbourPairs()) if (of[a] >= 0 && of[b] >= 0) digits.push([of[a] === of[b] ? 1 : 0, 2]);
-    for (const cage of sortCages(cages)) digits.push([cage.sum, 46]);
-  }
-  if (thermos) writeLines(digits, thermos);
-  if (arrows) writeLines(digits, arrows);
-  if (whispers) writeLines(digits, whispers);
-  if (renbans) writeLines(digits, renbans);
+  for (const p of PARTS) if (parts[p.list].length) p.write(digits, parts[p.list]);
   return toBody(packDigits(digits));
+}
+
+function writeCages(digits, cages) {
+  const of = new Array(81).fill(-1);
+  cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
+  for (let c = 0; c < 81; c++) digits.push([of[c] >= 0 ? 1 : 0, 2]);
+  for (const [a, b] of neighbourPairs()) if (of[a] >= 0 && of[b] >= 0) digits.push([of[a] === of[b] ? 1 : 0, 2]);
+  for (const cage of sortCages(cages)) digits.push([cage.sum, 46]);
 }
 
 // Lines of one kind: how many, then each one's length, first cell and
@@ -236,8 +255,42 @@ function readLines(take) {
   return lines;
 }
 
-// withs: which parts the seed's letters say it has, { cages, thermos,
-// arrows, whispers, renbans }.
+// Dots or XV marks, `marks` naming their two kinds: a flag, then either how
+// many and each one's side and kind, or every side's kind, 0 for none;
+// whichever is shorter.
+function writeEdges(digits, edges, marks) {
+  const kinds = new Map(edges.map((e) => [SIDE_AT.get(e.cells[0] * 81 + e.cells[1]), marks.indexOf(e.mark)]));
+  const listed = Math.log2(SIDES.length + 1) + kinds.size * Math.log2(SIDES.length * 2);
+  if (listed <= SIDES.length * Math.log2(3)) {
+    digits.push([0, 2], [kinds.size, SIDES.length + 1]);
+    for (const side of [...kinds.keys()].sort((a, b) => a - b)) digits.push([side, SIDES.length], [kinds.get(side), 2]);
+  } else {
+    digits.push([1, 2]);
+    SIDES.forEach((_, side) => digits.push([kinds.has(side) ? kinds.get(side) + 1 : 0, 3]));
+  }
+}
+
+// The other way, from `take`, which reads the next digit.
+function readEdges(take, marks) {
+  const edges = [];
+  if (take(2)) {
+    SIDES.forEach((cells, side) => {
+      const kind = take(3);
+      if (kind) edges.push({ cells: cells.slice(), mark: marks[kind - 1] });
+    });
+  } else {
+    const count = take(SIDES.length + 1);
+    for (let i = 0; i < count; i++) edges.push({ cells: SIDES[take(SIDES.length)].slice(), mark: marks[take(2)] });
+  }
+  return edges;
+}
+
+// Dots or marks in the order of their sides, each a copy.
+const sortEdges = (edges) =>
+  edges.map((e) => ({ cells: e.cells.slice(), mark: e.mark })).sort((p, q) => p.cells[0] * 81 + p.cells[1] - (q.cells[0] * 81 + q.cells[1]));
+
+// withs: which parts the seed's letters say it has, { cages, thermos, ... }
+// as PARTS names them.
 function decodeParts(body, withs) {
   let n = fromBody(body);
   if (n == null) return null;
@@ -251,10 +304,10 @@ function decodeParts(body, withs) {
   const clued = [];
   for (let c = 0; c < 81; c++) if (take(2)) clued.push(c);
   for (const c of clued) grid[c] = take(9) + 1;
-  const out = { grid, cages: withs.cages ? readCages(take) : [] };
-  for (const list of LINE_LISTS) {
-    out[list] = withs[list] ? readLines(take) : [];
-    if (!out[list]) return null;
+  const out = { grid };
+  for (const p of PARTS) {
+    out[p.list] = withs[p.list] ? p.read(take) : [];
+    if (!out[p.list]) return null;
   }
   return n === 0n ? out : null;
 }
@@ -283,15 +336,28 @@ function sortCages(cages) {
 }
 
 // The drawn parts, with their letters and names, in the order their letters
-// start a seed and their parts go in its body.
+// start a seed and their parts go in its body: how each is written, read,
+// checked, and put in the one order a seed keeps it in.
+const copyLines = (lines) => lines.map((t) => t.slice());
+const lines = (list, letter, name, problem) => ({ list, letter, name, problem, write: writeLines, read: readLines, sort: copyLines });
+const edges = (list, letter, name, problem, marks) => ({
+  list,
+  letter,
+  name,
+  problem,
+  write: (digits, found) => writeEdges(digits, found, marks),
+  read: (take) => readEdges(take, marks),
+  sort: sortEdges,
+});
 const PARTS = [
-  { list: "cages", letter: "K", name: "Killer", problem: cageProblem },
-  { list: "thermos", letter: "T", name: "Thermo", problem: thermoProblem },
-  { list: "arrows", letter: "A", name: "Arrow", problem: arrowProblem },
-  { list: "whispers", letter: "S", name: "German Whispers", problem: whisperProblem },
-  { list: "renbans", letter: "R", name: "Renban", problem: renbanProblem },
+  { list: "cages", letter: "K", name: "Killer", problem: cageProblem, write: writeCages, read: readCages, sort: sortCages },
+  lines("thermos", "T", "Thermo", thermoProblem),
+  lines("arrows", "A", "Arrow", arrowProblem),
+  lines("whispers", "S", "German Whispers", whisperProblem),
+  lines("renbans", "R", "Renban", renbanProblem),
+  edges("dots", "P", "Kropki", dotProblem, DOT_MARKS),
+  edges("xvs", "V", "XV", xvProblem, XV_MARKS),
 ];
-const LINE_LISTS = PARTS.slice(1).map((p) => p.list);
 
 // The letters that start a variant seed, in this order.
 const PREFIX = [...PARTS.map((p) => p.letter), ...RULES.map((r) => r.letter)];
@@ -305,19 +371,18 @@ function prefixFor(parts, rules) {
 }
 
 // The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
-// renbans, rules } for a variant puzzle (variant.js), or nothing for a
-// classic one. `level` is
+// renbans, dots, xvs, rules } for a variant puzzle (variant.js), or nothing
+// for a classic one. `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.
 export function madeSeed(level, grid, variant = null) {
   const groups = (body) => body.match(/.{1,4}/g).join("-");
-  const parts = { cages: variant?.cages?.length ? sortCages(variant.cages) : [] };
-  for (const list of LINE_LISTS) parts[list] = variant?.[list]?.length ? variant[list].map((t) => t.slice()) : [];
+  const parts = {};
+  for (const p of PARTS) parts[p.list] = variant?.[p.list]?.length ? p.sort(variant[p.list]) : [];
   const rules = variant?.rules ?? 0;
   const prefix = prefixFor(parts, rules);
   const drawn = PARTS.some((p) => parts[p.list].length);
-  const or = (list) => (parts[list].length ? parts[list] : null);
-  const body = drawn ? encodeParts(grid, ...PARTS.map((p) => or(p.list))) : encodeGrid(grid);
+  const body = drawn ? encodeParts(grid, parts) : encodeGrid(grid);
   const text = prefix ? `${prefix}-${level}-${groups(body)}` : `${level}-${groups(body)}`;
   const seed = { level, body, text, made: true, grid: grid.slice(), rules };
   for (const { list } of PARTS) if (parts[list].length) seed[list] = parts[list];

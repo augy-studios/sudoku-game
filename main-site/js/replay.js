@@ -69,7 +69,7 @@ export class Replay {
   }
 
   // game: { puzzle, solution, log, players, cages?, thermos?, arrows?,
-  // whispers?, renbans?, rules? }.
+  // whispers?, renbans?, dots?, xvs?, rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
   load(game, view, { autoplay = false } = {}) {
@@ -122,6 +122,8 @@ export class Replay {
       arrows: this.game.arrows ?? null,
       whispers: this.game.whispers ?? null,
       renbans: this.game.renbans ?? null,
+      dots: this.game.dots ?? null,
+      xvs: this.game.xvs ?? null,
     });
     $("rpScrub").value = String(i);
     const total = this.frames.length - 1;

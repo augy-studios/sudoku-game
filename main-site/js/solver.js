@@ -17,8 +17,10 @@
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
 // way with the Arrows tool, from the circle; Whispers and Renban add German
 // Whispers and renban lines, drawn the same way again with their own tools;
-// and Diagonal, Anti-knight, Anti-king and Windoku add their rules
-// (variant.js). Every check, hint and candidate then follows them too.
+// Kropki and XV add dots and X and V marks on the sides between cells, put
+// down with the Marks tool; and Diagonal, Anti-knight, Anti-king and
+// Windoku add their rules (variant.js). Every check, hint and candidate
+// then follows them too.
 //
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
@@ -26,7 +28,23 @@
 import { ROW, COL } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
 import { madeSeed, parseSeed } from "./seed.js";
-import { cageProblem, cageOf, thermoProblem, arrowProblem, whisperProblem, renbanProblem, touching, RULES, ALL_RULES, variantName } from "./variant.js";
+import {
+  cageProblem,
+  cageOf,
+  thermoProblem,
+  arrowProblem,
+  whisperProblem,
+  renbanProblem,
+  dotProblem,
+  xvProblem,
+  DOT_MARKS,
+  XV_MARKS,
+  touching,
+  beside,
+  RULES,
+  ALL_RULES,
+  variantName,
+} from "./variant.js";
 import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
@@ -46,9 +64,9 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, thermo, arrow, whisper, renban and rules are the variant's
-// switches; cages are kept while Killer is off, for when it comes back on,
-// and each kind of line likewise.
+// killer, thermo, arrow, whisper, renban, kropki, xv and rules are the
+// variant's switches; cages are kept while Killer is off, for when it comes
+// back on, and each kind of line, the dots and the XV marks likewise.
 const fresh = () => ({
   open: false,
   stage: "enter",
@@ -60,12 +78,16 @@ const fresh = () => ({
   arrow: false,
   whisper: false,
   renban: false,
+  kropki: false,
+  xv: false,
   rules: 0,
   cages: [],
   thermos: [],
   arrows: [],
   whispers: [],
   renbans: [],
+  dots: [],
+  xvs: [],
 });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
@@ -85,6 +107,9 @@ let editing = -1;
 let lineKind = null;
 let path = [];
 let editingLine = -1;
+// The Marks tool: on, and the cell picked for a mark on one of its sides.
+let markMode = false;
+let anchor = null;
 let selected = null;
 let padDigit = 0;
 let checked = false; // Check was pressed, and nothing has changed since
@@ -104,11 +129,22 @@ const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
 const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
 const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
-const drawn = () => Boolean(cages() || thermos() || arrows() || whispers() || renbans());
+const dots = () => (s.kropki && s.dots.length ? s.dots : null);
+const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
+const drawn = () => Boolean(cages() || thermos() || arrows() || whispers() || renbans() || dots() || xvs());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules
-    ? { cages: cages() ?? [], thermos: thermos() ?? [], arrows: arrows() ?? [], whispers: whispers() ?? [], renbans: renbans() ?? [], rules: s.rules }
+    ? {
+        cages: cages() ?? [],
+        thermos: thermos() ?? [],
+        arrows: arrows() ?? [],
+        whispers: whispers() ?? [],
+        renbans: renbans() ?? [],
+        dots: dots() ?? [],
+        xvs: xvs() ?? [],
+        rules: s.rules,
+      }
     : null;
 
 /* ---- keeping it ---- */
@@ -144,10 +180,10 @@ function load(which) {
   // Before the switch rules, a killer puzzle was saved as variant "killer".
   st.killer = saved.killer === true || saved.variant === "killer";
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
-  for (const [kind, L] of Object.entries(LINES)) {
+  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES)]) {
     st[kind] = saved[kind] === true;
-    const lines = Array.isArray(saved[L.list]) ? saved[L.list] : [];
-    st[L.list] = !L.problem(lines) ? lines : [];
+    const kept = Array.isArray(saved[P.list]) ? saved[P.list] : [];
+    st[P.list] = !P.problem(kept) ? kept : [];
   }
   const kept = Array.isArray(saved.cages) ? saved.cages : [];
   st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
@@ -188,6 +224,8 @@ function hintText(step, reveal) {
       ...(arrows() ? ["arrows"] : []),
       ...(whispers() ? ["whisper lines"] : []),
       ...(renbans() ? ["renban lines"] : []),
+      ...(dots() ? ["dots"] : []),
+      ...(xvs() ? ["X and V marks"] : []),
     ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
@@ -208,6 +246,8 @@ function problemText(check) {
   if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
   if (why === "whispers") return WHISPER_PROBLEMS[check.problem.why];
   if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
+  if (why === "dots") return DOT_PROBLEMS[check.problem.why];
+  if (why === "xvs") return XV_PROBLEMS[check.problem.why];
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
@@ -233,6 +273,8 @@ function clashText() {
   if (arrows()) extra.push("not adding up to an arrow's circle");
   if (whispers()) extra.push("less than 5 apart next to each other on a whisper line");
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
+  if (dots()) extra.push("breaking a dot");
+  if (xvs()) extra.push("not adding up to an X or a V");
   return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -268,6 +310,20 @@ const RENBAN_PROBLEMS = {
   apart: "Each cell of a renban line must touch the one before it.",
 };
 
+const DOT_PROBLEMS = {
+  cell: "A dot has a cell off the board.",
+  apart: "A dot must sit on the side two cells share.",
+  mark: "A dot must be white or black.",
+  twice: "Two dots sit on the same side.",
+};
+
+const XV_PROBLEMS = {
+  cell: "An X or a V has a cell off the board.",
+  apart: "An X or a V must sit on the side two cells share.",
+  mark: "A mark must be an X or a V.",
+  twice: "Two marks sit on the same side.",
+};
+
 const CAGE_PROBLEMS = {
   size: "A cage needs one to nine cells.",
   cell: "A cage has a cell off the board.",
@@ -294,22 +350,22 @@ function wrongCells() {
   return out;
 }
 
-// The lists of lines, by LINES's list names: "thermos", "arrows", and so on.
-const lineLists = () => Object.values(LINES).map((L) => L.list);
+// The lists of drawn parts: "cages", then LINES's lists and EDGES's.
+const partLists = () => ["cages", ...Object.values(LINES).map((L) => L.list), ...Object.values(EDGES).map((E) => E.list)];
 
 const snapshot = () => {
-  const out = { clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice() };
-  for (const list of lineLists()) out[list] = s[list].slice();
+  const out = { clues: s.clues.slice(), values: s.values.slice() };
+  for (const list of partLists()) out[list] = s[list].slice();
   return out;
 };
 
-// Puts a new grid in this stage, and any of new { cages, thermos, arrows,
-// whispers, renbans }, undoably.
+// Puts a new grid in this stage, and any of new { cages, thermos, ... } as
+// partLists names them, undoably.
 function change(next, parts = {}) {
   history.push(snapshot());
   if (s.stage === "solve") s.values = next;
   else s.clues = next;
-  for (const list of ["cages", ...lineLists()]) if (parts[list]) s[list] = parts[list];
+  for (const list of partLists()) if (parts[list]) s[list] = parts[list];
   checked = false;
   pending = null;
   mark = null;
@@ -335,10 +391,12 @@ function resetStage() {
 
 /* ---- actions ---- */
 
-function selectCell(c, { focus = false } = {}) {
+// at: where in the cell a pointer tapped, for the Marks tool (board.js).
+function selectCell(c, { focus = false, at = null } = {}) {
   if (!canEdit()) return;
   if (cageMode) return pickCell(c);
   if (lineKind) return pickLineCell(c);
+  if (markMode) return pickMarkSide(c, at);
   selected = c;
   padDigit = 0;
   render();
@@ -373,6 +431,7 @@ function inputDigit(d) {
     const L = LINES[lineKind];
     return say(`Digits wait until the ${L.name} is done: tap its cells, ${L.start} first, then ${addLabel()}.`);
   }
+  if (markMode) return say("Digits wait until the marks are done: tap Done first.");
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
     // Nothing to put it in: light the digit up instead.
     padDigit = padDigit === d ? 0 : d;
@@ -409,6 +468,7 @@ function blank() {
 function erase() {
   if (cageMode) return typeSum("back");
   if (lineKind) return stepBack();
+  if (markMode) return;
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
   const next = grid().slice();
   next[selected] = 0;
@@ -421,8 +481,9 @@ function undo() {
   const back = history.pop();
   s.clues = back.clues;
   s.values = back.values;
-  for (const list of ["cages", ...lineLists()]) s[list] = back[list];
+  for (const list of partLists()) s[list] = back[list];
   clearPicked();
+  anchor = null;
   path = [];
   editingLine = -1;
   checked = false;
@@ -438,7 +499,7 @@ function clearAll() {
   endCage();
   // Only what the rules on use: the rest is kept for when they come back.
   const parts = { cages: killer() ? [] : s.cages };
-  for (const [kind, L] of Object.entries(LINES)) parts[L.list] = s[kind] ? [] : s[L.list];
+  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES)]) parts[P.list] = s[kind] ? [] : s[P.list];
   change(empty(), parts);
   selected = null;
   say("Cleared. Undo brings it back.");
@@ -456,6 +517,10 @@ function pasteText(text) {
     for (const [kind, L] of Object.entries(LINES)) {
       s[kind] = Boolean(seed[L.list]);
       parts[L.list] = seed[L.list] ? seed[L.list].map((t) => t.slice()) : s[L.list];
+    }
+    for (const [kind, E] of Object.entries(EDGES)) {
+      s[kind] = Boolean(seed[E.list]);
+      parts[E.list] = seed[E.list] ? seed[E.list].map((e) => ({ cells: e.cells.slice(), mark: e.mark })) : s[E.list];
     }
     change(seed.grid.slice(), parts);
     selected = null;
@@ -515,6 +580,8 @@ function onGo() {
   if (s.arrow && !s.arrows.length) return say("Draw an arrow first: tap Arrows, then the circle and each cell along it.");
   if (s.whisper && !s.whispers.length) return say("Draw a whisper line first: tap Whispers, then each cell along it.");
   if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
+  if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
+  if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
@@ -641,11 +708,11 @@ function toggleCandidates() {
 
 /* ---- cages ---- */
 
-// A rule button: killer, a key of LINES, or one of RULES by key.
+// A rule button: killer, a key of LINES or EDGES, or one of RULES by key.
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
-  if (key === "killer" || key in LINES) s[key] = !s[key];
+  if (key === "killer" || key in LINES || key in EDGES) s[key] = !s[key];
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -655,6 +722,7 @@ function toggleRule(key) {
 function toggleCageMode() {
   if (cageMode) return endCage(true);
   endLine();
+  endMarks();
   cageMode = true;
   selected = null;
   padDigit = 0;
@@ -669,12 +737,13 @@ function clearPicked() {
   $("cageSum").value = "";
 }
 
-// Leaves the Cages tool, and any line tool with it; `draw` to show it at
-// once.
+// Leaves the Cages tool, and any line tool or the Marks tool with it; `draw`
+// to show it at once.
 function endCage(draw = false) {
   cageMode = false;
   clearPicked();
   endLine();
+  endMarks();
   if (draw) {
     note = "";
     render();
@@ -870,6 +939,90 @@ function onLineRemove() {
   say(`${L.title} removed. Undo brings it back.`);
 }
 
+/* ---- dots and XV marks ---- */
+
+// Kropki's dots and XV's marks, each kept in a list of its own as lines
+// are. Each key is also the name of the rule's switch.
+const EDGES = {
+  kropki: { list: "dots", marks: DOT_MARKS, problem: dotProblem },
+  xv: { list: "xvs", marks: XV_MARKS, problem: xvProblem },
+};
+const MARK_WORDS = { white: "white dot", black: "black dot", x: "X", v: "V" };
+const capital = (text) => text[0].toUpperCase() + text.slice(1);
+
+// The marks a side steps through, with the rules on: white dot, black dot,
+// X, V, then none.
+const markCycle = () => Object.entries(EDGES).flatMap(([kind, E]) => (s[kind] ? E.marks : []));
+
+function toggleMarkMode() {
+  if (markMode) return endCage(true);
+  endCage();
+  markMode = true;
+  selected = null;
+  padDigit = 0;
+  note = "";
+  render();
+}
+
+function endMarks() {
+  markMode = false;
+  anchor = null;
+}
+
+// The cell across the side of cell c nearest a tap at `at`, or -1 when
+// the tap was nearer the middle, or came from the keyboard.
+function sideNear(c, at) {
+  if (!at) return -1;
+  const [x, y] = at;
+  const sides = [
+    [y, c - 9],
+    [1 - y, c + 9],
+    [x, c - 1],
+    [1 - x, c + 1],
+  ].filter(([, o]) => o >= 0 && o < 81 && (ROW[o] === ROW[c] || COL[o] === COL[c]));
+  const [gap, o] = sides.sort((p, q) => p[0] - q[0])[0];
+  return gap < 0.28 ? o : -1;
+}
+
+// A tap in the Marks tool: near a side, the mark on it steps on. Nearer the
+// middle, the cell is picked, and then a tap on a cell beside it steps on
+// the mark between the two.
+function pickMarkSide(c, at) {
+  let other = sideNear(c, at);
+  if (other < 0 && anchor != null && beside(Math.min(anchor, c), Math.max(anchor, c))) other = anchor;
+  if (other < 0) {
+    anchor = anchor === c ? null : c;
+    note = "";
+    return render();
+  }
+  anchor = null;
+  stepMark(Math.min(c, other), Math.max(c, other));
+}
+
+// The next mark on the side between cells a and b, a first. A mark there
+// under a rule that is off goes too, so a side never holds two.
+function stepMark(a, b) {
+  const on = (e) => e.cells[0] === a && e.cells[1] === b;
+  const now = Object.entries(EDGES).map(([kind, E]) => (s[kind] ? s[E.list].find(on)?.mark : null)).find(Boolean) ?? null;
+  const cycle = markCycle();
+  const next = cycle[cycle.indexOf(now) + 1] ?? null;
+  const parts = {};
+  for (const E of Object.values(EDGES)) {
+    const kept = s[E.list].filter((e) => !on(e));
+    if (E.marks.includes(next)) kept.push({ cells: [a, b], mark: next });
+    parts[E.list] = kept.sort((p, q) => p.cells[0] * 81 + p.cells[1] - (q.cells[0] * 81 + q.cells[1]));
+  }
+  change(s.clues, parts);
+  const between = `between ${where(a)} and ${where(b)}`;
+  say(next ? `${capital(MARK_WORDS[next])} ${between}. Tap there again for the next mark.` : `Mark ${between} taken off. Undo brings it back.`);
+}
+
+function markStatus() {
+  if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them.`;
+  const kinds = markCycle().map((m) => MARK_WORDS[m]).join(", ");
+  return `Tap near the side between two cells to mark it, or tap a cell and then one beside it. Each tap steps on: ${kinds}, then none.`;
+}
+
 /* ---- drawing ---- */
 
 function defaultStatus() {
@@ -877,10 +1030,15 @@ function defaultStatus() {
   if (s.stage === "enter") {
     if (cageMode) return cageStatus();
     if (lineKind) return lineStatus();
+    if (markMode) return markStatus();
     if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
     if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
     if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
     if (s.renban && !s.renbans.length) return "A renban puzzle: tap Renbans, then each cell along a line. Its digits are a run, like 3 4 5, in any order.";
+    if (s.kropki && !s.dots.length) {
+      return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
+    }
+    if (s.xv && !s.xvs.length) return "An XV puzzle: tap Marks, then near the side between two cells. Digits either side of an X add up to 10, of a V to 5.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
@@ -945,10 +1103,12 @@ function render() {
     arrows: shownLines("arrow"),
     whispers: shownLines("whisper"),
     renbans: shownLines("renban"),
+    dots: s.kropki ? s.dots : null,
+    xvs: s.xv ? s.xvs : null,
     path: lineKind ? path : [],
     pathKind: lineKind ?? "thermo",
     rules: s.rules,
-    picked: cageMode ? picked : lineKind ? new Set(path) : null,
+    picked: cageMode ? picked : lineKind ? new Set(path) : markMode && anchor != null ? new Set([anchor]) : null,
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
@@ -992,8 +1152,10 @@ function render() {
     solverWhispers: enter && s.whisper,
     solverRenbans: enter && s.renban,
     lineBar: Boolean(lineKind),
+    solverMarks: enter && (s.kropki || s.xv),
+    markBar: markMode,
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && !Object.keys(LINES).some((kind) => s[kind]) && !s.rules,
+    solverCopy: !killer() && ![...Object.keys(LINES), ...Object.keys(EDGES)].some((kind) => s[kind]) && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -1016,7 +1178,7 @@ function render() {
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
     const { rule } = b.dataset;
-    const on = rule === "killer" || rule in LINES ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
+    const on = rule === "killer" || rule in LINES || rule in EDGES ? s[rule] : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
     b.setAttribute("aria-pressed", String(on));
   });
   $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
@@ -1025,6 +1187,7 @@ function render() {
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
   $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
+  $("solverMarks").setAttribute("aria-pressed", String(markMode));
   if (lineKind) {
     $("lineAddLabel").textContent = addLabel();
     $("lineRemoveLabel").textContent = `Remove ${LINES[lineKind].short}`;
@@ -1081,6 +1244,7 @@ function onKey(e) {
   else if (cageMode && e.key === "Escape") endCage(true);
   else if (lineKind && e.key === "Enter") onLineAdd();
   else if (lineKind && e.key === "Escape") endCage(true);
+  else if (markMode && e.key === "Escape") endCage(true);
   else if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
   else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
@@ -1124,6 +1288,8 @@ export function initSolver({ reopen = true } = {}) {
   $("solverArrows").addEventListener("click", () => toggleLineMode("arrow"));
   $("solverWhispers").addEventListener("click", () => toggleLineMode("whisper"));
   $("solverRenbans").addEventListener("click", () => toggleLineMode("renban"));
+  $("solverMarks").addEventListener("click", toggleMarkMode);
+  $("markDone").addEventListener("click", () => endCage(true));
   $("lineAdd").addEventListener("click", onLineAdd);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));

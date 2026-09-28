@@ -10,7 +10,9 @@
 // bulb, faint enough to read digits through, and arrows a thin one from a
 // ring round the circle's digit to a head. German Whispers lines are a
 // green line as thick as a thermometer's, with no bulb, and renban lines a
-// purple one. Anti-knight and anti-king have nothing to draw.
+// purple one. Kropki dots sit on the side two cells share, white or black,
+// and XV marks there as a letter. Anti-knight and anti-king have nothing to
+// draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
@@ -60,9 +62,14 @@ export class BoardView {
     root.parentElement.append(this.cageLayer);
     new ResizeObserver(() => this.drawCages(true)).observe(root);
 
+    // With `at`, where in the cell a pointer tapped, 0 to 1 across and down,
+    // for a tool that cares which side is nearest; null from the keyboard.
     root.addEventListener("click", (e) => {
       const cell = e.target.closest("[data-cell]");
-      if (cell && this.view?.interactive) this.onSelect(Number(cell.dataset.cell));
+      if (!cell || !this.view?.interactive) return;
+      const r = cell.getBoundingClientRect();
+      const at = e.detail && r.width ? [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height] : null;
+      this.onSelect(Number(cell.dataset.cell), { at });
     });
     root.addEventListener("keydown", (e) => {
       if (!this.view?.interactive) return;
@@ -89,8 +96,8 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages, thermos, arrows, whispers and renbans
-  // are a variant puzzle's, and rules its switches (variant.js); picked, a
+  // digits by the solution. cages, thermos, arrows, whispers, renbans, dots
+  // and xvs are a variant puzzle's, and rules its switches (variant.js); picked, a
   // Set of cells, are those being gathered into a new cage, and path a line
   // being drawn, as pathKind says: "thermo", "arrow", "whisper" or "renban".
   set(view) {
@@ -106,6 +113,8 @@ export class BoardView {
     this.arrows = view.arrows ?? [];
     this.whispers = view.whispers ?? [];
     this.renbans = view.renbans ?? [];
+    this.dots = view.dots ?? [];
+    this.xvs = view.xvs ?? [];
     this.path = view.path ?? [];
     this.pathKind = view.pathKind ?? "thermo";
     const windows = new Set(
@@ -169,21 +178,22 @@ export class BoardView {
   }
 
   // The dashed outlines and sums, the diagonals, the thermometers, the
-  // arrows and the other lines. Only redrawn when they change, or when
-  // `resized`.
+  // arrows, the other lines, and the dots and marks. Only redrawn when they
+  // change, or when `resized`.
   drawCages(resized = false) {
     const cages = this.cages ?? [];
     const thermos = this.thermos ?? [];
     const arrows = this.arrows ?? [];
     const whispers = this.whispers ?? [];
     const renbans = this.renbans ?? [];
+    const edges = [...(this.dots ?? []), ...(this.xvs ?? [])];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, path, this.pathKind]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, edges, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    if (!cages.length && !diagonal && !thermos.length && !arrows.length && !whispers.length && !renbans.length && !path.length) {
+    if (!cages.length && !diagonal && !thermos.length && !arrows.length && !whispers.length && !renbans.length && !edges.length && !path.length) {
       layer.innerHTML = "";
       return;
     }
@@ -292,6 +302,16 @@ export class BoardView {
       thermos.map((t) => thermo(t, "thermo")).join("") +
       arrows.map((a) => arrow(a, "arrow")).join("") +
       pending;
-    layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}`;
+    // Dots and XV marks, over everything, at the middle of the side.
+    const onSides = edges
+      .map(({ cells, mark }) => {
+        const [p, q] = cells.map(centre);
+        const x = f((p.x + q.x) / 2);
+        const y = f((p.y + q.y) / 2);
+        if (mark === "white" || mark === "black") return `<circle class="dot dot-${mark}" cx="${x}" cy="${y}" r="${f(p.w * 0.12)}"/>`;
+        return `<text class="xv-mark" x="${x}" y="${y}" font-size="${f(p.w * 0.36)}">${mark.toUpperCase()}</text>`;
+      })
+      .join("");
+    layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}`;
   }
 }

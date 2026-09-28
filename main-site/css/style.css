@@ -459,6 +459,23 @@ body {
   stroke: var(--warn);
   opacity: 0.45;
 }
+/* Kropki dots and XV marks: on top and solid, as they sit between digits.
+   A white dot is white and a black one black whatever the theme, as hints
+   name them, each ringed to show on either background. */
+.dot { stroke-width: 1.5; }
+.dot-white { fill: #ffffff; stroke: #121815; }
+.dot-black { fill: #121815; stroke: var(--ink); }
+.xv-mark {
+  fill: var(--ink);
+  font-family: inherit;
+  text-anchor: middle;
+  dominant-baseline: central;
+  /* A halo in the board's colour, so the grid line stops short of it. */
+  paint-order: stroke;
+  stroke: var(--cell-bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
 /* Diagonal and Windoku. */
 .diagonal-line {
   fill: none;

@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers and renban lines, Kropki dots, XV marks, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -81,7 +81,7 @@ network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
 board, on or off in any mix: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Diagonal (both long diagonals hold 1
+Whispers), Renban, Kropki, XV, Diagonal (both long diagonals hold 1
 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
@@ -91,11 +91,18 @@ variant.js, diagonals and windows are extra houses and the knight's and
 king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
-clues. Its seed starts with its rules' letters, K, T, A, S, R, D, N, G and
-W, always in that order, as in `KD-H-...`; a seed with K, T, A, S or R
-carries its cages, thermometers, arrows, whisper lines or renban lines in
-its body too (a line as its length, its first cell and each step's
-direction), and the others' carry the clues only.
+clues. Its seed starts with its rules' letters, K, T, A, S, R, P, V, D, N,
+G and W, always in that order, as in `KD-H-...`; a seed with K, T, A, S,
+R, P or V carries its cages, thermometers, arrows, whisper lines, renban
+lines, dots or XV marks in its body too (a line as its length, its first
+cell and each step's direction; dots and marks as a list of their sides, or
+past 27 of them every side's mark, whichever is shorter), and the others'
+carry the clues only.
+
+Some mixes of the switch rules have no grid at all, whatever else is on:
+anti-knight with anti-king and either Diagonal or Windoku, and anti-knight
+with both Diagonal and Windoku. The engine tests show it, and make a puzzle
+with every drawn part at once under each widest mix that does have a grid.
 
 **Thermo.** Digits rise strictly along each thermometer, from its round
 bulb. The Thermos tool draws one: tap the bulb, then each next cell, which
@@ -135,6 +142,17 @@ reach. Neighbours on a whisper line less than 5 apart show as a clash, as
 do a repeat on a renban line, and a renban line's digits once they spread
 wider than it is long. They are drawn as a thick line with no bulb, green
 for whispers and purple for renban, on the board and in a saved image.
+
+**Kropki and XV.** They mark the side two cells share. A white dot's
+digits are consecutive and a black dot's are one double the other; an X's
+digits add up to 10 and a V's to 5. Sides with no mark may be anything, so
+there is no negative rule. The Marks tool puts them down: tap near a side,
+or tap a cell and then one beside it, and each tap steps the side on
+through the marks of the rules on (white dot, black dot, X, V) and back to
+none. The solver keeps each cell of a marked pair to digits some digit the
+other cell can be makes a pair with, and a pair that breaks its mark shows
+as a clash. Dots are drawn white and black in either theme, and X and V as
+letters, on the side, on the board and in a saved image.
 
 **Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
 sum from the pad, the keyboard or the sum box, and adds the cage; tapping a

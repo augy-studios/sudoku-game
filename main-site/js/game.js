@@ -495,6 +495,8 @@ function update({ fresh = false } = {}) {
       arrows: g.seed.arrows ?? null,
       whispers: g.seed.whispers ?? null,
       renbans: g.seed.renbans ?? null,
+      dots: g.seed.dots ?? null,
+      xvs: g.seed.xvs ?? null,
     });
   }
   renderChips(over);
@@ -715,6 +717,8 @@ function finish(fresh) {
       arrows: g.seed.arrows,
       whispers: g.seed.whispers,
       renbans: g.seed.renbans,
+      dots: g.seed.dots,
+      xvs: g.seed.xvs,
       rules: g.seed.rules,
     },
     { highlightSame: s.highlight_same },
@@ -945,6 +949,8 @@ function watch(link) {
       arrows: link.seed.arrows,
       whispers: link.seed.whispers,
       renbans: link.seed.renbans,
+      dots: link.seed.dots,
+      xvs: link.seed.xvs,
       rules: link.seed.rules,
     },
     { highlightSame: getSettings().highlight_same },

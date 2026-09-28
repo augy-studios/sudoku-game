@@ -52,6 +52,8 @@ export const icons = {
   arrow: svg(`<circle cx="7.5" cy="16.5" r="3.5"/><path d="M10 14 19 5M13.5 5H19v5.5"/>`),
   // A line zigzagging high and low, as whispers' digits do.
   whisper: svg(`<path d="M4 17 8.5 7l4 10 4-10L20 15" stroke-width="2.6"/>`),
+  // A white dot and a black one, either side of a cell's edge.
+  kropki: svg(`<path d="M12 4v16" stroke-width="1.2"/><circle cx="7" cy="12" r="3"/><circle cx="17" cy="12" r="3" fill="currentColor"/>`),
   // A thick line over a run of three dots.
   renban: svg(`<path d="M5 12h14" stroke-width="3.2"/><circle cx="6" cy="18.5" r="1" fill="currentColor"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/><circle cx="18" cy="18.5" r="1" fill="currentColor"/>`),
   cage: svg(`<rect x="4" y="4" width="16" height="16" rx="2" stroke-dasharray="3 2.5"/><path d="M7.5 9.5h3" stroke-width="1.6"/>`),

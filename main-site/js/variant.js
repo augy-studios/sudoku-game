@@ -1,7 +1,8 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, thermos, arrows, whispers, renbans, rules }:
+// A variant is { cages, thermos, arrows, whispers, renbans, dots, xvs,
+// rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -19,6 +20,12 @@
 //   renbans  renban lines, paths like a thermometer's: a line's digits are
 //            a run of consecutive digits in any order, with no repeats.
 //            They may share cells.
+//   dots     Kropki dots, [{ cells: [a, b], mark }] on the side two cells
+//            share, a before b in reading order. A "white" dot's digits are
+//            consecutive; a "black" dot's are one double the other.
+//   xvs      XV marks, as dots: an "x" mark's digits add up to 10, a "v"
+//            mark's to 5. Cells with no dot or mark between them may be
+//            anything the other rules allow.
 //   rules    switches, as bits (RULES below): Diagonal, both long
 //            diagonals hold 1 to 9; Anti-knight, cells a knight's move apart
 //            differ; Anti-king, cells touching at a corner differ; Windoku,
@@ -44,8 +51,10 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
+  if (xvs?.length) names.unshift("XV");
+  if (dots?.length) names.unshift("Kropki");
   if (renbans?.length) names.unshift("Renban");
   if (whispers?.length) names.unshift("German Whispers");
   if (arrows?.length) names.unshift("Arrow");
@@ -360,6 +369,74 @@ function renbanBounds(renbans, g, free) {
   return true;
 }
 
+/* ---- dots and marks between two cells ---- */
+
+export const DOT_MARKS = ["white", "black"];
+export const XV_MARKS = ["x", "v"];
+
+// Whether digits a and b may sit either side of a mark.
+const KEEPS = {
+  white: (a, b) => Math.abs(a - b) === 1,
+  black: (a, b) => a === 2 * b || b === 2 * a,
+  x: (a, b) => a + b === 10,
+  v: (a, b) => a + b === 5,
+};
+export const markKeeps = (mark, a, b) => KEEPS[mark](a, b);
+
+// ACROSS[mark][m]: the digits that may sit across the mark from some digit
+// in m.
+const ACROSS = {};
+for (const [mark, keeps] of Object.entries(KEEPS)) {
+  ACROSS[mark] = new Int32Array(1024);
+  for (let m = 2; m < 1024; m += 2) {
+    for (let d = 1; d <= 9; d++) {
+      if (!(m & (1 << d))) continue;
+      for (let e = 1; e <= 9; e++) if (keeps(d, e)) ACROSS[mark][m] |= 1 << e;
+    }
+  }
+}
+
+// Whether cell a comes just before cell b along a row or a column: the two
+// share a side.
+export const beside = (a, b) => (b === a + 1 && ROW[a] === ROW[b]) || b === a + 9;
+
+// Whether dots or XV marks are well formed: each on the side two cells
+// share, the first cell first, a mark of `marks`, no side twice. null if so,
+// or what is wrong: { why, at }.
+function edgeProblem(edges, marks) {
+  const seen = new Set();
+  for (let i = 0; i < edges.length; i++) {
+    const cells = edges[i]?.cells;
+    if (!Array.isArray(cells) || cells.length !== 2 || !cells.every((c) => Number.isInteger(c) && c >= 0 && c <= 80)) return { why: "cell", at: i };
+    const [a, b] = cells;
+    if (!beside(a, b)) return { why: "apart", at: i };
+    if (!marks.includes(edges[i].mark)) return { why: "mark", at: i };
+    if (seen.has(a * 81 + b)) return { why: "twice", at: i };
+    seen.add(a * 81 + b);
+  }
+  return null;
+}
+
+export const dotProblem = (dots) => edgeProblem(dots, DOT_MARKS);
+export const xvProblem = (xvs) => edgeProblem(xvs, XV_MARKS);
+
+// Narrows the two cells of each dot or mark to digits that may sit across
+// it from one the other cell can be. Placed digits count as masks of one,
+// and `free` is narrowed in place, as in thermoBounds; false if a pair
+// cannot be filled, or its placed digits break the mark.
+function edgeBounds(edges, g, free) {
+  for (const { cells, mark } of edges) {
+    const [a, b] = cells;
+    const ma = (g[a] ? 1 << g[a] : free[a]) & ACROSS[mark][g[b] ? 1 << g[b] : free[b]];
+    if (!ma) return false;
+    const mb = (g[b] ? 1 << g[b] : free[b]) & ACROSS[mark][ma];
+    if (!mb) return false;
+    if (!g[a]) free[a] = ma;
+    if (!g[b]) free[b] = mb;
+  }
+  return true;
+}
+
 /* ---- candidates and solving ---- */
 
 const norm = (v) => ({
@@ -368,15 +445,17 @@ const norm = (v) => ({
   arrows: v?.arrows ?? [],
   whispers: v?.whispers ?? [],
   renbans: v?.renbans ?? [],
+  dots: v?.dots ?? [],
+  xvs: v?.xvs ?? [],
   rules: v?.rules ?? 0,
 });
 
 // What can go in each empty cell, by every cell it must differ from, its
-// cage, and its thermometers, arrows and other lines; 0 for a filled cell. A
-// cage allows digits not already in it that some way of filling the rest of
-// it can use.
+// cage, its thermometers, arrows and other lines, and its dots and marks; 0
+// for a filled cell. A cage allows digits not already in it that some way
+// of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, dots, xvs, rules } = norm(variant);
   const { peers } = layout(rules);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -403,12 +482,14 @@ export function variantCandidates(grid, variant) {
   arrowBounds(arrows, grid, out);
   whisperBounds(whispers, grid, out);
   renbanBounds(renbans, grid, out);
+  edgeBounds(dots, grid, out);
+  edgeBounds(xvs, grid, out);
   return out;
 }
 
 // Depth first search. At each step every empty cell's candidates are worked
 // out from its houses, the cells it must differ from, its thermometers,
-// arrows and other lines, and its cage, where a
+// arrows and other lines, its dots and marks, and its cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
 // cage cannot do without and only one of its cells can take, goes there;
@@ -422,7 +503,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, dots, xvs, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules);
   let steps = 0;
   const hm = new Int32Array(houses.length);
@@ -474,6 +555,8 @@ function search(grid, variant, found) {
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
     if (whispers.length && !whisperBounds(whispers, g, free)) return null;
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
+    if (dots.length && !edgeBounds(dots, g, free)) return null;
+    if (xvs.length && !edgeBounds(xvs, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

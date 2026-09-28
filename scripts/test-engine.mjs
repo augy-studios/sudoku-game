@@ -22,6 +22,9 @@ import {
   arrowProblem,
   whisperProblem,
   renbanProblem,
+  dotProblem,
+  xvProblem,
+  markKeeps,
   touching,
   layout,
   RULES,
@@ -735,6 +738,100 @@ test("renban lines are checked, solved and carried in seeds", () => {
   assert.equal(variantName({ whispers, renbans }), "German Whispers, Renban");
 });
 
+// Every side two cells share, the first cell first: each cell's right-hand
+// neighbour, then the one below, in reading order.
+const SIDES = [...Array(81).keys()].flatMap((c) => [...(c % 9 < 8 ? [[c, c + 1]] : []), ...(c < 72 ? [[c, c + 9]] : [])]);
+
+// Dots or XV marks on sides of a solved grid, each the first of `marks`
+// the grid keeps there, with chance `p`, skipping sides in `taken`.
+function layEdges(solution, rand, marks, p, taken = new Set()) {
+  const out = [];
+  for (const [a, b] of SIDES) {
+    if (taken.has(a * 81 + b)) continue;
+    const mark = marks.find((m) => markKeeps(m, solution[a], solution[b]));
+    if (!mark || rand() >= p) continue;
+    out.push({ cells: [a, b], mark });
+    taken.add(a * 81 + b);
+  }
+  return out;
+}
+
+// Checks one kind of side marks: well formed, a puzzle made with some of
+// them needs them, candidates and steps keep the answer, a broken mark
+// clashes, and seeds carry them both ways a seed can: as a list, and as
+// every side's mark.
+function sideMarksAgree({ key, letter, marks, problem, x }) {
+  assert.equal(problem([{ cells: [0, 1], mark: marks[0] }, { cells: [0, 9], mark: marks[1] }]), null);
+  assert.equal(problem([{ cells: [0, 2], mark: marks[0] }]).why, "apart");
+  assert.equal(problem([{ cells: [8, 9], mark: marks[0] }]).why, "apart", "the end of a row is not beside the next");
+  assert.equal(problem([{ cells: [0, 10], mark: marks[0] }]).why, "apart", "corners do not count");
+  assert.equal(problem([{ cells: [1, 0], mark: marks[0] }]).why, "apart", "the first cell goes first");
+  assert.equal(problem([{ cells: [0, 1], mark: "nope" }]).why, "mark");
+  assert.equal(problem([{ cells: [0, 1], mark: marks[0] }, { cells: [0, 1], mark: marks[1] }]).why, "twice");
+
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(x);
+  const found = layEdges(solution, rand, marks, 0.7);
+  const variant = { [key]: found };
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, `${key}: needs the marks`);
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `${key}: candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  assert.equal(clashes(solution, variant).size, 0);
+
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, new RegExp(`^${letter}-[EMHX]-`));
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back[key], found);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  // Every side the grid keeps a mark on reads back too.
+  const all = layEdges(solution, seeded(1), marks, 1);
+  assert.deepEqual(parseSeed(madeSeed("H", solution, { [key]: all }).text)[key], all);
+  return { puzzle, solution, found, all };
+}
+
+test("Kropki dots are checked, solved and carried in seeds", () => {
+  const { found, all } = sideMarksAgree({ key: "dots", letter: "P", marks: ["white", "black"], problem: dotProblem, x: 19 });
+  assert.ok(found.some((d) => d.mark === "white") && found.some((d) => d.mark === "black"));
+  // From 28 dots, every side's mark is shorter than a list of them, so the
+  // seed shrinks there, and grows no longer than it was with more.
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const length = (n) => madeSeed("H", solution, { dots: all.slice(0, n) }).body.length;
+  assert.ok(all.length > 40, `${all.length} sides`);
+  assert.ok(length(3) < length(20));
+  assert.ok(length(28) < length(27));
+  assert.ok(length(all.length) <= length(27));
+  // Beside a 9 over a white dot, only an 8; over a black dot, a 3 takes a 6
+  // alone, as half of it is no digit; a 5 or a 7 has nothing.
+  const at = (d) => new Array(81).fill(0).map((_, c) => (c === 0 ? d : 0));
+  const white = [{ cells: [0, 1], mark: "white" }];
+  const black = [{ cells: [0, 1], mark: "black" }];
+  assert.equal(variantCandidates(at(9), { dots: white })[1], 1 << 8);
+  assert.equal(variantCandidates(at(3), { dots: black })[1], 1 << 6);
+  assert.equal(variantCandidates(at(4), { dots: black })[1], (1 << 2) | (1 << 8));
+  assert.equal(variantSolutions(at(7), { dots: black }, 1)?.length, 0, "no digit is double or half of 7");
+  const broken = at(2);
+  broken[1] = 4;
+  assert.deepEqual([...clashes(broken, { dots: white })], [0, 1]);
+  assert.equal(clashes(broken, { dots: black }).size, 0);
+});
+
+test("XV marks are checked, solved and carried in seeds", () => {
+  sideMarksAgree({ key: "xvs", letter: "V", marks: ["x", "v"], problem: xvProblem, x: 23 });
+  const at = (d) => new Array(81).fill(0).map((_, c) => (c === 0 ? d : 0));
+  assert.equal(variantCandidates(at(3), { xvs: [{ cells: [0, 9], mark: "x" }] })[9], 1 << 7);
+  assert.equal(variantCandidates(at(0), { xvs: [{ cells: [0, 9], mark: "v" }] })[9], (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4));
+  assert.equal(variantSolutions(at(5), { xvs: [{ cells: [0, 1], mark: "x" }] }, 1)?.length, 0, "5 and 5 cannot share a row");
+  const broken = at(6);
+  broken[1] = 3;
+  assert.deepEqual([...clashes(broken, { xvs: [{ cells: [0, 1], mark: "x" }] })], [0, 1]);
+  // With every kind of line too, the letters go K, T, A, S, R, P, V, then the rules.
+  assert.equal(seedVariantName("KTASRPVD-H-BBBB"), "Killer, Thermo, Arrow, German Whispers, Renban, Kropki, XV, Diagonal");
+});
+
 // Cages laid through a solved grid: `count` of them, two to four cells
 // joined edge to edge with no digit twice, none sharing a cell.
 function layCages(solution, rand, count) {
@@ -804,9 +901,13 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     );
     const whispers = layLines(solution, rand, fitsWhisper, lines);
     const renbans = layLines(solution, rand, fitsRenban, lines);
-    const variant = { cages, thermos, arrows, whispers, renbans, rules };
+    // A few dots and marks, never two on one side.
+    const sides = new Set();
+    const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
+    const xvs = layEdges(solution, rand, ["x", "v"], 0.3, sides);
+    const variant = { cages, thermos, arrows, whispers, renbans, dots, xvs, rules };
     const name = keys.join(", ");
-    for (const list of ["thermos", "arrows", "whispers", "renbans"]) assert.ok(variant[list].length, `${name}: some ${list}`);
+    for (const list of ["thermos", "arrows", "whispers", "renbans", "dots", "xvs"]) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
     const puzzle = thinOut(solution, variant, rand);
@@ -818,12 +919,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASRPV" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "dots", "xvs", "rules"]) assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     assert.deepEqual(puzzleFor(back).solution, solution);
   }
 });

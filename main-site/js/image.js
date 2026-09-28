@@ -1,7 +1,7 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
 // and a variant puzzle's cages, thermometers, arrows, German Whispers and
-// renban lines, diagonals and windows as on screen.
+// renban lines, Kropki dots, XV marks, diagonals and windows as on screen.
 
 import { variantName } from "./variant.js";
 
@@ -27,7 +27,7 @@ const WHISPER_GREEN = "#a8dcb2";
 const RENBAN_PURPLE = "#dac6ee";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, arrows, whispers, renbans, rules }
+// variant: { cages, thermos, arrows, whispers, renbans, dots, xvs, rules }
 // (variant.js), or nothing for a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
@@ -36,6 +36,8 @@ export async function drawPuzzle(grid, variant = null) {
   const arrows = variant?.arrows ?? [];
   const whispers = variant?.whispers ?? [];
   const renbans = variant?.renbans ?? [];
+  const dots = variant?.dots ?? [];
+  const xvs = variant?.xvs ?? [];
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -146,6 +148,31 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.stroke();
   }
   if (cages.length) drawCages(ctx, cages);
+  // Dots and XV marks at the middle of their side, over the grid lines.
+  for (const { cells, mark } of [...dots, ...xvs]) {
+    const [[x0, y0], [x1, y1]] = cells.map(at);
+    const x = (x0 + x1) / 2;
+    const y = (y0 + y1) / 2;
+    if (mark === "white" || mark === "black") {
+      ctx.beginPath();
+      ctx.arc(x, y, CELL * 0.12, 0, Math.PI * 2);
+      ctx.fillStyle = mark === "white" ? "#ffffff" : INK;
+      ctx.fill();
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    } else {
+      ctx.font = `${Math.round(CELL * 0.36)}px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 10;
+      ctx.strokeText(mark.toUpperCase(), x, y);
+      ctx.fillStyle = INK;
+      ctx.fillText(mark.toUpperCase(), x, y);
+    }
+  }
 
   ctx.fillStyle = INK;
   ctx.font = `${Math.round(CELL * 0.6)}px ${FONT}`;
@@ -158,7 +185,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, arrows, whispers, renbans, rules });
+  const name = variantName({ cages, thermos, arrows, whispers, renbans, dots, xvs, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20);
   return canvas;
 }
