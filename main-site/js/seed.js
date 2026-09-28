@@ -14,8 +14,10 @@
 // renban lines, O for palindrome lines, Z for zipper lines, C for between
 // lines, F for lockout lines, P for Kropki dots, V for XV marks, B for
 // Sandwich clues, L for Little Killer clues, Y for Skyscraper clues, U for X-Sum clues and J
-// for a Jigsaw's regions, which the seed then carries too, and D, N, G and
-// W for the switch rules (variant.js).
+// for a Jigsaw's regions, which the seed then carries too, and D, N, G, W,
+// QDG, QAC, QSK and QSX for the switch rules (variant.js). Once the single
+// letters ran out, a new one became Q and two more: Q is read with the two
+// after it, and never alone, so a seed from before reads as it did.
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
 import { generate, solve, countSolutions, COL } from "./sudoku.js";
@@ -505,6 +507,21 @@ const PARTS = [
 // The letters that start a variant seed, in this order.
 const PREFIX = [...PARTS.map((p) => p.letter), ...RULES.map((r) => r.letter)];
 
+// The variant's letters at the front of `raw`, as PREFIX has them: one
+// character each, or Q and the two after it. { letters, at }, `at` where
+// they stop: at the level, if the seed is a variant's. A letter twice ends
+// them there too, so such a seed is none.
+function readLetters(raw) {
+  const letters = [];
+  let at = 0;
+  for (;;) {
+    const letter = raw[at] === "Q" ? raw.slice(at, at + 3) : raw[at];
+    if (!letter || !PREFIX.includes(letter) || letters.includes(letter)) return { letters, at };
+    letters.push(letter);
+    at += letter.length;
+  }
+}
+
 // parts: { cages, thermos, ... }, each a list, empty for none.
 function prefixFor(parts, rules) {
   return (
@@ -536,21 +553,24 @@ export function madeSeed(level, grid, variant = null) {
 // The variant a seed's text names, from its letters alone, without
 // checking it: "Killer, Diagonal", or "" for a classic seed.
 export function seedVariantName(text) {
-  const head = String(text).split("-")[0];
+  const head = String(text).split("-")[0].toUpperCase();
   if (LEVEL_IDS.includes(head)) return "";
-  return [...head].map((ch) => (PARTS.find((p) => p.letter === ch) ?? RULES.find((r) => r.letter === ch))?.name).filter(Boolean).join(", ");
+  return readLetters(head)
+    .letters.map((letter) => (PARTS.find((p) => p.letter === letter) ?? RULES.find((r) => r.letter === letter)).name)
+    .join(", ");
 }
 
 // Parsing one means checking it has one answer, so the last few are kept.
 const madeParsed = new Map();
 
-// prefix: the variant's letters, "" for a classic puzzle.
-function parseMade(prefix, level, body) {
-  const key = `${prefix}-${level}${body}`;
+// letters: the variant's, as readLetters gives them, none for a classic
+// puzzle.
+function parseMade(letters, level, body) {
+  const key = `${letters.join("")}-${level}${body}`;
   if (madeParsed.has(key)) return madeParsed.get(key);
   let seed = null;
-  const rules = RULES.filter((r) => prefix.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
-  const withs = Object.fromEntries(PARTS.map((p) => [p.list, prefix.includes(p.letter)]));
+  const rules = RULES.filter((r) => letters.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
+  const withs = Object.fromEntries(PARTS.map((p) => [p.list, letters.includes(p.letter)]));
   if (PARTS.some((p) => withs[p.list])) {
     const got = decodeParts(body, withs);
     const variant = got && { ...got, rules };
@@ -583,13 +603,12 @@ export function parseSeed(input, level = null) {
   if (raw.length === BODY_LENGTH + 1 && LEVEL_IDS.includes(raw[0]) && isBody(raw.slice(1))) {
     return buildSeed(raw[0], raw.slice(1));
   }
-  if (raw.length >= MADE_MIN + 1 && LEVEL_IDS.includes(raw[0])) return parseMade("", raw[0], raw.slice(1));
-  // A variant's letters, then the level. None of the letters is a level's.
-  let at = 0;
-  while (at < PREFIX.length && PREFIX.includes(raw[at])) at++;
-  const prefix = raw.slice(0, at);
-  if (at && raw.length >= at + MADE_MIN + 1 && LEVEL_IDS.includes(raw[at]) && new Set(prefix).size === at) {
-    return parseMade(prefix, raw[at], raw.slice(at + 1));
+  if (raw.length >= MADE_MIN + 1 && LEVEL_IDS.includes(raw[0])) return parseMade([], raw[0], raw.slice(1));
+  // A variant's letters, then the level. None of the letters is a level's,
+  // and a Q's two after it are read with it.
+  const { letters, at } = readLetters(raw);
+  if (at && raw.length >= at + MADE_MIN + 1 && LEVEL_IDS.includes(raw[at])) {
+    return parseMade(letters, raw[at], raw.slice(at + 1));
   }
   if (level && LEVEL_IDS.includes(level) && isBody(raw)) return buildSeed(level, raw);
   return null;

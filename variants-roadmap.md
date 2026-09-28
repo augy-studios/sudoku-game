@@ -1,14 +1,14 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 33 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 29 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
-**Built so far (21):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
+**Built so far (25):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
 Renban, Palindrome, Zipper, Between, Lockout · Kropki, XV · Sandwich,
 Little Killer, Skyscrapers, X-Sums · Diagonal, Anti-knight, Anti-king,
-Windoku.
+Windoku, Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV.
 
 ## Every new variant needs an explanation
 
@@ -18,15 +18,16 @@ in the Solver and Create tools. The site shows these on the rule buttons,
 under them, and in a game's Rules box. The engine tests fail until the entry
 is there, in the same order as the buttons.
 
-## Before building many more: seed letters
+## Seed letters
 
-Each variant gets one letter at the front of a made puzzle's seed
-(`seed.js`, `PARTS` and `RULES`), and the levels take E, M, H and X.
-Zipper, Between and Lockout took Z, C and F, so only **I and Q** are left,
-two letters for 33 variants. The seed format needs a way to name more than
-26 parts before any more go in: for example a two-character code after a
-marker letter, Q say, read only when the marker is there, so every seed
-made so far still reads as it did.
+Each variant has a letter at the front of a made puzzle's seed (`seed.js`,
+`PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
+ran out with Zipper, Between and Lockout (Z, C, F), so from Disjoint Groups
+on a variant's letter is **Q and two more**: QDG, QAC, QSK, QSX. Q is only
+read with the two after it, so every seed made before still reads as it
+did. Pick two that name the variant and no other's, and put its entry in
+`PARTS` or `RULES` where its letters should go. I is still free, but is
+easily misread; best left.
 
 ## Cages and regions
 
@@ -74,10 +75,6 @@ made so far still reads as it did.
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Disjoint Groups | The cells in the same spot of every box hold 1 to 9. | Windoku's extra houses; the cheapest of all |
-| Strict Kropki | Cells with no dot between them are never consecutive or one double the other. | Kropki; the README says there is no negative rule yet |
-| Strict XV | Cells with no mark between them never add up to 10 or 5. | XV, as above |
-| Anti-consecutive | Cells that share a side never hold consecutive digits. | New kind of pair check, not just "differ" |
 | Global Entropy | Every 2×2 square has one of 1–3, one of 4–6 and one of 7–9. | New |
 | Global Mod | Every 2×2 square has one of 147, one of 258 and one of 369. | New |
 | Anti-taxicab | A digit X never has another X exactly X steps away along rows and columns. | New |
@@ -103,10 +100,9 @@ made so far still reads as it did.
 ## Suggested order
 
 1. ~~Zipper, Between and Lockout~~: built. Lockout's gap is fixed at 4.
-2. Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV: whole-grid switches.
+2. ~~Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV~~: built, the rules about sides as barred sides (`barredSides`).
 3. Entropic and Modular lines.
 4. Greater Than and Quad: marks.
 5. Hidden Skyscraper and Numbered Room: both reuse the views Skyscrapers and X-Sums use.
 
-The seed letters need sorting out before the second batch: it has four
-variants and there are two letters left.
+

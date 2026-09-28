@@ -168,6 +168,15 @@
                     <p class="field-note" id="seedNote">Leave it empty for a new puzzle, or paste a seed or a copied puzzle to play that one.</p>
                 </div>
 
+                <div class="field-group" id="tutorialGroup">
+                    <p class="field-label" id="tutorialLabel">Tutorial</p>
+                    <div class="mode-toggle" id="tutorialPick" role="radiogroup" aria-labelledby="tutorialLabel">
+                        <button class="mode-btn" type="button" role="radio" aria-checked="true" data-tutorial="on"><span data-icon="bulb"></span>On</button>
+                        <button class="mode-btn" type="button" role="radio" aria-checked="false" data-tutorial="off"><span data-icon="close"></span>Off</button>
+                    </div>
+                    <p class="field-note" id="tutorialNote"></p>
+                </div>
+
                 <button id="startBtn" class="btn btn-primary pill start-btn" type="button">
                     <span data-icon="play"></span><span id="startLabel">Start game</span>
                 </button>
@@ -250,6 +259,10 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiknight">Anti-knight</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiking">Anti-king</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="windoku">Windoku</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="disjoint">Disjoint Groups</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="anticonsecutive">Anti-consecutive</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="strictkropki">Strict Kropki</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="strictxv">Strict XV</button>
                         </div>
                     </div>
                 </div>

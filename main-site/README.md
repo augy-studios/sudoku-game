@@ -86,21 +86,34 @@ Outside the grid and Whole grid (the same groups as
 build). Each rule is explained in a line or two from `rule-help.js`: as a
 tooltip on its button, under the buttons once it is on (what it means, and
 while the clues go in, how to draw it), and in a Rules box over the board
-in a variant game or replay. The engine tests fail if a rule button, or
+in a variant game or replay, while Tutorial is on in the new-game screen's
+Solo and Network settings (it is on to begin with; off, the level chip
+still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
 Whispers), Renban, Palindrome, Zipper, Between, Lockout, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
-touching at a corner differ) and Windoku (four more 3x3 windows, rows and
-columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
-and windows tinted, on the board and in a saved image; the anti rules have
-nothing to draw, so the level chip and the rules line name them. In
-variant.js, diagonals and windows are extra houses and the knight's and
-king's moves extra pairs of cells that must differ, so one solver handles
+touching at a corner differ), Windoku (four more 3x3 windows, rows and
+columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
+same place in each 3x3 box hold 1 to 9), Anti-consecutive (cells sharing a
+side are never consecutive), Strict Kropki (every dot is given: cells
+sharing a side with no dot are neither consecutive nor a double) and Strict
+XV (every X and V is given: cells sharing a side with no mark add up to
+neither 10 nor 5). Diagonals are drawn as faint lines and windows tinted,
+on the board and in a saved image; the others have nothing to draw, so the
+level chip and the rules line name them. In variant.js, diagonals, windows
+and disjoint groups are extra houses, the knight's and king's moves extra
+pairs of cells that must differ, and the rules about sides barred sides:
+each side and the marks' relations its two digits must not keep, narrowed
+as a dot is (`barredSides`). So one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, P, V, B,
-L, Y, U, J, D, N, G and W, always in that order, as in `KD-H-...`; a seed
+L, Y, U, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that order, as in
+`KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a new rule's
+letter became Q and two more: Q is only ever read with the two after it,
+so a seed from before reads as it did, and the X in QSX is never taken for
+the Expert level. A seed
 with any before D carries that part in its body too: cages, thermometers,
 arrows, whisper lines, renban lines, palindrome lines, zipper lines,
 between lines, lockout lines, dots, XV marks, Sandwich sums, Little Killer
@@ -195,8 +208,9 @@ ring or diamond round each end, on the board and in a saved image.
 
 **Kropki and XV.** They mark the side two cells share. A white dot's
 digits are consecutive and a black dot's are one double the other; an X's
-digits add up to 10 and a V's to 5. Sides with no mark may be anything, so
-there is no negative rule. The Marks tool puts them down: tap near a side,
+digits add up to 10 and a V's to 5. Sides with no mark may be anything,
+unless Strict Kropki or Strict XV is on, which says every dot or every X
+and V is given. The Marks tool puts them down: tap near a side,
 or tap a cell and then one beside it, and each tap steps the side on
 through the marks of the rules on (white dot, black dot, X, V) and back to
 none. The solver keeps each cell of a marked pair to digits some digit the

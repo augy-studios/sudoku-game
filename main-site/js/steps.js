@@ -34,6 +34,7 @@ import {
   xsumProblem,
   regionProblem,
   markKeeps,
+  barredSides,
   seen,
   SANDWICH_LINES,
   VIEWS,
@@ -88,7 +89,8 @@ export function bitCount(mask) {
 // strictly between its circles', and a lockout line's not outside its
 // diamonds', with the ends, and ends that cannot be; a digit on either the
 // same as a filled end's;
-// the two digits either side of a dot or an XV mark they break; a
+// the two digits either side of a dot or an XV mark they break, or of a
+// side Anti-consecutive, Strict Kropki or Strict XV bars them from; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
 // fill it to some other sum; a Little Killer diagonal's digits once they go
 // past its sum, or fill it to some other sum; the digits of a Skyscraper
@@ -185,6 +187,13 @@ export function clashes(grid, variant = null) {
   for (const { cells, mark } of [...(variant?.dots ?? []), ...(variant?.xvs ?? [])]) {
     const [a, b] = cells;
     if (grid[a] && grid[b] && !markKeeps(mark, grid[a], grid[b])) {
+      out.add(a);
+      out.add(b);
+    }
+  }
+  for (const { cells, marks } of barredSides(variant?.rules, variant?.dots, variant?.xvs)) {
+    const [a, b] = cells;
+    if (grid[a] && grid[b] && marks.some((mark) => markKeeps(mark, grid[a], grid[b]))) {
       out.add(a);
       out.add(b);
     }

@@ -19,8 +19,9 @@
 // a Little Killer's with a small arrow along its diagonal; so do Skyscraper
 // counts, in a small square, and X-Sums, in a small circle. A Jigsaw's
 // regions take the boxes' place: the boxes lose their edges and tint, and
-// each region gets a heavy line round it instead. Anti-knight and
-// anti-king have nothing to draw.
+// each region gets a heavy line round it instead. Anti-knight, anti-king,
+// Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV have
+// nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";

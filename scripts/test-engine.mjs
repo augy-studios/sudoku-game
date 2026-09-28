@@ -42,6 +42,7 @@ import {
   diagonalFrom,
   SANDWICH_LINES,
   markKeeps,
+  barredSides,
   touching,
   layout,
   RULES,
@@ -342,10 +343,11 @@ test("killer cages are checked, solved and carried in seeds", () => {
 
 const rule = (key) => RULES.find((r) => r.key === key).bit;
 
-// Whether a full grid keeps every rule in `rules`.
+// Whether a full grid keeps every rule in `rules`, with no dots or marks.
 function keepsRules(grid, rules) {
   const { houses, pairs } = layout(rules);
   for (const { cells } of houses) if (new Set(cells.map((c) => grid[c])).size !== 9) return false;
+  if (barredSides(rules).some(({ cells: [a, b], marks }) => marks.some((m) => markKeeps(m, grid[a], grid[b])))) return false;
   return pairs.every((others, c) => others.every((o) => grid[o] !== grid[c]));
 }
 
@@ -369,6 +371,16 @@ test("the switch rules make the right houses and pairs", () => {
   assert.equal(layout(0).houses.length, 27);
   assert.equal(layout(rule("diagonal")).houses.length, 29);
   assert.equal(layout(rule("windoku")).houses.length, 31);
+  const groups = layout(rule("disjoint")).houses.filter((h) => h.kind === "group");
+  assert.equal(groups.length, 9);
+  assert.deepEqual(groups[0].cells, [0, 3, 6, 27, 30, 33, 54, 57, 60], "every box's top left cell");
+  assert.deepEqual(groups[4].cells, [10, 13, 16, 37, 40, 43, 64, 67, 70], "every box's centre");
+  // Groups go by the boxes even when a Jigsaw's regions take the boxes' place.
+  assert.deepEqual(layout(rule("disjoint"), [...Array(81).keys()].map((c) => c % 9)).houses.at(-1).cells, [20, 23, 26, 47, 50, 53, 74, 77, 80]);
+  // The rules about sides are no houses and no pairs, but barred sides.
+  assert.equal(layout(rule("anticonsecutive")).houses.length, 27);
+  assert.equal(barredSides(rule("anticonsecutive")).length, 144);
+  assert.equal(barredSides(0).length, 0);
   const knight = layout(rule("antiknight")).pairs;
   assert.equal(knight[40].length, 8, "the centre has eight knight's moves");
   assert.deepEqual(knight[2], [13, 21], "only moves out of its box are new");
@@ -378,7 +390,16 @@ test("the switch rules make the right houses and pairs", () => {
 });
 
 test("rules puzzles solve, check, hint and carry their rules in seeds", () => {
-  for (const [key, letter] of [["diagonal", "D"], ["antiknight", "N"], ["antiking", "G"], ["windoku", "W"]]) {
+  for (const [key, letter] of [
+    ["diagonal", "D"],
+    ["antiknight", "N"],
+    ["antiking", "G"],
+    ["windoku", "W"],
+    ["disjoint", "QDG"],
+    ["anticonsecutive", "QAC"],
+    ["strictkropki", "QSK"],
+    ["strictxv", "QSX"],
+  ]) {
     const rules = rule(key);
     const { puzzle, solution } = rulesPuzzle(rules);
     assert.ok(keepsRules(solution, rules), `${key}: the answer keeps the rule`);
@@ -1492,6 +1513,69 @@ test("anti-knight rules out some mixes of switch rules altogether", () => {
     assert.deepEqual(variantSolutions(firstRow(), { rules: rules(...keys) }, 1), [], `${keys.join(", ")} has no grid`);
   }
   for (const { keys, rules, grid } of WIDEST) assert.ok(grid && keepsRules(grid, rules), `${keys.join(", ")} has a grid`);
+});
+
+
+// Anti-consecutive, Strict Kropki and Strict XV: rules about the sides
+// cells share, and the Q letters they are named by in a seed.
+test("the rules about sides clash, narrow and read back from seeds", () => {
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const sorted = (set) => [...set].sort((p, q) => p - q);
+  const anti = { rules: rule("anticonsecutive") };
+  // Side by side, and one above the other; at a corner is fine.
+  assert.deepEqual(sorted(clashes(at({ 0: 4, 1: 5 }), anti)), [0, 1]);
+  assert.deepEqual(sorted(clashes(at({ 0: 4, 9: 3 }), anti)), [0, 9]);
+  assert.equal(clashes(at({ 0: 4, 10: 5 }), anti).size, 0);
+  assert.equal(clashes(at({ 0: 4, 1: 5 })).size, 0, "not without the rule");
+  const cand = variantCandidates(at({ 40: 5 }), anti);
+  for (const c of [31, 39, 41, 49]) assert.equal(cand[c] & ((1 << 4) | (1 << 6)), 0, `no 4 or 6 beside the 5, at ${c}`);
+  assert.ok(cand[30] & (1 << 4), "a corner away can be 4");
+
+  // Strict Kropki: a white dot's side may be consecutive, and every other
+  // side neither consecutive nor a double.
+  const strict = { rules: rule("strictkropki"), dots: [{ cells: [0, 1], mark: "white" }] };
+  assert.equal(clashes(at({ 0: 4, 1: 5 }), strict).size, 0);
+  assert.deepEqual(sorted(clashes(at({ 0: 4, 9: 8 }), strict)), [0, 9], "a double with no dot");
+  assert.deepEqual(sorted(clashes(at({ 1: 5, 2: 6 }), strict)), [1, 2], "consecutive with no dot");
+  assert.equal(variantCandidates(at({ 1: 2 }), strict)[10] & ((1 << 1) | (1 << 3) | (1 << 4)), 0, "below a 2: no 1, 3 or 4");
+  // Anti-consecutive on top bars even the dotted side, so the two cannot go
+  // together there.
+  assert.deepEqual(sorted(clashes(at({ 0: 4, 1: 5 }), { ...strict, rules: strict.rules | anti.rules })), [0, 1]);
+
+  // Strict XV: sides with no mark never add up to 10 or 5.
+  const xv = { rules: rule("strictxv"), xvs: [{ cells: [0, 1], mark: "x" }] };
+  assert.equal(clashes(at({ 0: 3, 1: 7 }), xv).size, 0);
+  assert.deepEqual(sorted(clashes(at({ 0: 3, 9: 7 }), xv)), [0, 9]);
+  assert.deepEqual(sorted(clashes(at({ 1: 1, 2: 4 }), xv)), [1, 2]);
+
+  // A Strict Kropki puzzle with every dot its grid has, as such a puzzle
+  // gives them: its seed has P for the dots, then QSK.
+  const { solution: grid } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const dots = layEdges(grid, () => 0, ["white", "black"], 1);
+  const variant = { dots, rules: rule("strictkropki") };
+  assert.equal(clashes(grid, variant).size, 0);
+  const puzzle = thinOut(grid, variant, seeded(41));
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(variantSolutions(puzzle, { dots }, 2)?.length, 1, "needs the rule, not just the dots");
+  stepsAgree(puzzle, grid, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^PQSK-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.equal(back.rules, variant.rules);
+  assert.deepEqual(back.dots, dots);
+
+  // Q letters: read as three, in RULES order whatever order they come in,
+  // never as the single letters inside them; X inside QSX is no level.
+  const every = RULES.reduce((m, r) => m | r.bit, 0);
+  assert.equal(seedVariantName("KQDGQACQSKQSX-H-BBBB"), "Killer, Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV");
+  assert.equal(seedVariantName("QSK-H-BBBB"), "Strict Kropki", "no Killer from the K in QSK");
+  assert.equal(seedVariantName("pqsk-h-bbbb"), "Kropki, Strict Kropki");
+  assert.equal(variantName({ rules: every }), RULES.map((r) => r.name).join(", "));
+  const anyOrder = seed.text.replace("PQSK-", "QSKP-");
+  assert.equal(parseSeed(anyOrder)?.text, seed.text);
+  assert.equal(parseSeed(seed.text.replace("PQSK-", "PQSKQSK-")), null, "a letter twice is no seed");
+  assert.equal(parseSeed(seed.text.replace("PQSK-", "PQS-")), null, "Q needs its two");
 });
 
 // Every drawn part at once, on a grid that keeps the switch rules, made,

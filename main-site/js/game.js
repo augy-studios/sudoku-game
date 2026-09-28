@@ -48,8 +48,9 @@ let watching = null; // a shared replay being watched
 /* ---- setup ---- */
 
 // hints, how many are free: a preset number, "all" for every one, or
-// "custom" for `custom`. Hints past the free ones cost points.
-const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10 };
+// "custom" for `custom`. Hints past the free ones cost points. tutorial:
+// whether a variant puzzle's rules are explained over the board in a game.
+const setup = { mode: "solo", level: "M", kind: "race", hints: 3, custom: 10, tutorial: true };
 
 function loadSetup() {
   const saved = store.getJSON(SETUP_STORAGE) ?? {};
@@ -58,6 +59,7 @@ function loadSetup() {
   if (["race", "coop"].includes(saved.kind)) setup.kind = saved.kind;
   if (HINT_PRESETS.includes(saved.hints) || saved.hints === "all" || saved.hints === "custom") setup.hints = saved.hints;
   if (Number.isInteger(saved.custom) && saved.custom >= 0 && saved.custom <= 81) setup.custom = saved.custom;
+  if (typeof saved.tutorial === "boolean") setup.tutorial = saved.tutorial;
 }
 
 function saveSetup() {
@@ -90,6 +92,12 @@ function hintNote() {
   return `The first ${n === 1 ? "hint is" : `${n} hints are`} free, and each one after that costs points.`;
 }
 
+function tutorialNote() {
+  return setup.tutorial
+    ? "A variant puzzle's rules are explained over the board while you play. A classic puzzle shows nothing extra."
+    : "A variant puzzle's rules are only named, over the board. Turn this on to have each one explained.";
+}
+
 function renderSetup() {
   const check = (sel, attr, value) =>
     document.querySelectorAll(sel).forEach((el) => el.setAttribute("aria-checked", String(el.dataset[attr] === String(value))));
@@ -97,12 +105,17 @@ function renderSetup() {
   check("#levelPick [data-level]", "level", setup.level);
   check("#kindPick [data-kind]", "kind", setup.kind);
   check("#hintPick [data-hints]", "hints", setup.hints);
+  check("#tutorialPick [data-tutorial]", "tutorial", setup.tutorial ? "on" : "off");
   // The solver and the maker open their own screen, and need none of this.
   const tool = setup.mode === "solver" || setup.mode === "create";
   $("levelGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
   $("kindGroup").classList.toggle("hidden", setup.mode !== "network");
   $("hintGroup").classList.toggle("hidden", tool);
   $("seedGroup").classList.toggle("hidden", setup.mode === "daily" || tool);
+  // Only solo and network games can be a seed's variant; a daily is classic,
+  // and the solver and the maker explain their own rules.
+  $("tutorialGroup").classList.toggle("hidden", setup.mode !== "solo" && setup.mode !== "network");
+  $("tutorialNote").textContent = tutorialNote();
   $("joinForm").classList.toggle("hidden", setup.mode !== "network");
   $("startLabel").textContent = launching
     ? "Starting"
@@ -557,10 +570,10 @@ function renderChips(over) {
   renderRules(g.seed);
 }
 
-// A variant puzzle's rules, each explained, over the board; hidden for a
-// classic one.
+// A variant puzzle's rules, each explained, over the board, with the
+// tutorial on; hidden for a classic one, or with it off.
 function renderRules(seed) {
-  const keys = rulesOf(seed);
+  const keys = setup.tutorial ? rulesOf(seed) : [];
   $("rulesBox").classList.toggle("hidden", !keys.length);
   fillRuleHelp($("rulesList"), keys);
 }
@@ -1216,6 +1229,7 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   pick("levelPick", "level", "level");
   pick("kindPick", "kind", "kind");
   pick("hintPick", "hints", "hints", (v) => (v === "all" || v === "custom" ? v : Number(v)));
+  pick("tutorialPick", "tutorial", "tutorial", (v) => v === "on");
   $("customHints").addEventListener("input", (e) => {
     const n = Number(e.target.value);
     if (Number.isInteger(n) && n >= 0 && n <= 81) {

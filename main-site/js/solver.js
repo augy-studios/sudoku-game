@@ -276,6 +276,7 @@ function unitName(u) {
   if (u.kind === "region") return `the region holding ${where(u.cells[0])}`;
   if (u.kind === "diagonal") return `the diagonal from the top ${u.index ? "right" : "left"}`;
   if (u.kind === "window") return `the ${WINDOW_NAMES[u.index]} window`;
+  if (u.kind === "group") return `the ${BOX_NAMES[u.index]} cells of the boxes`;
   return `${u.kind} ${u.index + 1}`;
 }
 

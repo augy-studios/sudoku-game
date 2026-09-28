@@ -131,6 +131,26 @@ export const RULE_HELP = {
     rule: "Four more tinted 3×3 windows, in rows and columns 2 to 4 and 6 to 8, each hold 1 to 9 once.",
     draw: "Nothing to draw: turning it on is all.",
   },
+  disjoint: {
+    name: "Disjoint Groups",
+    rule: "The nine cells in the same place in each 3×3 box, such as every box's top left cell, hold 1 to 9 once.",
+    draw: "Nothing to draw: turning it on is all.",
+  },
+  anticonsecutive: {
+    name: "Anti-consecutive",
+    rule: "Two cells that share a side never hold consecutive digits, like 4 and 5.",
+    draw: "Nothing to draw: turning it on is all.",
+  },
+  strictkropki: {
+    name: "Strict Kropki",
+    rule: "Every dot is given: two cells sharing a side with no dot between them are never consecutive, and neither is double the other.",
+    draw: "Nothing more to draw: put the dots down with Kropki, or none at all.",
+  },
+  strictxv: {
+    name: "Strict XV",
+    rule: "Every X and V is given: two cells sharing a side with no mark between them never add up to 10 or to 5.",
+    draw: "Nothing more to draw: put the marks down with XV, or none at all.",
+  },
 };
 
 // The rules a variant uses, as keys of RULE_HELP in its order: those whose

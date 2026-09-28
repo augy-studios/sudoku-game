@@ -61,11 +61,18 @@
 //   rules    switches, as bits (RULES below): Diagonal, both long
 //            diagonals hold 1 to 9; Anti-knight, cells a knight's move apart
 //            differ; Anti-king, cells touching at a corner differ; Windoku,
-//            four more 3x3 windows hold 1 to 9.
+//            four more 3x3 windows hold 1 to 9; Disjoint Groups, the cells
+//            in the same place in each 3x3 box hold 1 to 9; Anti-consecutive,
+//            cells sharing a side never hold consecutive digits; Strict
+//            Kropki, cells sharing a side with no dot there are neither
+//            consecutive nor one double the other; Strict XV, cells sharing
+//            a side with no X or V there add up to neither 10 nor 5.
 //
-// Diagonals and windows are extra houses, like rows, columns and boxes; the
-// knight's and king's moves are extra pairs of cells that must differ. A
-// Jigsaw's regions are houses in the boxes' place.
+// Diagonals, windows and disjoint groups are extra houses, like rows,
+// columns and boxes; the knight's and king's moves are extra pairs of cells
+// that must differ. A Jigsaw's regions are houses in the boxes' place, and
+// disjoint groups still go by the 3x3 boxes. The rules about sides are
+// sides barred from some marks' relations (barredSides below).
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
@@ -73,12 +80,17 @@ const ALL = 0b1111111110;
 const POP = new Uint8Array(1024);
 for (let m = 1; m < 1024; m++) POP[m] = POP[m >> 1] + (m & 1);
 
-// In the order their letters go in a seed.
+// In the order their letters go in a seed. Once the single letters ran out,
+// a rule's letter became Q and two more (seed.js).
 export const RULES = [
   { key: "diagonal", bit: 1, letter: "D", name: "Diagonal" },
   { key: "antiknight", bit: 2, letter: "N", name: "Anti-knight" },
   { key: "antiking", bit: 4, letter: "G", name: "Anti-king" },
   { key: "windoku", bit: 8, letter: "W", name: "Windoku" },
+  { key: "disjoint", bit: 16, letter: "QDG", name: "Disjoint Groups" },
+  { key: "anticonsecutive", bit: 32, letter: "QAC", name: "Anti-consecutive" },
+  { key: "strictkropki", bit: 64, letter: "QSK", name: "Strict Kropki" },
+  { key: "strictxv", bit: 128, letter: "QSX", name: "Strict XV" },
 ];
 export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
@@ -139,6 +151,13 @@ export function layout(rules = 0, regions = null) {
       for (let r = r0; r < r0 + 3; r++) for (let c = c0; c < c0 + 3; c++) cells.push(cellAt(r, c));
       houses.push({ kind: "window", index, cells });
     });
+  }
+  // Group i: the i-th cell, in reading order, of every 3x3 box.
+  if (has(rules, "disjoint")) {
+    for (let index = 0; index < 9; index++) {
+      const [r, c] = [Math.floor(index / 3), index % 3];
+      houses.push({ kind: "group", index, cells: [...Array(9).keys()].map((b) => cellAt(Math.floor(b / 3) * 3 + r, (b % 3) * 3 + c)) });
+    }
   }
   const housesOf = Array.from({ length: 81 }, () => []);
   houses.forEach((h, i) => h.cells.forEach((c) => housesOf[c].push(i)));
@@ -605,20 +624,70 @@ function edgeProblem(edges, marks) {
 export const dotProblem = (dots) => edgeProblem(dots, DOT_MARKS);
 export const xvProblem = (xvs) => edgeProblem(xvs, XV_MARKS);
 
-// Narrows the two cells of each dot or mark to digits that may sit across
-// it from one the other cell can be. Placed digits count as masks of one,
-// and `free` is narrowed in place, as in thermoBounds; false if a pair
-// cannot be filled, or its placed digits break the mark.
+// Narrows cells a and b, either side of a side, to digits that may sit
+// across it from one the other can be, by `across` as ACROSS has it. Placed
+// digits count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if the two cannot be filled, or their placed digits
+// cannot sit across it.
+function sideBounds(a, b, across, g, free) {
+  const ma = (g[a] ? 1 << g[a] : free[a]) & across[g[b] ? 1 << g[b] : free[b]];
+  if (!ma) return false;
+  const mb = (g[b] ? 1 << g[b] : free[b]) & across[ma];
+  if (!mb) return false;
+  if (!g[a]) free[a] = ma;
+  if (!g[b]) free[b] = mb;
+  return true;
+}
+
+// The two cells of each dot or mark, by sideBounds.
 function edgeBounds(edges, g, free) {
-  for (const { cells, mark } of edges) {
-    const [a, b] = cells;
-    const ma = (g[a] ? 1 << g[a] : free[a]) & ACROSS[mark][g[b] ? 1 << g[b] : free[b]];
-    if (!ma) return false;
-    const mb = (g[b] ? 1 << g[b] : free[b]) & ACROSS[mark][ma];
-    if (!mb) return false;
-    if (!g[a]) free[a] = ma;
-    if (!g[b]) free[b] = mb;
+  for (const { cells, mark } of edges) if (!sideBounds(cells[0], cells[1], ACROSS[mark], g, free)) return false;
+  return true;
+}
+
+// The sides the switch rules bar some marks' relations from, with no mark of
+// their own there: every side, under Anti-consecutive, from a white dot's;
+// under Strict Kropki, those with no dot, from a white and a black dot's;
+// under Strict XV, those with no X or V, from an X's and a V's. [{ cells:
+// [a, b], marks, across }], a before b in reading order: the digits either
+// side keep none of `marks`, and across[m] is the digits that can sit across
+// from some digit in m. Empty if no such rule is on.
+const APART = new Map();
+export function barredSides(rules = 0, dots = [], xvs = []) {
+  const out = [];
+  if (!(rules & (SIDE_RULES))) return out;
+  const marked = (edges) => new Set(edges.map((e) => e.cells[0] * 81 + e.cells[1]));
+  const dotted = marked(dots);
+  const crossed = marked(xvs);
+  for (let a = 0; a < 81; a++) {
+    for (const b of [COL[a] < 8 ? a + 1 : -1, a < 72 ? a + 9 : -1]) {
+      if (b < 0) continue;
+      const marks = new Set();
+      if (has(rules, "anticonsecutive")) marks.add("white");
+      if (has(rules, "strictkropki") && !dotted.has(a * 81 + b)) DOT_MARKS.forEach((m) => marks.add(m));
+      if (has(rules, "strictxv") && !crossed.has(a * 81 + b)) XV_MARKS.forEach((m) => marks.add(m));
+      if (!marks.size) continue;
+      const key = [...marks].join();
+      if (!APART.has(key)) {
+        const across = new Int32Array(1024);
+        for (let m = 2; m < 1024; m += 2) {
+          for (let d = 1; d <= 9; d++) {
+            if (!(m & (1 << d))) continue;
+            for (let e = 1; e <= 9; e++) if (![...marks].some((mark) => KEEPS[mark](d, e))) across[m] |= 1 << e;
+          }
+        }
+        APART.set(key, across);
+      }
+      out.push({ cells: [a, b], marks: [...marks], across: APART.get(key) });
+    }
   }
+  return out;
+}
+const SIDE_RULES = ["anticonsecutive", "strictkropki", "strictxv"].reduce((m, key) => m | RULES.find((r) => r.key === key).bit, 0);
+
+// Each barred side's two cells, by sideBounds.
+function barredBounds(sides, g, free) {
+  for (const { cells, across } of sides) if (!sideBounds(cells[0], cells[1], across, g, free)) return false;
   return true;
 }
 
@@ -944,6 +1013,7 @@ export function variantCandidates(grid, variant) {
   lockoutBounds(lockouts, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
+  barredBounds(barredSides(rules, dots, xvs), grid, out);
   sandwichBounds(sandwiches, grid, out);
   littleBounds(littles, grid, out);
   skyscraperBounds(skyscrapers, grid, out);
@@ -970,6 +1040,7 @@ export const BUDGET = 400000;
 function search(grid, variant, found) {
   const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
+  const barred = barredSides(rules, dots, xvs);
   let steps = 0;
   const hm = new Int32Array(houses.length);
   const of = cageOf(cages);
@@ -1026,6 +1097,7 @@ function search(grid, variant, found) {
     if (lockouts.length && !lockoutBounds(lockouts, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
+    if (barred.length && !barredBounds(barred, g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;
     if (littles.length && !littleBounds(littles, g, free)) return null;
     if (skyscrapers.length && !skyscraperBounds(skyscrapers, g, free)) return null;
