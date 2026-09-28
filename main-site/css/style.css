@@ -416,6 +416,21 @@ body {
   stroke-linejoin: round;
 }
 .cell.cage-head .notes { padding-top: 30%; }
+/* Thermometers: one faint group, so where the line and bulb overlap the
+   grey stays even. The one being drawn is warm. */
+.thermo {
+  fill: var(--muted-strong);
+  stroke: var(--muted-strong);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.3;
+}
+.thermo path { fill: none; }
+.thermo-pending {
+  fill: var(--warn);
+  stroke: var(--warn);
+  opacity: 0.45;
+}
 /* Diagonal and Windoku. */
 .diagonal-line {
   fill: none;

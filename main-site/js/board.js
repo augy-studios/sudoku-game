@@ -6,7 +6,9 @@
 // A killer puzzle's cages are drawn over the cells: a dashed line just inside
 // each cage's edge, and its sum in the corner of its first cell. A Diagonal
 // puzzle has a faint line along each long diagonal, and a Windoku puzzle
-// tints its four windows. Anti-knight and anti-king have nothing to draw.
+// tints its four windows. Thermometers are a thick grey line from a round
+// bulb, faint enough to read digits through. Anti-knight and anti-king have
+// nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
@@ -85,9 +87,9 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages are a killer puzzle's, and rules the
-  // variant's switches (variant.js); picked, a Set of cells, are those
-  // being gathered into a new cage.
+  // digits by the solution. cages and thermos are a variant puzzle's, and
+  // rules its switches (variant.js); picked, a Set of cells, are those
+  // being gathered into a new cage, and path a thermometer being drawn.
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -97,6 +99,8 @@ export class BoardView {
     this.root.classList.toggle("interactive", Boolean(interactive));
     this.cages = view.cages ?? [];
     this.rules = view.rules ?? 0;
+    this.thermos = view.thermos ?? [];
+    this.path = view.path ?? [];
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
@@ -157,16 +161,18 @@ export class BoardView {
     }
   }
 
-  // The dashed outlines and sums, and the diagonals. Only redrawn when they
-  // change, or when `resized`.
+  // The dashed outlines and sums, the diagonals and the thermometers. Only
+  // redrawn when they change, or when `resized`.
   drawCages(resized = false) {
     const cages = this.cages ?? [];
+    const thermos = this.thermos ?? [];
+    const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
-    const key = JSON.stringify([cages, diagonal]);
+    const key = JSON.stringify([cages, diagonal, thermos, path]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    if (!cages.length && !diagonal) {
+    if (!cages.length && !diagonal && !thermos.length && !path.length) {
       layer.innerHTML = "";
       return;
     }
@@ -177,7 +183,7 @@ export class BoardView {
     };
     const of = new Array(81).fill(-1);
     cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
-    let path = "";
+    let outline = "";
     let sums = "";
     const f = (n) => n.toFixed(1);
     for (const [i, cage] of cages.entries()) {
@@ -198,10 +204,10 @@ export class BoardView {
         // corner inwards.
         const from = (side, gone, turn) => (gone ? side + d : turn ? side - d : side);
         const to = (side, gone, turn) => (gone ? side - d : turn ? side + d : side);
-        if (!same(-1, 0)) path += `M${f(from(x, !same(0, -1), same(-1, -1)))} ${f(y + d)}H${f(to(right, !same(0, 1), same(-1, 1)))}`;
-        if (!same(1, 0)) path += `M${f(from(x, !same(0, -1), same(1, -1)))} ${f(bottom - d)}H${f(to(right, !same(0, 1), same(1, 1)))}`;
-        if (!same(0, -1)) path += `M${f(x + d)} ${f(from(y, !same(-1, 0), same(-1, -1)))}V${f(to(bottom, !same(1, 0), same(1, -1)))}`;
-        if (!same(0, 1)) path += `M${f(right - d)} ${f(from(y, !same(-1, 0), same(-1, 1)))}V${f(to(bottom, !same(1, 0), same(1, 1)))}`;
+        if (!same(-1, 0)) outline += `M${f(from(x, !same(0, -1), same(-1, -1)))} ${f(y + d)}H${f(to(right, !same(0, 1), same(-1, 1)))}`;
+        if (!same(1, 0)) outline += `M${f(from(x, !same(0, -1), same(1, -1)))} ${f(bottom - d)}H${f(to(right, !same(0, 1), same(1, 1)))}`;
+        if (!same(0, -1)) outline += `M${f(x + d)} ${f(from(y, !same(-1, 0), same(-1, -1)))}V${f(to(bottom, !same(1, 0), same(1, -1)))}`;
+        if (!same(0, 1)) outline += `M${f(right - d)} ${f(from(y, !same(-1, 0), same(-1, 1)))}V${f(to(bottom, !same(1, 0), same(1, 1)))}`;
       }
       const head = rect(Math.min(...cage.cells));
       sums += `<text class="cage-sum" x="${f(head.x + head.w * 0.06)}" y="${f(head.y + head.w * 0.27)}" font-size="${f(head.w * 0.24)}">${cage.sum}</text>`;
@@ -216,6 +222,22 @@ export class BoardView {
         `<path class="diagonal-line" d="M${f(a.x)} ${f(a.y)}L${f(b.x + b.w)} ${f(b.y + b.h)}` +
         `M${f(c.x + c.w)} ${f(c.y)}L${f(d.x)} ${f(d.y + d.h)}"/>`;
     }
-    layer.innerHTML = `${diagonals}<path class="cage-line" d="${path}"/>${sums}`;
+    // Thermometers, through the cells' middles, the bulb at the first.
+    const centre = (c) => {
+      const r = rect(c);
+      return { x: r.x + r.w / 2, y: r.y + r.h / 2, w: r.w };
+    };
+    const thermo = (t, cls) => {
+      if (!t.length) return "";
+      const points = t.map(centre);
+      const w = points[0].w;
+      const line = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("");
+      return (
+        `<g class="${cls}"><path d="${line}" stroke-width="${f(w * 0.3)}"/>` +
+        `<circle cx="${f(points[0].x)}" cy="${f(points[0].y)}" r="${f(w * 0.36)}"/></g>`
+      );
+    };
+    const thermoMarks = thermos.map((t) => thermo(t, "thermo")).join("") + thermo(path, "thermo thermo-pending");
+    layer.innerHTML = `${thermoMarks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}`;
   }
 }

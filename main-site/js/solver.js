@@ -13,8 +13,10 @@
 //
 // Either can be a variant puzzle, with the rule buttons over the board:
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
-// cage), and Diagonal, Anti-knight, Anti-king and Windoku add their rules
-// (variant.js). Every check, hint and candidate then follows them too.
+// cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
+// bulb, then each next cell, Add thermo); and Diagonal, Anti-knight,
+// Anti-king and Windoku add their rules (variant.js). Every check, hint and
+// candidate then follows them too.
 //
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
@@ -22,7 +24,7 @@
 import { ROW, COL } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
 import { madeSeed, parseSeed } from "./seed.js";
-import { cageProblem, cageOf, RULES, ALL_RULES, variantName } from "./variant.js";
+import { cageProblem, cageOf, thermoProblem, touching, RULES, ALL_RULES, variantName } from "./variant.js";
 import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
@@ -44,7 +46,7 @@ let board = null;
 // the clues go in; then "solve" in the solver, or "made" in the maker.
 // killer and rules are the variant's switches; cages are kept while Killer
 // is off, for when it comes back on.
-const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false, killer: false, rules: 0, cages: [] });
+const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false, killer: false, thermo: false, rules: 0, cages: [], thermos: [] });
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
 let s = states.solver;
@@ -57,6 +59,11 @@ let history = []; // earlier states of this stage, for undo
 let cageMode = false;
 let picked = new Set();
 let editing = -1;
+// The Thermos tool, likewise: on, the path so far from the bulb, and the
+// thermometer being changed.
+let thermoMode = false;
+let path = [];
+let editingThermo = -1;
 let selected = null;
 let padDigit = 0;
 let checked = false; // Check was pressed, and nothing has changed since
@@ -72,8 +79,9 @@ const goLabel = () => (creating() ? "Check it" : "Help me solve it");
 const killer = () => s.killer;
 // The cages the rules use: none with Killer off, even if some are kept.
 const cages = () => (killer() && s.cages.length ? s.cages : null);
+const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
-const variant = () => (cages() || s.rules ? { cages: cages() ?? [], rules: s.rules } : null);
+const variant = () => (cages() || thermos() || s.rules ? { cages: cages() ?? [], thermos: thermos() ?? [], rules: s.rules } : null);
 
 /* ---- keeping it ---- */
 
@@ -108,6 +116,9 @@ function load(which) {
   // Before the switch rules, a killer puzzle was saved as variant "killer".
   st.killer = saved.killer === true || saved.variant === "killer";
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
+  st.thermo = saved.thermo === true;
+  const lines = Array.isArray(saved.thermos) ? saved.thermos : [];
+  st.thermos = !thermoProblem(lines) ? lines : [];
   const kept = Array.isArray(saved.cages) ? saved.cages : [];
   st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
   if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
@@ -138,10 +149,11 @@ function hintText(step, reveal) {
   }
   if (kind === "single") {
     if (!variant()) return `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
-    const its = cages() ? "its row, column, box and cage" : "its row, column and box";
+    const parts = ["row", "column", "box", ...(cages() ? ["cage"] : []), ...(thermos() ? ["thermometers"] : [])];
+    const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
   }
-  if (kind === "hidden") return `${d} goes in ${where(c)}: it is the only place left for a ${d} in ${unitName(unit)}.`;
+  if (kind === "hidden") return `${d} goes in ${where(c)}: it is the only place left for ${d === 8 ? "an" : "a"} ${d} in ${unitName(unit)}.`;
   return `${d} goes in ${where(c)}. That takes more than one step to see, so it comes from the answer.`;
 }
 
@@ -153,6 +165,7 @@ function problemText(check) {
   if (why === "empty") return creating() ? "Put some clues in first." : "Type in the puzzle's digits first.";
   if (why === "clash") return `${clashText()} Fix them first.`;
   if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
+  if (why === "thermos") return THERMO_PROBLEMS[check.problem.why];
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
@@ -174,8 +187,17 @@ function clashText() {
   const extra = [];
   if (s.rules) extra.push(`against the ${ruleNames()} rules`);
   if (cages()) extra.push("twice in a cage, or past a cage's sum");
+  if (thermos()) extra.push("not rising along a thermometer");
   return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
+
+const THERMO_PROBLEMS = {
+  count: "There is room for forty thermometers.",
+  length: "A thermometer needs two to nine cells.",
+  cell: "A thermometer has a cell off the board.",
+  loop: "A thermometer cannot cross itself.",
+  apart: "Each cell of a thermometer must touch the one before it.",
+};
 
 const CAGE_PROBLEMS = {
   size: "A cage needs one to nine cells.",
@@ -203,14 +225,15 @@ function wrongCells() {
   return out;
 }
 
-const snapshot = () => ({ clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice() });
+const snapshot = () => ({ clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice(), thermos: s.thermos.slice() });
 
 // Puts a new grid in this stage, or new cages, undoably.
-function change(next, nextCages = s.cages) {
+function change(next, nextCages = s.cages, nextThermos = s.thermos) {
   history.push(snapshot());
   if (s.stage === "solve") s.values = next;
   else s.clues = next;
   s.cages = nextCages;
+  s.thermos = nextThermos;
   checked = false;
   pending = null;
   mark = null;
@@ -239,6 +262,7 @@ function resetStage() {
 function selectCell(c, { focus = false } = {}) {
   if (!canEdit()) return;
   if (cageMode) return pickCell(c);
+  if (thermoMode) return pickThermoCell(c);
   selected = c;
   padDigit = 0;
   render();
@@ -269,6 +293,7 @@ function advance() {
 function inputDigit(d) {
   if (!canEdit()) return;
   if (cageMode) return typeSum(String(d));
+  if (thermoMode) return say("Digits wait until the thermometer is done: tap its cells, bulb first, then Add thermo.");
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
     // Nothing to put it in: light the digit up instead.
     padDigit = padDigit === d ? 0 : d;
@@ -304,6 +329,7 @@ function blank() {
 
 function erase() {
   if (cageMode) return typeSum("back");
+  if (thermoMode) return stepBack();
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
   const next = grid().slice();
   next[selected] = 0;
@@ -317,7 +343,10 @@ function undo() {
   s.clues = back.clues;
   s.values = back.values;
   s.cages = back.cages;
+  s.thermos = back.thermos;
   clearPicked();
+  path = [];
+  editingThermo = -1;
   checked = false;
   pending = null;
   mark = null;
@@ -327,9 +356,9 @@ function undo() {
 }
 
 function clearAll() {
-  if (s.stage !== "enter" || (!s.clues.some(Boolean) && !cages())) return;
+  if (s.stage !== "enter" || (!s.clues.some(Boolean) && !cages() && !thermos())) return;
   endCage();
-  change(empty(), killer() ? [] : s.cages);
+  change(empty(), killer() ? [] : s.cages, s.thermo ? [] : s.thermos);
   selected = null;
   say("Cleared. Undo brings it back.");
 }
@@ -341,8 +370,13 @@ function pasteText(text) {
   if (seed?.made) {
     endCage();
     s.killer = Boolean(seed.cages);
+    s.thermo = Boolean(seed.thermos);
     s.rules = seed.rules ?? 0;
-    change(seed.grid.slice(), seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages);
+    change(
+      seed.grid.slice(),
+      seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages,
+      seed.thermos ? seed.thermos.map((t) => t.slice()) : s.thermos
+    );
     selected = null;
     const name = variantName(seed);
     return say(`Pasted a made ${name ? `${name} ` : ""}puzzle. Tap ${goLabel()} when ready.`);
@@ -396,6 +430,7 @@ async function onPasteBtn() {
 function onGo() {
   endCage();
   if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
+  if (s.thermo && !s.thermos.length) return say("Draw a thermometer first: tap Thermos, then the bulb and each next cell.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
@@ -527,6 +562,7 @@ function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
   if (key === "killer") s.killer = !s.killer;
+  else if (key === "thermo") s.thermo = !s.thermo;
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -535,6 +571,7 @@ function toggleRule(key) {
 
 function toggleCageMode() {
   if (cageMode) return endCage(true);
+  endThermo();
   cageMode = true;
   selected = null;
   padDigit = 0;
@@ -549,10 +586,12 @@ function clearPicked() {
   $("cageSum").value = "";
 }
 
-// Leaves the Cages tool; `draw` to show it at once.
+// Leaves the Cages tool, and the Thermos tool with it; `draw` to show it
+// at once.
 function endCage(draw = false) {
   cageMode = false;
   clearPicked();
+  endThermo();
   if (draw) {
     note = "";
     render();
@@ -609,12 +648,87 @@ function onCageRemove() {
   say("Cage removed. Undo brings it back.");
 }
 
+/* ---- thermometers ---- */
+
+function toggleThermoMode() {
+  if (thermoMode) return endCage(true);
+  endCage();
+  thermoMode = true;
+  selected = null;
+  padDigit = 0;
+  note = "";
+  render();
+}
+
+// Leaves the Thermos tool, dropping any path not added.
+function endThermo() {
+  thermoMode = false;
+  path = [];
+  editingThermo = -1;
+}
+
+// A tap in the Thermos tool: with no path, a cell of a thermometer picks it
+// up; the path's last cell takes that step back; otherwise the cell is the
+// next step, if it touches the last.
+function pickThermoCell(c) {
+  if (!path.length) {
+    const i = s.thermos.findIndex((t) => t.includes(c));
+    if (i >= 0) {
+      editingThermo = i;
+      path = s.thermos[i].slice();
+      note = "";
+      return render();
+    }
+  }
+  if (c === path.at(-1)) return stepBack();
+  if (path.includes(c)) return say("A thermometer cannot cross itself.");
+  if (path.length && !touching(path.at(-1), c)) return say("The next cell must touch the last one, along a side or at a corner.");
+  if (path.length === 9) return say("A thermometer has nine cells at most.");
+  path.push(c);
+  note = "";
+  render();
+}
+
+function stepBack() {
+  path.pop();
+  note = "";
+  render();
+}
+
+function thermoStatus() {
+  if (!path.length) return "Tap the bulb, then each next cell in order. Tap a thermometer already drawn to change it.";
+  if (path.length === 1) return "Bulb placed. Tap the next cell: digits rise from the bulb.";
+  return `${plural(path.length, "cell")} long. Tap on, or ${editingThermo >= 0 ? "Change thermo" : "Add thermo"}. Tapping the last cell takes it back.`;
+}
+
+function onThermoAdd() {
+  if (path.length < 2) return say("A thermometer needs two cells at least: the bulb and one more.");
+  const next = s.thermos.filter((_, i) => i !== editingThermo).concat([path.slice()]);
+  const problem = thermoProblem(next);
+  if (problem) return say(THERMO_PROBLEMS[problem.why]);
+  const n = path.length;
+  change(s.clues, s.cages, next);
+  path = [];
+  editingThermo = -1;
+  say(`Thermometer of ${plural(n, "cell")} added. Tap the next bulb, or Done.`);
+}
+
+function onThermoRemove() {
+  if (editingThermo < 0) return;
+  change(s.clues, s.cages, s.thermos.filter((_, i) => i !== editingThermo));
+  path = [];
+  editingThermo = -1;
+  say("Thermometer removed. Undo brings it back.");
+}
+
 /* ---- drawing ---- */
 
 function defaultStatus() {
   const n = s.clues.filter(Boolean).length;
   if (s.stage === "enter") {
     if (cageMode) return cageStatus();
+    if (thermoMode) return thermoStatus();
+    if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
@@ -671,8 +785,11 @@ function render() {
     wrong,
     // In the classic switch, cages kept for later are not shown.
     cages: killer() ? s.cages : null,
+    // The thermometer being changed is drawn as the path, not twice.
+    thermos: s.thermo ? s.thermos.filter((_, i) => i !== editingThermo) : null,
+    path: thermoMode ? path : [],
     rules: s.rules,
-    picked: cageMode ? picked : null,
+    picked: cageMode ? picked : thermoMode ? new Set(path) : null,
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
@@ -711,8 +828,10 @@ function render() {
     solverRuleLine: !enter && Boolean(variant()),
     solverCages: enter && killer(),
     cageBar: cageMode,
+    solverThermos: enter && s.thermo,
+    thermoBar: thermoMode,
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && !s.rules,
+    solverCopy: !killer() && !s.thermo && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -734,11 +853,18 @@ function render() {
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
-    const on = b.dataset.rule === "killer" ? s.killer : Boolean(s.rules & RULES.find((r) => r.key === b.dataset.rule).bit);
+    const { rule } = b.dataset;
+    const on = rule === "killer" ? s.killer : rule === "thermo" ? s.thermo : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
     b.setAttribute("aria-pressed", String(on));
   });
   $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
+  $("solverThermos").setAttribute("aria-pressed", String(thermoMode));
+  if (thermoMode) {
+    $("thermoAddLabel").textContent = editingThermo >= 0 ? "Change thermo" : "Add thermo";
+    $("thermoRemove").classList.toggle("hidden", editingThermo < 0);
+    $("thermoAdd").disabled = path.length < 2;
+  }
   if (cageMode) {
     $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
     $("cageRemove").classList.toggle("hidden", editing < 0);
@@ -787,6 +913,8 @@ function onKey(e) {
   if (cageMode && /^[0-9]$/.test(e.key)) typeSum(e.key);
   else if (cageMode && e.key === "Enter") onCageAdd();
   else if (cageMode && e.key === "Escape") endCage(true);
+  else if (thermoMode && e.key === "Enter") onThermoAdd();
+  else if (thermoMode && e.key === "Escape") endCage(true);
   else if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
   else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
@@ -826,6 +954,10 @@ export function initSolver({ reopen = true } = {}) {
     if (b) toggleRule(b.dataset.rule);
   });
   $("solverCages").addEventListener("click", toggleCageMode);
+  $("solverThermos").addEventListener("click", toggleThermoMode);
+  $("thermoAdd").addEventListener("click", onThermoAdd);
+  $("thermoRemove").addEventListener("click", onThermoRemove);
+  $("thermoDone").addEventListener("click", () => endCage(true));
   $("cageAdd").addEventListener("click", onCageAdd);
   $("cageRemove").addEventListener("click", onCageRemove);
   $("cageDone").addEventListener("click", () => endCage(true));

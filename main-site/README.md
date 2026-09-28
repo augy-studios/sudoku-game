@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -80,7 +80,7 @@ its own (mode `made`, from migration 002), without time bonuses, and in a
 network game it is not scored.
 
 **Variants.** The solver and the maker both have rule buttons over the
-board, on or off in any mix: Killer, Diagonal (both long diagonals hold 1
+board, on or off in any mix: Killer, Thermo, Diagonal (both long diagonals hold 1
 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ) and Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9). Diagonals are drawn as faint lines
@@ -90,9 +90,22 @@ variant.js, diagonals and windows are extra houses and the knight's and
 king's moves extra pairs of cells that must differ, so one solver handles
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
-clues. Its seed starts with its rules' letters, K, D, N, G and W, always in
-that order, as in `KD-H-...`; a killer seed's body carries the cages too,
-and the others' the clues only.
+clues. Its seed starts with its rules' letters, K, T, D, N, G and W, always
+in that order, as in `KD-H-...`; a seed with K or T carries its cages or
+thermometers in its body too (a thermometer as its length, its bulb and
+each step's direction), and the others' carry the clues only.
+
+**Thermo.** Digits rise strictly along each thermometer, from its round
+bulb. The Thermos tool draws one: tap the bulb, then each next cell, which
+must touch the last along a side or at a corner; tapping the last cell
+takes it back, and Add thermo keeps it. Tapping a thermometer already drawn
+picks it up to change or remove. Thermometers may share cells, up to forty
+of them, two to nine cells each. The solver squeezes each cell on one
+between the least the cell before can be and the most the cell after can
+be, which feeds candidates and hints too; digits that do not rise fast
+enough (two steps apart need two more) show as clashes. On the board they
+are a faint grey line with a bulb, in a saved image a solid one under the
+digits.
 
 **Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
 sum from the pad, the keyboard or the sum box, and adds the cage; tapping a

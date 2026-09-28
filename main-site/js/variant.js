@@ -1,15 +1,18 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, rules }:
+// A variant is { cages, thermos, rules }:
 //
-//   cages  killer cages, [{ sum, cells }] with cells in reading order. A
-//          cage's digits add up to its sum and never repeat within it. A
-//          cell is in at most one cage; cells in none are allowed.
-//   rules  switches, as bits (RULES below): Diagonal, both long diagonals
-//          hold 1 to 9; Anti-knight, cells a knight's move apart differ;
-//          Anti-king, cells touching at a corner differ; Windoku, four more
-//          3x3 windows hold 1 to 9.
+//   cages    killer cages, [{ sum, cells }] with cells in reading order. A
+//            cage's digits add up to its sum and never repeat within it. A
+//            cell is in at most one cage; cells in none are allowed.
+//   thermos  thermometers, each a path of cells from the bulb, every step
+//            to a cell touching the last, corners included. Digits rise
+//            strictly from the bulb. Thermometers may share cells.
+//   rules    switches, as bits (RULES below): Diagonal, both long
+//            diagonals hold 1 to 9; Anti-knight, cells a knight's move apart
+//            differ; Anti-king, cells touching at a corner differ; Windoku,
+//            four more 3x3 windows hold 1 to 9.
 //
 // Diagonals and windows are extra houses, like rows, columns and boxes; the
 // knight's and king's moves are extra pairs of cells that must differ.
@@ -30,9 +33,10 @@ export const RULES = [
 export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
-// The rules' names, for a label: "Killer, Diagonal, Anti-knight".
-export function variantName({ cages, rules } = {}) {
+// The rules' names, for a label: "Killer, Thermo, Diagonal".
+export function variantName({ cages, thermos, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
+  if (thermos?.length) names.unshift("Thermo");
   if (cages?.length) names.unshift("Killer");
   return names.join(", ");
 }
@@ -162,15 +166,82 @@ export function cageOf(cages) {
   return out;
 }
 
+/* ---- thermometers ---- */
+
+// Whether two cells touch, along an edge or at a corner.
+export const touching = (a, b) => a !== b && Math.abs(ROW[a] - ROW[b]) <= 1 && Math.abs(COL[a] - COL[b]) <= 1;
+
+// Whether thermometers are well formed: forty at most, each two to nine
+// cells on the board, each touching the one before, none twice. null if so,
+// or what is wrong: { why, thermo }.
+export function thermoProblem(thermos) {
+  // A seed has room for forty.
+  if (thermos.length > 40) return { why: "count", thermo: 40 };
+  for (let i = 0; i < thermos.length; i++) {
+    const t = thermos[i];
+    if (!Array.isArray(t) || t.length < 2 || t.length > 9) return { why: "length", thermo: i };
+    const seen = new Set();
+    for (let j = 0; j < t.length; j++) {
+      const c = t[j];
+      if (!Number.isInteger(c) || c < 0 || c > 80) return { why: "cell", thermo: i };
+      if (seen.has(c)) return { why: "loop", thermo: i };
+      seen.add(c);
+      if (j && !touching(t[j - 1], c)) return { why: "apart", thermo: i };
+    }
+  }
+  return null;
+}
+
+// ABOVE[k]: the digits over k, for k 0 to 9. BELOW[k]: those under it, for
+// k 1 to 10. LOW and HIGH: a mask's least and greatest digit.
+const ABOVE = [];
+const BELOW = [];
+for (let k = 0; k <= 10; k++) {
+  ABOVE[k] = ALL & ~((2 << k) - 1);
+  BELOW[k] = ALL & ((1 << k) - 1);
+}
+const LOW = new Uint8Array(1024);
+const HIGH = new Uint8Array(1024);
+for (let m = 1; m < 1024; m++) {
+  LOW[m] = 31 - Math.clz32(m & -m);
+  HIGH[m] = 31 - Math.clz32(m);
+}
+
+// Squeezes candidates along each thermometer: every cell above the least
+// the cell before it can be, and below the most the one after it can be.
+// A placed digit counts as a mask of one. Empty cells' masks in `free` are
+// narrowed in place; false if a thermometer cannot be filled, or its placed
+// digits do not rise.
+function thermoBounds(thermos, g, free) {
+  for (const t of thermos) {
+    let lo = 0;
+    for (const c of t) {
+      const m = (g[c] ? 1 << g[c] : free[c]) & ABOVE[lo];
+      if (!m) return false;
+      if (!g[c]) free[c] = m;
+      lo = LOW[m];
+    }
+    let hi = 10;
+    for (let i = t.length - 1; i >= 0; i--) {
+      const c = t[i];
+      const m = (g[c] ? 1 << g[c] : free[c]) & BELOW[hi];
+      if (!m) return false;
+      if (!g[c]) free[c] = m;
+      hi = HIGH[m];
+    }
+  }
+  return true;
+}
+
 /* ---- candidates and solving ---- */
 
-const norm = (v) => ({ cages: v?.cages ?? [], rules: v?.rules ?? 0 });
+const norm = (v) => ({ cages: v?.cages ?? [], thermos: v?.thermos ?? [], rules: v?.rules ?? 0 });
 
 // What can go in each empty cell, by every cell it must differ from and its
 // cage; 0 for a filled cell. A cage allows digits not already in it that
 // some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, rules } = norm(variant);
+  const { cages, thermos, rules } = norm(variant);
   const { peers } = layout(rules);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -193,11 +264,13 @@ export function variantCandidates(grid, variant) {
     if (of[c] >= 0) m &= allow[of[c]];
     out[c] = m;
   }
+  thermoBounds(thermos, grid, out);
   return out;
 }
 
 // Depth first search. At each step every empty cell's candidates are worked
-// out from its houses, the cells it must differ from, and its cage, where a
+// out from its houses, the cells it must differ from, its thermometers, and
+// its cage, where a
 // cage allows only the digit sets that make its sum and that its empty cells
 // could still hold. Then a digit with one place left in a house, or one a
 // cage cannot do without and only one of its cells can take, goes there;
@@ -211,7 +284,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, rules } = norm(variant);
+  const { cages, thermos, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules);
   let steps = 0;
   const hm = new Int32Array(houses.length);
@@ -259,6 +332,7 @@ function search(grid, variant, found) {
       for (const o of pairs[c]) if (g[o]) m &= ~(1 << g[o]);
       free[c] = m;
     }
+    if (thermos.length && !thermoBounds(thermos, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

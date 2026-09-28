@@ -207,6 +207,7 @@
 
                 <div class="rule-pick" id="solverRules" role="group" aria-label="Rules, on top of the classic ones">
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="killer">Killer</button>
+                    <button class="rule-btn" type="button" aria-pressed="false" data-rule="thermo">Thermo</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="diagonal">Diagonal</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiknight">Anti-knight</button>
                     <button class="rule-btn" type="button" aria-pressed="false" data-rule="antiking">Anti-king</button>
@@ -227,6 +228,12 @@
                     <button id="cageDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
                 </div>
 
+                <div id="thermoBar" class="cage-bar hidden">
+                    <button id="thermoAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="thermoAddLabel">Add thermo</span></button>
+                    <button id="thermoRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span>Remove thermo</button>
+                    <button id="thermoDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
+                </div>
+
                 <div id="solverPad" class="pad" aria-label="Numbers">
                     <button class="pad-btn" type="button" data-digit="1">1<span class="count"></span></button>
                     <button class="pad-btn" type="button" data-digit="2">2<span class="count"></span></button>
@@ -244,6 +251,7 @@
                     <button id="solverErase" class="tool-btn" type="button"><span data-icon="erase"></span><span>Erase</span></button>
                     <button id="solverPaste" class="tool-btn" type="button"><span data-icon="clipboard"></span><span>Paste</span></button>
                     <button id="solverCages" class="tool-btn" type="button" aria-pressed="false"><span data-icon="cage"></span><span>Cages</span></button>
+                    <button id="solverThermos" class="tool-btn" type="button" aria-pressed="false"><span data-icon="thermo"></span><span>Thermos</span></button>
                     <button id="solverClear" class="tool-btn" type="button"><span data-icon="trash"></span><span>Clear</span></button>
                     <button id="solverCheck" class="tool-btn" type="button"><span data-icon="check"></span><span>Check</span></button>
                     <button id="solverHint" class="tool-btn" type="button"><span data-icon="bulb"></span><span id="solverHintLabel">Hint</span></button>

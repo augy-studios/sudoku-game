@@ -9,13 +9,13 @@
 // A puzzle someone made has a seed too, a longer one that carries the
 // puzzle itself rather than what to generate: see madeSeed below. It has
 // `made: true`, and scores only on its own board. A made variant puzzle's
-// seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
-// which the seed then carries too, and D, N, G and W for the switch rules
-// (variant.js).
+// seed starts with its rules' letters, as in "KD-H-...": K for killer cages
+// and T for thermometers, which the seed then carries too, and D, N, G and W
+// for the switch rules (variant.js).
 
 import { LEVELS, LEVEL_IDS } from "./levels.js";
 import { generate, solve, countSolutions, COL } from "./sudoku.js";
-import { variantSolve, variantSolutions, cageProblem, RULES } from "./variant.js";
+import { variantSolve, variantSolutions, cageProblem, thermoProblem, RULES } from "./variant.js";
 
 // No vowels, and no 0 O 1 I, as for pairing codes: a seed read aloud cannot
 // be misheard and cannot spell a word.
@@ -126,12 +126,15 @@ function decodeGrid(body) {
   return digits === 0n ? grid : null;
 }
 
-/* A made killer puzzle's seed is one number too, read as a run of mixed
-   radix digits, first digit lowest: for each cell whether it holds a clue,
-   then the clues, then for each cell whether it is in a cage, then for each
-   pair of caged neighbours (right, then below) whether they share a cage,
-   then each cage's sum, cages in order of their first cell. Cages are joined
-   edge to edge, so the shared edges give back the cages exactly. */
+/* A made killer or thermo puzzle's seed is one number too, read as a run of
+   mixed radix digits, first digit lowest: for each cell whether it holds a
+   clue, then the clues. A killer's cages follow: for each cell whether it is
+   in a cage, then for each pair of caged neighbours (right, then below)
+   whether they share a cage, then each cage's sum, cages in order of their
+   first cell. Cages are joined edge to edge, so the shared edges give back
+   the cages exactly. Then thermometers: how many, and for each its length,
+   its bulb, and which way each step goes. Without thermometers this is the
+   killer seed as it was before they came. */
 
 function packDigits(digits) {
   let n = 0n;
@@ -163,19 +166,47 @@ function* neighbourPairs() {
   }
 }
 
-function encodeKiller(grid, cages) {
+// The eight ways a thermometer can step, corners included.
+const STEPS = [
+  [-1, -1],
+  [-1, 0],
+  [-1, 1],
+  [0, -1],
+  [0, 1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
+];
+const MAX_THERMOS = 40;
+
+// cages and thermos: null when the puzzle has none, so the reader knows
+// from the seed's letters what to read.
+function encodeParts(grid, cages, thermos) {
   const digits = [];
   for (let c = 0; c < 81; c++) digits.push([grid[c] ? 1 : 0, 2]);
   for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, 9]);
-  const of = new Array(81).fill(-1);
-  cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
-  for (let c = 0; c < 81; c++) digits.push([of[c] >= 0 ? 1 : 0, 2]);
-  for (const [a, b] of neighbourPairs()) if (of[a] >= 0 && of[b] >= 0) digits.push([of[a] === of[b] ? 1 : 0, 2]);
-  for (const cage of sortCages(cages)) digits.push([cage.sum, 46]);
+  if (cages) {
+    const of = new Array(81).fill(-1);
+    cages.forEach((cage, i) => cage.cells.forEach((c) => (of[c] = i)));
+    for (let c = 0; c < 81; c++) digits.push([of[c] >= 0 ? 1 : 0, 2]);
+    for (const [a, b] of neighbourPairs()) if (of[a] >= 0 && of[b] >= 0) digits.push([of[a] === of[b] ? 1 : 0, 2]);
+    for (const cage of sortCages(cages)) digits.push([cage.sum, 46]);
+  }
+  if (thermos) {
+    digits.push([thermos.length, MAX_THERMOS + 1]);
+    for (const t of thermos) {
+      digits.push([t.length - 2, 8], [t[0], 81]);
+      for (let i = 1; i < t.length; i++) {
+        const dr = Math.floor(t[i] / 9) - Math.floor(t[i - 1] / 9);
+        const dc = (t[i] % 9) - (t[i - 1] % 9);
+        digits.push([STEPS.findIndex(([r, c]) => r === dr && c === dc), 8]);
+      }
+    }
+  }
   return toBody(packDigits(digits));
 }
 
-function decodeKiller(body) {
+function decodeParts(body, withCages, withThermos) {
   let n = fromBody(body);
   if (n == null) return null;
   const take = (radix) => {
@@ -188,6 +219,28 @@ function decodeKiller(body) {
   const clued = [];
   for (let c = 0; c < 81; c++) if (take(2)) clued.push(c);
   for (const c of clued) grid[c] = take(9) + 1;
+  const cages = withCages ? readCages(take) : [];
+  const thermos = [];
+  if (withThermos) {
+    const count = take(MAX_THERMOS + 1);
+    for (let i = 0; i < count; i++) {
+      const length = take(8) + 2;
+      const t = [take(81)];
+      for (let j = 1; j < length; j++) {
+        const [dr, dc] = STEPS[take(8)];
+        const r = Math.floor(t[j - 1] / 9) + dr;
+        const c = (t[j - 1] % 9) + dc;
+        if (r < 0 || r > 8 || c < 0 || c > 8) return null;
+        t.push(r * 9 + c);
+      }
+      thermos.push(t);
+    }
+  }
+  return n === 0n ? { grid, cages, thermos } : null;
+}
+
+// A killer seed's cages, from `take`, which reads the next digit.
+function readCages(take) {
   const caged = [];
   for (let c = 0; c < 81; c++) caged.push(Boolean(take(2)));
   // Cells joined by shared edges, gathered into cages.
@@ -201,8 +254,7 @@ function decodeKiller(body) {
     if (!groups.has(r)) groups.set(r, []);
     groups.get(r).push(c);
   }
-  const cages = [...groups.values()].map((cells) => ({ sum: take(46), cells }));
-  return n === 0n ? { grid, cages } : null;
+  return [...groups.values()].map((cells) => ({ sum: take(46), cells }));
 }
 
 // Cages in order of their first cell, each cage's cells in reading order.
@@ -211,25 +263,28 @@ function sortCages(cages) {
 }
 
 // The letters that start a variant seed, in this order.
-const PREFIX = ["K", ...RULES.map((r) => r.letter)];
+const PREFIX = ["K", "T", ...RULES.map((r) => r.letter)];
 
-function prefixFor(cages, rules) {
-  return (cages.length ? "K" : "") + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+function prefixFor(cages, thermos, rules) {
+  return (cages.length ? "K" : "") + (thermos.length ? "T" : "") + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
 }
 
-// The seed of a made puzzle. variant: { cages, rules } for a variant
-// puzzle (variant.js), or nothing for a classic one. `level` is the maker's
-// rating; it names the level on screen and nothing else. The puzzle should
-// have one answer: parseSeed refuses one that does not.
+// The seed of a made puzzle. variant: { cages, thermos, rules } for a
+// variant puzzle (variant.js), or nothing for a classic one. `level` is the
+// maker's rating; it names the level on screen and nothing else. The puzzle
+// should have one answer: parseSeed refuses one that does not.
 export function madeSeed(level, grid, variant = null) {
   const groups = (body) => body.match(/.{1,4}/g).join("-");
   const cages = variant?.cages?.length ? sortCages(variant.cages) : [];
+  const thermos = variant?.thermos?.length ? variant.thermos.map((t) => t.slice()) : [];
   const rules = variant?.rules ?? 0;
-  const prefix = prefixFor(cages, rules);
-  const body = cages.length ? encodeKiller(grid, cages) : encodeGrid(grid);
+  const prefix = prefixFor(cages, thermos, rules);
+  const drawn = cages.length || thermos.length;
+  const body = drawn ? encodeParts(grid, cages.length ? cages : null, thermos.length ? thermos : null) : encodeGrid(grid);
   const text = prefix ? `${prefix}-${level}-${groups(body)}` : `${level}-${groups(body)}`;
   const seed = { level, body, text, made: true, grid: grid.slice(), rules };
   if (cages.length) seed.cages = cages;
+  if (thermos.length) seed.thermos = thermos;
   return seed;
 }
 
@@ -238,7 +293,8 @@ export function madeSeed(level, grid, variant = null) {
 export function seedVariantName(text) {
   const head = String(text).split("-")[0];
   if (LEVEL_IDS.includes(head)) return "";
-  return [...head].map((ch) => (ch === "K" ? "Killer" : RULES.find((r) => r.letter === ch)?.name)).filter(Boolean).join(", ");
+  const names = { K: "Killer", T: "Thermo" };
+  return [...head].map((ch) => names[ch] ?? RULES.find((r) => r.letter === ch)?.name).filter(Boolean).join(", ");
 }
 
 // Parsing one means checking it has one answer, so the last few are kept.
@@ -250,10 +306,17 @@ function parseMade(prefix, level, body) {
   if (madeParsed.has(key)) return madeParsed.get(key);
   let seed = null;
   const rules = RULES.filter((r) => prefix.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
-  if (prefix.includes("K")) {
-    const got = decodeKiller(body);
-    const ok = got && got.cages.length && !cageProblem(got.cages) && variantSolutions(got.grid, { cages: got.cages, rules }, 2)?.length === 1;
-    seed = ok ? madeSeed(level, got.grid, { cages: got.cages, rules }) : null;
+  const killer = prefix.includes("K");
+  const thermo = prefix.includes("T");
+  if (killer || thermo) {
+    const got = decodeParts(body, killer, thermo);
+    const variant = got && { cages: got.cages, thermos: got.thermos, rules };
+    const ok =
+      variant &&
+      (!killer || (variant.cages.length && !cageProblem(variant.cages))) &&
+      (!thermo || (variant.thermos.length && !thermoProblem(variant.thermos))) &&
+      variantSolutions(got.grid, variant, 2)?.length === 1;
+    seed = ok ? madeSeed(level, got.grid, variant) : null;
   } else if (rules) {
     // The rules do some of the clues' work, so there is no least number.
     const grid = decodeGrid(body);
@@ -297,7 +360,7 @@ export function puzzleFor(seed) {
   const hit = made.get(seed.text);
   if (hit) return hit;
   const { puzzle, solution } = seed.made
-    ? { puzzle: seed.grid.slice(), solution: seed.cages || seed.rules ? variantSolve(seed.grid, seed) : solve(seed.grid) }
+    ? { puzzle: seed.grid.slice(), solution: seed.cages || seed.thermos || seed.rules ? variantSolve(seed.grid, seed) : solve(seed.grid) }
     : generate(randomSource(hashString(`puzzle|${seed.text}`)), LEVELS[seed.level].blanks);
   const out = { puzzle, solution, blanks: puzzle.filter((d) => d === 0).length };
   made.set(seed.text, out);

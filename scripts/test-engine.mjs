@@ -12,7 +12,7 @@ import { newSeed, parseSeed, puzzleFor, madeSeed } from "../main-site/js/seed.js
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
-import { variantSolutions, variantSolve, variantCandidates, cageProblem, layout, RULES } from "../main-site/js/variant.js";
+import { variantSolutions, variantSolve, variantCandidates, cageProblem, thermoProblem, touching, layout, RULES } from "../main-site/js/variant.js";
 
 const killerSolutions = (grid, cages, limit) => variantSolutions(grid, { cages }, limit);
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
@@ -378,6 +378,85 @@ test("rules puzzles solve, check, hint and carry their rules in seeds", () => {
   assert.equal(parseSeed(seed.text.replace("DW-", "WD-")).text, seed.text);
   // Killer seeds from before the switch rules read as they did.
   assert.equal(parseSeed("K" + seed.text.slice(2)), null, "a killer seed needs cages");
+});
+
+// A thermo puzzle: rising paths laid through a solved grid, then clues taken
+// out, in a seeded order, while the answer stays the only one.
+function thermoPuzzle() {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  let x = 5;
+  const rand = () => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32);
+  const thermos = [];
+  const used = new Set();
+  while (thermos.length < 8) {
+    let c = Math.floor(rand() * 81);
+    if (used.has(c)) continue;
+    const path = [c];
+    while (path.length < 5) {
+      const next = [...Array(81).keys()].filter((o) => touching(c, o) && solution[o] > solution[c] && !path.includes(o) && !used.has(o));
+      if (!next.length) break;
+      c = next[Math.floor(rand() * next.length)];
+      path.push(c);
+    }
+    if (path.length < 3) continue;
+    path.forEach((p) => used.add(p));
+    thermos.push(path);
+  }
+  const puzzle = solution.slice();
+  for (const c of [...Array(81).keys()].sort(() => rand() - 0.5)) {
+    const d = puzzle[c];
+    puzzle[c] = 0;
+    if (variantSolutions(puzzle, { thermos }, 2)?.length !== 1) puzzle[c] = d;
+  }
+  return { puzzle, solution, thermos };
+}
+
+test("thermometers are checked, solved and carried in seeds", () => {
+  assert.equal(thermoProblem([[0, 1, 2]]), null);
+  assert.equal(thermoProblem([[0, 10, 20]]), null, "corner to corner steps are fine");
+  assert.equal(thermoProblem([[0]]).why, "length");
+  assert.equal(thermoProblem([[0, 2]]).why, "apart");
+  assert.equal(thermoProblem([[0, 1, 0]]).why, "loop");
+
+  const { puzzle, solution, thermos } = thermoPuzzle();
+  for (const t of thermos) for (let i = 1; i < t.length; i++) assert.ok(solution[t[i]] > solution[t[i - 1]]);
+  assert.equal(checkClues(puzzle, { thermos }).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the thermometers");
+
+  // Candidates keep the answer and rise: a bulb can never hold a 9.
+  const cand = variantCandidates(puzzle, { thermos });
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]));
+  for (const t of thermos) if (!puzzle[t[0]]) assert.equal(cand[t[0]] & (1 << 9), 0);
+
+  const grid = puzzle.slice();
+  for (let step = nextStep(grid, null, { thermos }); step; step = nextStep(grid, null, { thermos })) {
+    assert.equal(step.d, solution[step.c]);
+    grid[step.c] = step.d;
+  }
+
+  // Falling along a thermometer clashes; so does rising too slowly.
+  const t = thermos[0];
+  const fall = new Array(81).fill(0);
+  fall[t[0]] = 5;
+  fall[t[1]] = 4;
+  assert.deepEqual([...clashes(fall, { thermos })].sort((a, b) => a - b), [t[0], t[1]].sort((a, b) => a - b));
+  const slow = new Array(81).fill(0);
+  slow[t[0]] = 4;
+  slow[t[2]] = 5;
+  assert.equal(clashes(slow, { thermos }).size, 2, "two steps need two more");
+
+  const seed = madeSeed(rateLevel(puzzle, { thermos }), puzzle, { thermos });
+  assert.match(seed.text, /^T-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.thermos, thermos);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  assert.equal(parseSeed(madeSeed("M", puzzle, { thermos: thermos.slice(1, 2) }).text), null, "one thermometer is not enough");
+
+  // With cages and a rule too, the letters go K, T, then the rules.
+  const { cages } = killerPuzzle();
+  const both = madeSeed("H", new Array(81).fill(0), { cages, thermos: [[0, 1]], rules: 1 });
+  assert.match(both.text, /^KTD-H-/);
 });
 
 test("the solver finds clashes and candidates", () => {

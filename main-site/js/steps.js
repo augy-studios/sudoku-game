@@ -4,16 +4,16 @@
 // in sudoku.js. A set of candidates is a mask with digits as bits 1 to 9,
 // the same as a cell's notes, so the board can draw one as the other.
 //
-// Each takes a variant, { cages, rules } (variant.js), as an optional last
-// argument; without one the rules are the classic ones.
+// Each takes a variant, { cages, thermos, rules } (variant.js), as an
+// optional last argument; without one the rules are the classic ones.
 
 import { PEERS, countSolutions, findSolutions } from "./sudoku.js";
-import { layout, variantCandidates, variantSolutions, cageProblem } from "./variant.js";
+import { layout, variantCandidates, variantSolutions, cageProblem, thermoProblem } from "./variant.js";
 
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const isVariant = (v) => Boolean(v?.cages?.length || v?.rules);
+const isVariant = (v) => Boolean(v?.cages?.length || v?.thermos?.length || v?.rules);
 
 // 81 cells in reading order: digits for clues, 0 or . for blanks. Anything
 // else, such as spaces and grid lines, is skipped.
@@ -37,8 +37,10 @@ export function bitCount(mask) {
 
 // Cells whose digit is also in a cell it must differ from: its row, column
 // and box, and under the variant's rules its diagonal, window, a knight's
-// move or a king's diagonal step away, or its cage; and the digits of a cage
-// that go past its sum, or that fill it to some other sum.
+// move or a king's diagonal step away, or its cage; the digits of a cage
+// that go past its sum, or that fill it to some other sum; and the digits of
+// a thermometer that do not rise fast enough from the bulb: two cells three
+// steps apart need digits at least three apart.
 export function clashes(grid, variant = null) {
   const peers = variant?.rules ? layout(variant.rules).peers : PEERS;
   const out = new Set();
@@ -51,6 +53,16 @@ export function clashes(grid, variant = null) {
     const repeats = filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c]));
     if (total > sum || (filled.length === cells.length && total !== sum)) filled.forEach((c) => out.add(c));
     repeats.forEach((c) => out.add(c));
+  }
+  for (const t of variant?.thermos ?? []) {
+    for (let i = 0; i < t.length; i++) {
+      for (let j = i + 1; j < t.length; j++) {
+        if (grid[t[i]] && grid[t[j]] && grid[t[j]] - grid[t[i]] < j - i) {
+          out.add(t[i]);
+          out.add(t[j]);
+        }
+      }
+    }
   }
   return out;
 }
@@ -116,7 +128,8 @@ export const MIN_CLUES = 17;
 
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
-// "cages" (and problem, from cageProblem), "few" (and n, the clues there
+// "cages" or "thermos" (and problem, from cageProblem or thermoProblem),
+// "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
 // of the answers disagree on, and the two digits they put there). A
 // variant's rules do some of the clues' work, so it has no least number of
@@ -130,6 +143,10 @@ export function checkClues(clues, variant = null) {
     const problem = cageProblem(variant.cages);
     if (problem) return { ok: false, why: "cages", problem };
   } else if (!isVariant(variant) && n < MIN_CLUES) return { ok: false, why: "few", n };
+  if (variant?.thermos?.length) {
+    const problem = thermoProblem(variant.thermos);
+    if (problem) return { ok: false, why: "thermos", problem };
+  }
   const found = isVariant(variant) ? variantSolutions(clues, variant, 2) : countSolutions(clues, 2) ? findSolutions(clues, 2) : [];
   if (!found) return { ok: false, why: "hard" };
   if (!found.length) return { ok: false, why: "none" };

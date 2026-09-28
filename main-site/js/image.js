@@ -1,6 +1,7 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a variant puzzle's cages, diagonals and windows as on screen.
+// and a variant puzzle's cages, thermometers, diagonals and windows as on
+// screen.
 
 import { variantName } from "./variant.js";
 
@@ -19,12 +20,15 @@ const CAPTION = "#5b6b60";
 
 // Warm, so windows never pass for the boxes' green tint.
 const WINDOW_TINT = "rgba(232, 168, 56, 0.28)";
+const THERMO_GREY = "#cdd3ce";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, rules } (variant.js), or nothing for a classic puzzle.
+// variant: { cages, thermos, rules } (variant.js), or nothing for a
+// classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
+  const thermos = variant?.thermos ?? [];
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -78,6 +82,21 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.lineTo(PAD, PAD + BOARD);
     ctx.stroke();
   }
+  // Under everything drawn after: grey, solid, with a round bulb.
+  for (const t of thermos) {
+    const at = (c) => [PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.5) * CELL];
+    ctx.strokeStyle = THERMO_GREY;
+    ctx.fillStyle = THERMO_GREY;
+    ctx.lineWidth = CELL * 0.3;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    t.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(...at(t[0]), CELL * 0.36, 0, Math.PI * 2);
+    ctx.fill();
+  }
   if (cages.length) drawCages(ctx, cages);
 
   ctx.fillStyle = INK;
@@ -91,7 +110,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, rules });
+  const name = variantName({ cages, thermos, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20);
   return canvas;
 }
