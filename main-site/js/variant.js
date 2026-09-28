@@ -2,8 +2,8 @@
 // the API imports it too, to work out a made variant puzzle's answer.
 //
 // A variant is { cages, thermos, arrows, whispers, renbans, palindromes,
-// zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches,
-// littles, skyscrapers, xsums, regions, rules }:
+// zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads,
+// sandwiches, littles, skyscrapers, xsums, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -47,6 +47,12 @@
 //   xvs      XV marks, as dots: an "x" mark's digits add up to 10, a "v"
 //            mark's to 5. Cells with no dot or mark between them may be
 //            anything the other rules allow.
+//   signs    Greater Than signs, as dots: a "gt" sign's first cell holds the
+//            larger digit, an "lt" sign's the smaller.
+//   quads    Quad circles, [{ cell, digits }] on the corner where four
+//            cells meet: cell the top left of the four, in a row and column
+//            before the last, and digits one to four digits the four cells
+//            hold between them, a digit listed twice held twice.
 //   sandwiches  Sandwich clues outside the grid, [{ line, sum }]: line 0 to
 //            8 a row, its clue on the left, and 9 to 17 a column, its clue
 //            above. The digits between the line's 1 and its 9 add up to the
@@ -102,13 +108,15 @@ export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 const has = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
+export function variantName({ cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (xsums?.length) names.unshift("X-Sums");
   if (skyscrapers?.length) names.unshift("Skyscrapers");
   if (littles?.length) names.unshift("Little Killer");
   if (sandwiches?.length) names.unshift("Sandwich");
+  if (quads?.length) names.unshift("Quad");
+  if (signs?.length) names.unshift("Greater Than");
   if (xvs?.length) names.unshift("XV");
   if (dots?.length) names.unshift("Kropki");
   if (modulars?.length) names.unshift("Modular");
@@ -634,6 +642,7 @@ const modularBounds = (modulars, g, free) => kindBounds(modulars, g, free, MODUL
 
 export const DOT_MARKS = ["white", "black"];
 export const XV_MARKS = ["x", "v"];
+export const SIGN_MARKS = ["gt", "lt"];
 
 // Whether digits a and b may sit either side of a mark.
 const KEEPS = {
@@ -641,12 +650,16 @@ const KEEPS = {
   black: (a, b) => a === 2 * b || b === 2 * a,
   x: (a, b) => a + b === 10,
   v: (a, b) => a + b === 5,
+  gt: (a, b) => a > b,
+  lt: (a, b) => a < b,
 };
 export const markKeeps = (mark, a, b) => KEEPS[mark](a, b);
 
-// ACROSS[mark][m]: the digits that may sit across the mark from some digit
-// in m.
+// ACROSS[mark][m]: the digits that may be the second of a mark's two cells
+// when the first is some digit in m. A sign's cells are not alike, so the
+// first cell's digits come from the other way round: REVERSED[mark].
 const ACROSS = {};
+const REVERSED = { gt: "lt", lt: "gt" };
 for (const [mark, keeps] of Object.entries(KEEPS)) {
   ACROSS[mark] = new Int32Array(1024);
   for (let m = 2; m < 1024; m += 2) {
@@ -680,16 +693,68 @@ function edgeProblem(edges, marks) {
 
 export const dotProblem = (dots) => edgeProblem(dots, DOT_MARKS);
 export const xvProblem = (xvs) => edgeProblem(xvs, XV_MARKS);
+export const signProblem = (signs) => edgeProblem(signs, SIGN_MARKS);
+
+/* ---- quads ---- */
+
+// The four cells round the corner below and right of `cell`.
+export const quadCells = (cell) => [cell, cell + 1, cell + 9, cell + 10];
+
+// Whether quads are well formed: each on a corner inside the grid, one to
+// four digits 1 to 9, none more than twice (four cells in a square hold a
+// digit twice at most), no corner twice. null if so, or what is wrong:
+// { why, at }.
+export function quadProblem(quads) {
+  const seen = new Set();
+  for (let i = 0; i < quads.length; i++) {
+    const { cell, digits } = quads[i] ?? {};
+    if (!Number.isInteger(cell) || cell < 0 || cell > 70 || COL[cell] > 7) return { why: "cell", at: i };
+    if (!Array.isArray(digits) || !digits.length || digits.length > 4) return { why: "digits", at: i };
+    if (!digits.every((d) => Number.isInteger(d) && d >= 1 && d <= 9)) return { why: "digits", at: i };
+    if (digits.some((d) => digits.filter((e) => e === d).length > 2)) return { why: "thrice", at: i };
+    if (seen.has(cell)) return { why: "twice", at: i };
+    seen.add(cell);
+  }
+  return null;
+}
+
+// Narrows each quad's cells. A digit it lists with no more cells left that
+// could take it than it still needs goes in all of them; and once the
+// digits still needed fill every empty cell, those cells hold nothing else.
+// Placed digits count as masks of one, and `free` is narrowed in place, as
+// in thermoBounds; false if a digit has too few cells left, or the digits
+// still needed outnumber the empty cells.
+function quadBounds(quads, g, free) {
+  for (const { cell, digits } of quads) {
+    const cells = quadCells(cell);
+    const empty = cells.filter((c) => !g[c]);
+    let missing = 0;
+    let wanted = 0;
+    for (const d of new Set(digits)) {
+      const left = digits.filter((e) => e === d).length - cells.filter((c) => g[c] === d).length;
+      if (left <= 0) continue;
+      const room = empty.filter((c) => free[c] & (1 << d));
+      if (room.length < left) return false;
+      if (room.length === left) for (const c of room) if (!(free[c] &= 1 << d)) return false;
+      missing += left;
+      wanted |= 1 << d;
+    }
+    if (missing > empty.length) return false;
+    if (missing === empty.length) for (const c of empty) if (!(free[c] &= wanted)) return false;
+  }
+  return true;
+}
 
 // Narrows cells a and b, either side of a side, to digits that may sit
-// across it from one the other can be, by `across` as ACROSS has it. Placed
-// digits count as masks of one, and `free` is narrowed in place, as in
-// thermoBounds; false if the two cannot be filled, or their placed digits
-// cannot sit across it.
-function sideBounds(a, b, across, g, free) {
-  const ma = (g[a] ? 1 << g[a] : free[a]) & across[g[b] ? 1 << g[b] : free[b]];
+// across it from one the other can be: `toA` and `toB` as ACROSS has them,
+// toA for the first cell and toB for the second, the same table for a mark
+// that is the same either way round. Placed digits count as masks of one,
+// and `free` is narrowed in place, as in thermoBounds; false if the two
+// cannot be filled, or their placed digits cannot sit across it.
+function sideBounds(a, b, toA, toB, g, free) {
+  const ma = (g[a] ? 1 << g[a] : free[a]) & toA[g[b] ? 1 << g[b] : free[b]];
   if (!ma) return false;
-  const mb = (g[b] ? 1 << g[b] : free[b]) & across[ma];
+  const mb = (g[b] ? 1 << g[b] : free[b]) & toB[ma];
   if (!mb) return false;
   if (!g[a]) free[a] = ma;
   if (!g[b]) free[b] = mb;
@@ -698,7 +763,7 @@ function sideBounds(a, b, across, g, free) {
 
 // The two cells of each dot or mark, by sideBounds.
 function edgeBounds(edges, g, free) {
-  for (const { cells, mark } of edges) if (!sideBounds(cells[0], cells[1], ACROSS[mark], g, free)) return false;
+  for (const { cells, mark } of edges) if (!sideBounds(cells[0], cells[1], ACROSS[REVERSED[mark] ?? mark], ACROSS[mark], g, free)) return false;
   return true;
 }
 
@@ -744,7 +809,7 @@ const SIDE_RULES = ["anticonsecutive", "strictkropki", "strictxv"].reduce((m, ke
 
 // Each barred side's two cells, by sideBounds.
 function barredBounds(sides, g, free) {
-  for (const { cells, across } of sides) if (!sideBounds(cells[0], cells[1], across, g, free)) return false;
+  for (const { cells, across } of sides) if (!sideBounds(cells[0], cells[1], across, across, g, free)) return false;
   return true;
 }
 
@@ -1026,6 +1091,8 @@ const norm = (v) => ({
   modulars: v?.modulars ?? [],
   dots: v?.dots ?? [],
   xvs: v?.xvs ?? [],
+  signs: v?.signs ?? [],
+  quads: v?.quads ?? [],
   sandwiches: v?.sandwiches ?? [],
   littles: v?.littles ?? [],
   skyscrapers: v?.skyscrapers ?? [],
@@ -1039,7 +1106,7 @@ const norm = (v) => ({
 // the clues outside; 0 for a filled cell. A cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1074,6 +1141,8 @@ export function variantCandidates(grid, variant) {
   modularBounds(modulars, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
+  edgeBounds(signs, grid, out);
+  quadBounds(quads, grid, out);
   barredBounds(barredSides(rules, dots, xvs), grid, out);
   sandwichBounds(sandwiches, grid, out);
   littleBounds(littles, grid, out);
@@ -1099,7 +1168,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
+  const { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const barred = barredSides(rules, dots, xvs);
   let steps = 0;
@@ -1160,6 +1229,8 @@ function search(grid, variant, found) {
     if (modulars.length && !modularBounds(modulars, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
+    if (signs.length && !edgeBounds(signs, g, free)) return null;
+    if (quads.length && !quadBounds(quads, g, free)) return null;
     if (barred.length && !barredBounds(barred, g, free)) return null;
     if (sandwiches.length && !sandwichBounds(sandwiches, g, free)) return null;
     if (littles.length && !littleBounds(littles, g, free)) return null;

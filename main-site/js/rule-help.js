@@ -99,6 +99,18 @@ export const RULE_HELP = {
     rule: "Digits either side of an X add up to 10, and either side of a V add up to 5. Sides with no mark can be anything.",
     draw: "Tap Marks, then tap near the side between two cells. Each tap steps it on to the next mark, then back to none.",
   },
+  greater: {
+    name: "Greater Than",
+    list: "signs",
+    rule: "A sign between two cells opens towards the larger digit, as in 7 > 3; its point is at the smaller.",
+    draw: "Tap Marks, then tap near the side between two cells. Each tap steps it on to the next mark: the sign one way, the other way, then none.",
+  },
+  quad: {
+    name: "Quad",
+    list: "quads",
+    rule: "The digits in a circle where four cells meet all go in those four cells. A digit shown twice goes in twice.",
+    draw: "Tap Marks, then tap near a corner where four cells meet, and type its digits, up to four. Erase takes the last one off.",
+  },
   sandwich: {
     name: "Sandwich",
     list: "sandwiches",

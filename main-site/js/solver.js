@@ -20,7 +20,8 @@
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // drawn the same way again with their own tools, a between line from one circle to the other and a lockout line from
 // one diamond to the other;
-// Kropki and XV add dots and X and V marks on the sides between cells, put
+// Kropki, XV and Greater Than add dots, X and V marks and signs on the
+// sides between cells, and Quad circles on the corners where four meet, put
 // down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
 // X-Sums add clues outside the grid, put down with the Outside tool in a
 // margin the board leaves for them; Jigsaw puts regions in the boxes'
@@ -54,6 +55,9 @@ import {
   LOCKOUT_GAP,
   dotProblem,
   xvProblem,
+  signProblem,
+  quadProblem,
+  quadCells,
   sandwichProblem,
   littleProblem,
   skyscraperProblem,
@@ -63,6 +67,7 @@ import {
   SANDWICH_MAX,
   DOT_MARKS,
   XV_MARKS,
+  SIGN_MARKS,
   touching,
   beside,
   RULES,
@@ -90,7 +95,7 @@ let board = null;
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
 // killer, thermo, arrow, whisper, renban, palindrome, zipper, between,
-// lockout, entropic, modular, kropki, xv, sandwich, little, skyscraper, xsum, jigsaw and rules
+// lockout, entropic, modular, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each kind of line, dot, mark and outside clue
 // likewise.
@@ -113,6 +118,8 @@ const fresh = () => ({
   modular: false,
   kropki: false,
   xv: false,
+  greater: false,
+  quad: false,
   sandwich: false,
   little: false,
   skyscraper: false,
@@ -132,6 +139,8 @@ const fresh = () => ({
   modulars: [],
   dots: [],
   xvs: [],
+  signs: [],
+  quads: [],
   sandwiches: [],
   littles: [],
   skyscrapers: [],
@@ -157,9 +166,11 @@ let editing = -1;
 let lineKind = null;
 let path = [];
 let editingLine = -1;
-// The Marks tool: on, and the cell picked for a mark on one of its sides.
+// The Marks tool: on, the cell picked for a mark on one of its sides, and
+// the corner picked for a quad, by the top left of its four cells.
 let markMode = false;
 let anchor = null;
+let quadAt = null;
 // The Outside tool: on, the margin spot [r, c] picked, and which of the
 // clues it can take is chosen (spotKinds below).
 let outMode = false;
@@ -197,13 +208,15 @@ const entropics = () => (s.entropic && s.entropics.length ? s.entropics : null);
 const modulars = () => (s.modular && s.modulars.length ? s.modulars : null);
 const dots = () => (s.kropki && s.dots.length ? s.dots : null);
 const xvs = () => (s.xv && s.xvs.length ? s.xvs : null);
+const signs = () => (s.greater && s.signs.length ? s.signs : null);
+const quads = () => (s.quad && s.quads.length ? s.quads : null);
 const sandwiches = () => (s.sandwich && s.sandwiches.length ? s.sandwiches : null);
 const littles = () => (s.little && s.littles.length ? s.littles : null);
 const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers : null);
 const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || sandwiches() || littles() || skyscrapers() || xsums());
+  Boolean(cages() || thermos() || arrows() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -221,6 +234,8 @@ const variant = () =>
         modulars: modulars() ?? [],
         dots: dots() ?? [],
         xvs: xvs() ?? [],
+        signs: signs() ?? [],
+        quads: quads() ?? [],
         sandwiches: sandwiches() ?? [],
         littles: littles() ?? [],
         skyscrapers: skyscrapers() ?? [],
@@ -263,7 +278,7 @@ function load(which) {
   // Before the switch rules, a killer puzzle was saved as variant "killer".
   st.killer = saved.killer === true || saved.variant === "killer";
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
-  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(OUTSIDE)]) {
+  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) {
     st[kind] = saved[kind] === true;
     const kept = Array.isArray(saved[P.list]) ? saved[P.list] : [];
     st[P.list] = !P.problem(kept) ? kept : [];
@@ -322,6 +337,8 @@ function hintText(step, reveal) {
       ...(modulars() ? ["modular lines"] : []),
       ...(dots() ? ["dots"] : []),
       ...(xvs() ? ["X and V marks"] : []),
+      ...(signs() ? ["Greater Than signs"] : []),
+      ...(quads() ? ["quads"] : []),
       ...(sandwiches() ? ["Sandwich sums"] : []),
       ...(littles() ? ["Little Killer sums"] : []),
       ...(skyscrapers() ? ["Skyscraper counts"] : []),
@@ -354,6 +371,8 @@ function problemText(check) {
   if (why === "modulars") return MODULAR_PROBLEMS[check.problem.why];
   if (why === "dots") return DOT_PROBLEMS[check.problem.why];
   if (why === "xvs") return XV_PROBLEMS[check.problem.why];
+  if (why === "signs") return SIGN_PROBLEMS[check.problem.why];
+  if (why === "quads") return QUAD_PROBLEMS[check.problem.why];
   if (why === "sandwiches") return SANDWICH_PROBLEMS[check.problem.why];
   if (why === "littles") return LITTLE_PROBLEMS[check.problem.why];
   if (why === "skyscrapers") return SKYSCRAPER_PROBLEMS[check.problem.why];
@@ -392,6 +411,8 @@ function clashText() {
   if (modulars()) extra.push("not one each of 1 4 7, 2 5 8 and 3 6 9 in three cells in a row on a modular line");
   if (dots()) extra.push("breaking a dot");
   if (xvs()) extra.push("not adding up to an X or a V");
+  if (signs()) extra.push("not larger on the open side of a sign");
+  if (quads()) extra.push("leaving a quad's digit too few cells");
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
   if (littles()) extra.push("not adding up to a Little Killer sum");
   if (skyscrapers()) extra.push("showing more or fewer than a Skyscraper count");
@@ -521,6 +542,20 @@ function regionText({ why, region, size }) {
   return "The regions are not set out right. Tap Regions, then Back to boxes, to start them again.";
 }
 
+const SIGN_PROBLEMS = {
+  cell: "A sign has a cell off the board.",
+  apart: "A sign must sit on the side two cells share.",
+  mark: "A sign must point one way or the other.",
+  twice: "Two signs sit on the same side.",
+};
+
+const QUAD_PROBLEMS = {
+  cell: "A quad sits on a corner where four cells meet.",
+  digits: "A quad holds one to four digits, 1 to 9.",
+  thrice: "Four cells round a corner hold a digit twice at most, so a quad lists it twice at most.",
+  twice: "That corner has a quad already.",
+};
+
 const XV_PROBLEMS = {
   cell: "An X or a V has a cell off the board.",
   apart: "An X or a V must sit on the side two cells share.",
@@ -555,7 +590,7 @@ function wrongCells() {
 }
 
 // The lists of drawn parts: "cages", then LINES's lists and EDGES's.
-const partLists = () => ["cages", "regions", ...[LINES, EDGES, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
+const partLists = () => ["cages", "regions", ...[LINES, EDGES, QUADS, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
 
 const snapshot = () => {
   const out = { clues: s.clues.slice(), values: s.values.slice() };
@@ -637,7 +672,8 @@ function inputDigit(d) {
     const L = LINES[lineKind];
     return say(`Digits wait until the ${L.name} is done: tap its cells, ${L.start} first, then ${addLabel()}.`);
   }
-  if (markMode) return say("Digits wait until the marks are done: tap Done first.");
+  if (markMode && quadAt != null) return typeQuadDigit(d);
+  if (markMode) return say(s.quad ? "Tap near a corner where four cells meet first, for a quad's digits." : "Digits wait until the marks are done: tap Done first.");
   if (outMode) return typeOutSum(String(d));
   if (regionMode) return say("Digits wait until the regions are done: tap Done first.");
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
@@ -676,7 +712,7 @@ function blank() {
 function erase() {
   if (cageMode) return typeSum("back");
   if (lineKind) return stepBack();
-  if (markMode) return;
+  if (markMode) return quadAt != null ? eraseQuadDigit() : undefined;
   if (outMode) return typeOutSum("back");
   if (regionMode) return;
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
@@ -711,7 +747,7 @@ function clearAll() {
   endCage();
   // Only what the rules on use: the rest is kept for when they come back.
   const parts = { cages: killer() ? [] : s.cages };
-  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
+  for (const [kind, P] of [...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
   parts.regions = s.jigsaw ? Array.from(BOX) : s.regions;
   change(empty(), parts);
   selected = null;
@@ -736,6 +772,10 @@ function openSeed(found, how) {
   for (const [kind, E] of Object.entries(EDGES)) {
     s[kind] = Boolean(seed[E.list]);
     parts[E.list] = seed[E.list] ? seed[E.list].map((e) => ({ cells: e.cells.slice(), mark: e.mark })) : s[E.list];
+  }
+  for (const [kind, Q] of Object.entries(QUADS)) {
+    s[kind] = Boolean(seed[Q.list]);
+    parts[Q.list] = seed[Q.list] ? seed[Q.list].map((q) => ({ cell: q.cell, digits: q.digits.slice() })) : s[Q.list];
   }
   for (const [kind, O] of Object.entries(OUTSIDE)) {
     s[kind] = Boolean(seed[O.list]);
@@ -839,6 +879,8 @@ function onGo() {
   if (s.modular && !s.modulars.length) return say("Draw a modular line first: tap Modulars, then each cell along it.");
   if (s.kropki && !s.dots.length) return say("Put a dot down first: tap Marks, then near the side between two cells.");
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
+  if (s.greater && !s.signs.length) return say("Put a sign down first: tap Marks, then near the side between two cells.");
+  if (s.quad && !s.quads.length) return say("Put a quad down first: tap Marks, then near a corner where four cells meet, and type its digits.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
   if (s.little && !s.littles.length) return say("Put a Little Killer sum down first: tap Outside, then a spot round the edge.");
   if (s.skyscraper && !s.skyscrapers.length) return say("Put a Skyscraper count down first: tap Outside, then a spot beside a row or column.");
@@ -972,7 +1014,7 @@ function toggleCandidates() {
 
 // A rule button's key: killer, jigsaw, a key of LINES, EDGES or OUTSIDE, all
 // switches in a stage's state, or one of RULES by key, a bit of s.rules.
-const isSwitch = (key) => key === "killer" || key === "jigsaw" || key in LINES || key in EDGES || key in OUTSIDE;
+const isSwitch = (key) => key === "killer" || key === "jigsaw" || key in LINES || key in EDGES || key in QUADS || key in OUTSIDE;
 const ruleOn = (key) => (isSwitch(key) ? s[key] : Boolean(s.rules & RULES.find((r) => r.key === key).bit));
 
 function toggleRule(key) {
@@ -1284,17 +1326,21 @@ function onLineRemove() {
 
 /* ---- dots and XV marks ---- */
 
-// Kropki's dots and XV's marks, each kept in a list of its own as lines
-// are. Each key is also the name of the rule's switch.
+// Kropki's dots, XV's marks and Greater Than's signs, each kept in a list of
+// its own as lines are. Each key is also the name of the rule's switch.
 const EDGES = {
   kropki: { list: "dots", marks: DOT_MARKS, problem: dotProblem },
   xv: { list: "xvs", marks: XV_MARKS, problem: xvProblem },
+  greater: { list: "signs", marks: SIGN_MARKS, problem: signProblem },
 };
-const MARK_WORDS = { white: "white dot", black: "black dot", x: "X", v: "V" };
+const MARK_WORDS = { white: "white dot", black: "black dot", x: "X", v: "V", gt: "sign one way", lt: "sign the other way" };
+
+// Quad's circles on corners, likewise.
+const QUADS = { quad: { list: "quads", problem: quadProblem } };
 const capital = (text) => text[0].toUpperCase() + text.slice(1);
 
 // The marks a side steps through, with the rules on: white dot, black dot,
-// X, V, then none.
+// X, V, a sign one way and the other, then none.
 const markCycle = () => Object.entries(EDGES).flatMap(([kind, E]) => (s[kind] ? E.marks : []));
 
 function toggleMarkMode() {
@@ -1310,6 +1356,43 @@ function toggleMarkMode() {
 function endMarks() {
   markMode = false;
   anchor = null;
+  quadAt = null;
+}
+
+// The corner of cell c nearest a tap at `at`, by the top left of its four
+// cells, or -1 when the tap was not near a corner, the corner is on the
+// grid's edge, or the tap came from the keyboard.
+function cornerNear(c, at) {
+  if (!at) return -1;
+  const [x, y] = at;
+  if (Math.min(x, 1 - x) >= 0.28 || Math.min(y, 1 - y) >= 0.28) return -1;
+  const r = ROW[c] - (y < 0.5 ? 1 : 0);
+  const col = COL[c] - (x < 0.5 ? 1 : 0);
+  return r >= 0 && r < 8 && col >= 0 && col < 8 ? r * 9 + col : -1;
+}
+
+const cornerName = (cell) => `the corner of rows ${ROW[cell] + 1} and ${ROW[cell] + 2}, columns ${COL[cell] + 1} and ${COL[cell] + 2}`;
+const sortQuads = (list) => list.sort((p, q) => p.cell - q.cell);
+
+// A digit typed with a corner picked goes in its quad.
+function typeQuadDigit(d) {
+  const now = s.quads.find((q) => q.cell === quadAt);
+  const digits = [...(now?.digits ?? []), d];
+  const next = sortQuads(s.quads.filter((q) => q.cell !== quadAt).concat([{ cell: quadAt, digits }]));
+  const problem = quadProblem(next);
+  if (problem) return say(QUAD_PROBLEMS[problem.why]);
+  change(s.clues, { quads: next });
+  say(`Quad at ${cornerName(quadAt)}: ${digits.join(" ")}.${digits.length < 4 ? " Type another, or tap another corner." : ""}`);
+}
+
+// Erase with a corner picked takes its quad's last digit off, and the quad
+// with its last one.
+function eraseQuadDigit() {
+  const now = s.quads.find((q) => q.cell === quadAt);
+  if (!now) return;
+  const digits = now.digits.slice(0, -1);
+  change(s.clues, { quads: sortQuads(s.quads.filter((q) => q.cell !== quadAt).concat(digits.length ? [{ cell: quadAt, digits }] : [])) });
+  say(digits.length ? `Quad at ${cornerName(quadAt)}: ${digits.join(" ")}.` : "Quad taken off. Undo brings it back.");
 }
 
 // The cell across the side of cell c nearest a tap at `at`, or -1 when
@@ -1331,6 +1414,16 @@ function sideNear(c, at) {
 // middle, the cell is picked, and then a tap on a cell beside it steps on
 // the mark between the two.
 function pickMarkSide(c, at) {
+  // With Quad on, a tap near a corner picks it for the quad's digits.
+  const corner = s.quad ? cornerNear(c, at) : -1;
+  if (corner >= 0) {
+    anchor = null;
+    quadAt = quadAt === corner ? null : corner;
+    note = "";
+    return render();
+  }
+  quadAt = null;
+  if (!markCycle().length) return say("Tap near a corner where four cells meet to put a quad there.");
   let other = sideNear(c, at);
   if (other < 0 && anchor != null && beside(Math.min(anchor, c), Math.max(anchor, c))) other = anchor;
   if (other < 0) {
@@ -1357,13 +1450,20 @@ function stepMark(a, b) {
   }
   change(s.clues, parts);
   const between = `between ${where(a)} and ${where(b)}`;
+  if (next === "gt" || next === "lt") return say(`Sign ${between}: ${where(next === "gt" ? a : b)} is the larger. Tap there again for the next mark.`);
   say(next ? `${capital(MARK_WORDS[next])} ${between}. Tap there again for the next mark.` : `Mark ${between} taken off. Undo brings it back.`);
 }
 
 function markStatus() {
+  if (quadAt != null) {
+    const digits = s.quads.find((q) => q.cell === quadAt)?.digits;
+    return `Quad at ${cornerName(quadAt)}: ${digits ? digits.join(" ") : "no digits yet"}. Type the digits its four cells hold, up to four; Erase takes the last off.`;
+  }
   if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them.`;
   const kinds = markCycle().map((m) => MARK_WORDS[m]).join(", ");
-  return `Tap near the side between two cells to mark it, or tap a cell and then one beside it. Each tap steps on: ${kinds}, then none.`;
+  const sides = kinds ? `Tap near the side between two cells to mark it, or tap a cell and then one beside it. Each tap steps on: ${kinds}, then none.` : "";
+  const corners = s.quad ? "Tap near a corner where four cells meet for a quad, then type its digits." : "";
+  return [sides, corners].filter(Boolean).join(" ");
 }
 
 /* ---- clues outside the grid ---- */
@@ -1674,6 +1774,10 @@ function defaultStatus() {
       return "A Kropki puzzle: tap Marks, then near the side between two cells. A white dot joins consecutive digits, a black dot a digit and its double.";
     }
     if (s.xv && !s.xvs.length) return "An XV puzzle: tap Marks, then near the side between two cells. Digits either side of an X add up to 10, of a V to 5.";
+    if (s.greater && !s.signs.length) return "A Greater Than puzzle: tap Marks, then near the side between two cells. A sign opens towards the larger digit.";
+    if (s.quad && !s.quads.length) {
+      return "A Quad puzzle: tap Marks, then near a corner where four cells meet, and type the digits those four cells hold between them.";
+    }
     if (s.sandwich && !s.sandwiches.length) {
       return "A Sandwich puzzle: tap Outside, then a spot left of a row or above a column, and type the sum of the digits between its 1 and its 9.";
     }
@@ -1760,6 +1864,8 @@ function render() {
     modulars: shownLines("modular"),
     dots: s.kropki ? s.dots : null,
     xvs: s.xv ? s.xvs : null,
+    signs: s.greater ? s.signs : null,
+    quads: s.quad ? s.quads : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
     littles: s.little ? s.littles : null,
     skyscrapers: s.skyscraper ? s.skyscrapers : null,
@@ -1775,11 +1881,13 @@ function render() {
       ? picked
       : lineKind
         ? new Set(path)
-        : markMode && anchor != null
-          ? new Set([anchor])
-          : regionMode && brush != null
-            ? new Set([...Array(81).keys()].filter((c) => s.regions[c] === brush))
-            : null,
+        : markMode && quadAt != null
+          ? new Set(quadCells(quadAt))
+          : markMode && anchor != null
+            ? new Set([anchor])
+            : regionMode && brush != null
+              ? new Set([...Array(81).keys()].filter((c) => s.regions[c] === brush))
+              : null,
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
@@ -1830,14 +1938,14 @@ function render() {
     solverEntropics: enter && s.entropic,
     solverModulars: enter && s.modular,
     lineBar: Boolean(lineKind),
-    solverMarks: enter && (s.kropki || s.xv),
+    solverMarks: enter && (s.kropki || s.xv || s.greater || s.quad),
     markBar: markMode,
     solverOutside: enter && outsideOn(),
     outBar: outMode,
     solverRegions: enter && s.jigsaw,
     regionBar: regionMode,
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && !s.jigsaw && ![LINES, EDGES, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
+    solverCopy: !killer() && !s.jigsaw && ![LINES, EDGES, QUADS, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 

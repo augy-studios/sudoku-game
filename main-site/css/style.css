@@ -540,6 +540,24 @@ body {
 .dot { stroke-width: 1.5; }
 .dot-white { fill: #ffffff; stroke: #121815; }
 .dot-black { fill: #121815; stroke: var(--ink); }
+/* Greater Than signs and quads, solid as the dots are. */
+.sign-mark {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.quad-circle {
+  fill: var(--bg);
+  stroke: var(--ink);
+  stroke-width: 1.5;
+}
+.quad-digit {
+  fill: var(--ink);
+  font-family: inherit;
+  text-anchor: middle;
+  dominant-baseline: central;
+}
 .xv-mark {
   fill: var(--ink);
   font-family: inherit;

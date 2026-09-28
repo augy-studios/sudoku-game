@@ -35,6 +35,9 @@ import {
   LOCKOUT_GAP,
   dotProblem,
   xvProblem,
+  signProblem,
+  quadProblem,
+  quadCells,
   sandwichProblem,
   littleProblem,
   skyscraperProblem,
@@ -1114,6 +1117,81 @@ test("Kropki dots are checked, solved and carried in seeds", () => {
   assert.equal(clashes(broken, { dots: black }).size, 0);
 });
 
+test("Greater Than signs are checked, solved and carried in seeds", () => {
+  sideMarksAgree({ key: "signs", letter: "QGT", marks: ["gt", "lt"], problem: signProblem, x: 29 });
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  // A sign's first cell is the larger under "gt" and the smaller under
+  // "lt", whichever of the two is placed.
+  const gt = { signs: [{ cells: [0, 1], mark: "gt" }] };
+  const lt = { signs: [{ cells: [0, 9], mark: "lt" }] };
+  assert.equal(variantCandidates(at({ 0: 5 }), gt)[1], 0b11110);
+  assert.equal(variantCandidates(at({ 1: 5 }), gt)[0], 0b1111000000);
+  assert.equal(variantCandidates(at({ 0: 5 }), lt)[9], 0b1111000000);
+  assert.equal(variantCandidates(at({ 9: 5 }), lt)[0], 0b11110);
+  assert.equal(variantCandidates(at({}), gt)[0] & (1 << 1), 0, "the larger is never 1");
+  assert.deepEqual([...clashes(at({ 0: 3, 1: 7 }), gt)].sort((p, q) => p - q), [0, 1]);
+  assert.equal(clashes(at({ 0: 7, 1: 3 }), gt).size, 0);
+  assert.equal(seedVariantName("PVQGTQQDB-H-BBBB"), "Kropki, XV, Greater Than, Quad, Sandwich");
+});
+
+// Quads laid on a solved grid: `count` corners, none twice, each listing two
+// to four of its four cells' digits.
+function layQuads(solution, rand, count) {
+  const out = [];
+  while (out.length < count) {
+    const cell = Math.floor(rand() * 71);
+    if (cell % 9 > 7 || out.some((q) => q.cell === cell)) continue;
+    const digits = quadCells(cell)
+      .map((c) => solution[c])
+      .sort(() => rand() - 0.5)
+      .slice(0, 2 + Math.floor(rand() * 3))
+      .sort((a, b) => a - b);
+    out.push({ cell, digits });
+  }
+  return out.sort((a, b) => a.cell - b.cell);
+}
+
+test("quads are checked, solved and carried in seeds", () => {
+  assert.equal(quadProblem([{ cell: 0, digits: [1, 2] }, { cell: 70, digits: [9, 9, 1, 1] }]), null);
+  assert.equal(quadProblem([{ cell: 8, digits: [1] }]).why, "cell", "no corner right of the last column");
+  assert.equal(quadProblem([{ cell: 72, digits: [1] }]).why, "cell", "nor below the last row");
+  assert.equal(quadProblem([{ cell: 0, digits: [] }]).why, "digits");
+  assert.equal(quadProblem([{ cell: 0, digits: [1, 2, 3, 4, 5] }]).why, "digits");
+  assert.equal(quadProblem([{ cell: 0, digits: [0] }]).why, "digits");
+  assert.equal(quadProblem([{ cell: 0, digits: [3, 3, 3] }]).why, "thrice");
+  assert.equal(quadProblem([{ cell: 0, digits: [1] }, { cell: 0, digits: [2] }]).why, "twice");
+
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const quads = layQuads(solution, seeded(61), 12);
+  const variant = { quads };
+  assert.equal(clashes(solution, variant).size, 0);
+  const puzzle = thinOut(solution, variant, seeded(67));
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the quads");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^QQD-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.quads, quads);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  // Digits in any order come out sorted, so a seed is the same whatever
+  // order they were typed in.
+  const shuffled = quads.map((q) => ({ cell: q.cell, digits: q.digits.slice().reverse() }));
+  assert.equal(madeSeed(seed.level, puzzle, { quads: shuffled }).text, seed.text);
+
+  // The last empty cell takes the digit left; a digit twice goes in twice,
+  // across the corner from each other; too few cells left clashes.
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  assert.equal(variantCandidates(at({ 0: 1, 1: 2, 9: 3 }), { quads: [{ cell: 0, digits: [1, 2, 3, 4] }] })[10], 1 << 4);
+  assert.equal(variantCandidates(at({ 2: 9 }), { quads: [{ cell: 2, digits: [9, 9] }] })[12], 1 << 9);
+  assert.equal(variantSolutions(at({}), { quads: [{ cell: 0, digits: [9, 9] }] }, 1)?.length, 0, "one box never holds two 9s");
+  assert.deepEqual([...clashes(at({ 0: 5, 1: 6, 9: 7 }), { quads: [{ cell: 0, digits: [1, 2] }] })].sort((p, q) => p - q), [0, 1, 9]);
+  assert.equal(clashes(at({ 0: 5, 1: 6 }), { quads: [{ cell: 0, digits: [1, 2] }] }).size, 0);
+});
+
 test("XV marks are checked, solved and carried in seeds", () => {
   sideMarksAgree({ key: "xvs", letter: "V", marks: ["x", "v"], problem: xvProblem, x: 23 });
   const at = (d) => new Array(81).fill(0).map((_, c) => (c === 0 ? d : 0));
@@ -1667,6 +1745,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const sides = new Set();
     const dots = layEdges(solution, rand, ["white", "black"], 0.15, sides);
     const xvs = layEdges(solution, rand, ["x", "v"], 0.3, sides);
+    // Their own numbers, so the parts laid after come out as before.
+    const signs = layEdges(solution, seeded(53), ["gt", "lt"], 0.1, sides);
+    const quads = layQuads(solution, seeded(59), 3);
     // Clues outside the grid, never two in one spot: sandwiches left and
     // above, skyscrapers and X-sums right and below.
     const sandwiches = laySandwiches(solution, rand, 0.25);
@@ -1674,9 +1755,9 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const skyscrapers = layViews(solution, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
     const xsums = layViews(solution, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken);
     const littles = layLittles(solution, rand, 0.1, taken);
-    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, sandwiches, littles, skyscrapers, xsums, rules };
+    const variant = { cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, rules };
     const name = keys.join(", ");
-    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+    const lists = ["thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -1689,12 +1770,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KTASROZCFQENQMOPVBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KTASROZCFQENQMOPVQGTQQDBLYU" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) {
+    for (const list of ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "rules"]) {
       assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     }
     assert.deepEqual(puzzleFor(back).solution, solution);
@@ -1717,7 +1798,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
+  for (const list of ["cages", "regions", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

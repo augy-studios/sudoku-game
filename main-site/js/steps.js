@@ -6,7 +6,7 @@
 //
 // Each takes a variant, { cages, thermos, arrows, whispers, renbans,
 // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-// sandwiches, littles, skyscrapers, xsums, regions, rules }
+// signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -32,6 +32,9 @@ import {
   lockoutOutside,
   dotProblem,
   xvProblem,
+  signProblem,
+  quadProblem,
+  quadCells,
   sandwichProblem,
   littleProblem,
   skyscraperProblem,
@@ -47,7 +50,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "sandwiches", "littles", "skyscrapers", "xsums"];
+const DRAWN = ["cages", "thermos", "arrows", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -95,7 +98,9 @@ export function bitCount(mask) {
 // same as a filled end's; two digits on an entropic or a modular line of
 // one kind where their places differ, or of different kinds where their
 // places are the same, counted in threes;
-// the two digits either side of a dot or an XV mark they break, or of a
+// the two digits either side of a dot, an XV mark or a Greater Than sign
+// they break; a quad's digits, once the digits it still needs outnumber
+// its empty cells; the two digits either side of a
 // side Anti-consecutive, Strict Kropki or Strict XV bars them from; a
 // sandwich's 1, 9 and the digits between once those go past its sum, or
 // fill it to some other sum; a Little Killer diagonal's digits once they go
@@ -207,7 +212,14 @@ export function clashes(grid, variant = null) {
       }
     }
   }
-  for (const { cells, mark } of [...(variant?.dots ?? []), ...(variant?.xvs ?? [])]) {
+  for (const { cell, digits } of variant?.quads ?? []) {
+    const cells = quadCells(cell);
+    const empty = cells.filter((c) => !grid[c]).length;
+    // The digits it still needs, counting a digit listed twice twice.
+    const missing = [...new Set(digits)].reduce((n, d) => n + Math.max(0, digits.filter((e) => e === d).length - cells.filter((c) => grid[c] === d).length), 0);
+    if (missing > empty) cells.filter((c) => grid[c]).forEach((c) => out.add(c));
+  }
+  for (const { cells, mark } of [...(variant?.dots ?? []), ...(variant?.xvs ?? []), ...(variant?.signs ?? [])]) {
     const [a, b] = cells;
     if (grid[a] && grid[b] && !markKeeps(mark, grid[a], grid[b])) {
       out.add(a);
@@ -320,6 +332,7 @@ export const MIN_CLUES = 17;
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
 // "cages", "thermos", "arrows", "whispers", "renbans", "palindromes",
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "dots", "xvs",
+// "signs", "quads",
 // "sandwiches", "littles", "skyscrapers", "xsums" or "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
@@ -378,6 +391,13 @@ export function checkClues(clues, variant = null) {
   if (variant?.xvs?.length) {
     const problem = xvProblem(variant.xvs);
     if (problem) return { ok: false, why: "xvs", problem };
+  }
+  for (const [list, partProblem] of [
+    ["signs", signProblem],
+    ["quads", quadProblem],
+  ]) {
+    const problem = variant?.[list]?.length && partProblem(variant[list]);
+    if (problem) return { ok: false, why: list, problem };
   }
   if (variant?.sandwiches?.length) {
     const problem = sandwichProblem(variant.sandwiches);

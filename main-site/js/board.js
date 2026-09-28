@@ -14,8 +14,10 @@
 // entropic lines a gold one and modular lines an orange one.
 // Between lines are a thinner teal line from a ring round one end's digit to
 // a ring round the other's, and lockout lines a brown one between diamonds.
-// Kropki dots sit on the side two cells share, white or black, and XV marks
-// there as a letter. Sandwich and Little Killer clues sit
+// Kropki dots sit on the side two cells share, white or black, XV marks
+// there as a letter, and Greater Than signs as a chevron pointing at the
+// smaller digit. A quad is a circle on the corner where four cells meet,
+// with its digits in it. Sandwich and Little Killer clues sit
 // outside the grid, in a margin a cell wide the board then leaves round it,
 // a Little Killer's with a small arrow along its diagonal; so do Skyscraper
 // counts, in a small square, and X-Sums, in a small circle. A Jigsaw's
@@ -138,7 +140,7 @@ export class BoardView {
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, thermos, arrows, whispers, renbans,
   // palindromes, zippers, betweens, lockouts, entropics, modulars, dots, xvs,
-  // sandwiches, littles, skyscrapers, xsums and regions are a variant
+  // signs, quads, sandwiches, littles, skyscrapers, xsums and regions are a variant
   // puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, as pathKind says:
@@ -167,6 +169,8 @@ export class BoardView {
     this.modulars = view.modulars ?? [];
     this.dots = view.dots ?? [];
     this.xvs = view.xvs ?? [];
+    this.signs = view.signs ?? [];
+    this.quads = view.quads ?? [];
     this.sandwiches = view.sandwiches ?? [];
     this.littles = view.littles ?? [];
     this.skyscrapers = view.skyscrapers ?? [];
@@ -255,17 +259,18 @@ export class BoardView {
     const lockouts = this.lockouts ?? [];
     const entropics = this.entropics ?? [];
     const modulars = this.modulars ?? [];
-    const edges = [...(this.dots ?? []), ...(this.xvs ?? [])];
+    const edges = [...(this.dots ?? []), ...(this.xvs ?? []), ...(this.signs ?? [])];
+    const quads = this.quads ?? [];
     const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
-    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, outside, margin, regions, path, this.pathKind]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, outside, margin, regions, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, path, ...outside.slice(0, 5)].some((list) => list.length);
+    const drawn = [cages, thermos, arrows, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, edges, quads, path, ...outside.slice(0, 5)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -414,13 +419,24 @@ export class BoardView {
       thermos.map((t) => thermo(t, "thermo")).join("") +
       arrows.map((a) => arrow(a, "arrow")).join("") +
       pending;
-    // Dots and XV marks, over everything, at the middle of the side.
+    // Dots, XV marks and signs, over everything, at the middle of the side.
     const onSides = edges
       .map(({ cells, mark }) => {
         const [p, q] = cells.map(centre);
         const x = f((p.x + q.x) / 2);
         const y = f((p.y + q.y) / 2);
         if (mark === "white" || mark === "black") return `<circle class="dot dot-${mark}" cx="${x}" cy="${y}" r="${f(p.w * 0.12)}"/>`;
+        if (mark === "gt" || mark === "lt") {
+          // Opening towards the larger digit, its point at the smaller.
+          const [big, small] = mark === "gt" ? [p, q] : [q, p];
+          const len = Math.hypot(small.x - big.x, small.y - big.y) || 1;
+          const ux = (small.x - big.x) / len;
+          const uy = (small.y - big.y) / len;
+          const [mx, my] = [(p.x + q.x) / 2, (p.y + q.y) / 2];
+          const h = p.w * 0.1;
+          const d = `M${f(mx - ux * h - uy * h * 1.3)} ${f(my - uy * h + ux * h * 1.3)}L${f(mx + ux * h)} ${f(my + uy * h)}L${f(mx - ux * h + uy * h * 1.3)} ${f(my - uy * h - ux * h * 1.3)}`;
+          return `<path class="sign-mark" d="${d}" stroke-width="${f(p.w * 0.05)}"/>`;
+        }
         return `<text class="xv-mark" x="${x}" y="${y}" font-size="${f(p.w * 0.36)}">${mark.toUpperCase()}</text>`;
       })
       .join("");
@@ -483,6 +499,20 @@ export class BoardView {
       }
       walls = `<path class="region-line" d="${walls}"/>`;
     }
-    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}${outsides}`;
+    // Quads: a circle on the corner, its digits in it, two to a row.
+    const onCorners = quads
+      .map(({ cell, digits }) => {
+        const a = rect(cell);
+        const b = rect(cell + 10);
+        const [x, y, w] = [(a.x + a.w + b.x) / 2, (a.y + a.h + b.y) / 2, a.w];
+        const rows = digits.length > 2 ? [digits.slice(0, 2), digits.slice(2)] : [digits];
+        const size = w * 0.2;
+        const text = rows
+          .map((row, i) => `<text class="quad-digit" x="${f(x)}" y="${f(y + (i - (rows.length - 1) / 2) * size)}" font-size="${f(size)}">${row.join(" ")}</text>`)
+          .join("");
+        return `<circle class="quad-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.27)}"/>${text}`;
+      })
+      .join("");
+    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}${onSides}${onCorners}${outsides}`;
   }
 }

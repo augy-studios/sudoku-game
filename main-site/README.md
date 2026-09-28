@@ -37,7 +37,7 @@ the browser and the server always agree on a game.
 | `steps.js` | Pure too, for the solver: reading a pasted grid, clashes, candidates, and the next step a person can see. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer cages, thermometers, arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic and modular lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper and X-Sum clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -97,7 +97,7 @@ in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Thermo, Arrow, Whispers (German
-Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Sandwich, Little Killer, Skyscrapers,
+Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
@@ -116,14 +116,14 @@ every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, T, A, S, R, O, Z, C, F, QEN, QMO,
-P, V, B, L, Y, U, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that
+P, V, QGT, QQD, B, L, Y, U, J, D, N, G, W, QDG, QAC, QSK and QSX, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages, thermometers,
 arrows, whisper lines, renban lines, palindrome lines, zipper lines,
-between lines, lockout lines, entropic lines, modular lines, dots, XV marks, Sandwich sums, Little Killer
+between lines, lockout lines, entropic lines, modular lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums or regions (a line as its length, its first
 cell and each step's direction; dots, marks, Skyscraper counts and X-Sums
 as a list, or every side's or view's value, whichever is shorter; Sandwich
@@ -238,6 +238,23 @@ none. The solver keeps each cell of a marked pair to digits some digit the
 other cell can be makes a pair with, and a pair that breaks its mark shows
 as a clash. Dots are drawn white and black in either theme, and X and V as
 letters, on the side, on the board and in a saved image.
+
+**Greater Than and Quad.** A Greater Than sign sits on the side two cells
+share, like a dot, and opens towards the larger digit. It is a mark with a
+direction: `gt` when the first cell (left or above) is the larger, `lt`
+when it is the smaller, and the Marks tool steps a side through the sign
+one way, then the other, after the dots and X and V. It is drawn as a
+chevron pointing at the smaller digit. A quad is a circle on the corner
+where four cells meet, listing one to four digits those four cells hold
+between them, a digit listed twice held twice (four cells round a corner
+hold a digit twice at most, across the corner from each other). With Quad
+on, a tap in the Marks tool near a cell's corner picks that corner, digits
+typed go in its circle, and Erase takes the last off. The solver puts a
+digit in every cell left that could take it when there are no more such
+cells than it still needs, and once the digits still needed fill the empty
+cells, keeps those cells to them; a quad shows as a clash once the digits
+it still needs outnumber its empty cells. A quad is drawn as a circle on
+the corner, its digits two to a row, on the board and in a saved image.
 
 **Sandwich and Little Killer.** Their clues sit outside the grid, so with
 either rule on, or a puzzle that has them, the board leaves a margin a cell

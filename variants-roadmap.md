@@ -1,13 +1,13 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 27 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 25 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
-**Built so far (27):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
+**Built so far (29):** Killer, Jigsaw · Thermo, Arrow, German Whispers,
 Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular · Kropki,
-XV · Sandwich,
+XV, Greater Than, Quad · Sandwich,
 Little Killer, Skyscrapers, X-Sums · Diagonal, Anti-knight, Anti-king,
 Windoku, Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV.
 
@@ -57,8 +57,6 @@ easily misread; best left.
 
 | Variant | Rule | Builds on |
 |---|---|---|
-| Greater Than | A sign between two cells that share a side: the digit it opens to is the larger. | Marks tool, a mark with a direction |
-| Quad | A circle where four cells meet, listing digits that must appear in those four. | Marks tool, on a corner |
 | Counting Circles | A digit in a circle counts how many circles hold that digit. | New: marks in cells |
 
 ## Clues outside the grid
@@ -101,7 +99,7 @@ easily misread; best left.
 1. ~~Zipper, Between and Lockout~~: built. Lockout's gap is fixed at 4.
 2. ~~Disjoint Groups, Anti-consecutive, Strict Kropki and Strict XV~~: built, the rules about sides as barred sides (`barredSides`).
 3. ~~Entropic and Modular lines~~: built, as QEN and QMO, three cells at least.
-4. Greater Than and Quad: marks.
+4. ~~Greater Than and Quad~~: built, as QGT and QQD, on the Marks tool (a quad on a tap near a corner).
 5. Hidden Skyscraper and Numbered Room: both reuse the views Skyscrapers and X-Sums use.
 
 

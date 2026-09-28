@@ -13,7 +13,8 @@
 // T for thermometers, A for arrows, S for German Whispers lines, R for
 // renban lines, O for palindrome lines, Z for zipper lines, C for between
 // lines, F for lockout lines, QEN for entropic lines, QMO for modular
-// lines, P for Kropki dots, V for XV marks, B for
+// lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
+// for quads, B for
 // Sandwich clues, L for Little Killer clues, Y for Skyscraper clues, U for X-Sum clues and J
 // for a Jigsaw's regions, which the seed then carries too, and D, N, G, W,
 // QDG, QAC, QSK and QSX for the switch rules (variant.js). Once the single
@@ -38,6 +39,8 @@ import {
   modularProblem,
   dotProblem,
   xvProblem,
+  signProblem,
+  quadProblem,
   sandwichProblem,
   littleProblem,
   skyscraperProblem,
@@ -49,6 +52,7 @@ import {
   SANDWICH_MAX,
   DOT_MARKS,
   XV_MARKS,
+  SIGN_MARKS,
   RULES,
 } from "./variant.js";
 
@@ -172,7 +176,9 @@ function decodeGrid(body) {
    same way, from the circle, and German Whispers, renban, palindrome,
    zipper, between, lockout, entropic and modular lines the same way again. Then Kropki dots, and then XV marks, as whichever is
    shorter: how many, and for each its side and which of the two marks it
-   is; or for every side, its mark or none. Then Sandwich clues, for each
+   is; or for every side, its mark or none; and Greater Than signs the same
+   way. Then quads: how many, and for each its corner, how many digits and
+   each digit. Then Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
    many, and for each its first cell, which way it runs and its sum. Then
    Skyscraper clues, and then X-Sum clues, as whichever is shorter: how
@@ -316,6 +322,32 @@ function readEdges(take, marks) {
 // Dots or marks in the order of their sides, each a copy.
 const sortEdges = (edges) =>
   edges.map((e) => ({ cells: e.cells.slice(), mark: e.mark })).sort((p, q) => p.cells[0] * 81 + p.cells[1] - (q.cells[0] * 81 + q.cells[1]));
+
+// The 64 corners a quad can sit on, by the top left of its four cells.
+const CORNERS = [...Array(71).keys()].filter((c) => COL[c] < 8);
+
+// Quads: how many, then each one's corner, how many digits and each digit.
+function writeQuads(digits, quads) {
+  digits.push([quads.length, CORNERS.length + 1]);
+  for (const { cell, digits: ds } of quads) {
+    digits.push([CORNERS.indexOf(cell), CORNERS.length], [ds.length - 1, 4]);
+    for (const d of ds) digits.push([d - 1, 9]);
+  }
+}
+
+function readQuads(take) {
+  const out = [];
+  const count = take(CORNERS.length + 1);
+  for (let i = 0; i < count; i++) {
+    const cell = CORNERS[take(CORNERS.length)];
+    const n = take(4) + 1;
+    out.push({ cell, digits: Array.from({ length: n }, () => take(9) + 1) });
+  }
+  return out;
+}
+
+// By corner, each one's digits in order.
+const sortQuads = (quads) => quads.map((q) => ({ cell: q.cell, digits: q.digits.slice().sort((a, b) => a - b) })).sort((a, b) => a.cell - b.cell);
 
 // Sandwich clues: for each of the 18 lines, 0 for none or its sum and 1.
 function writeSandwiches(digits, sandwiches) {
@@ -502,6 +534,8 @@ const PARTS = [
   lines("modulars", "QMO", "Modular", modularProblem),
   edges("dots", "P", "Kropki", dotProblem, DOT_MARKS),
   edges("xvs", "V", "XV", xvProblem, XV_MARKS),
+  edges("signs", "QGT", "Greater Than", signProblem, SIGN_MARKS),
+  { list: "quads", letter: "QQD", name: "Quad", problem: quadProblem, write: writeQuads, read: readQuads, sort: sortQuads },
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
   { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
   views("skyscrapers", "Y", "Skyscrapers", skyscraperProblem, "count", 9),
@@ -537,7 +571,7 @@ function prefixFor(parts, rules) {
 
 // The seed of a made puzzle. variant: { cages, thermos, arrows, whispers,
 // renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
-// dots, xvs, sandwiches, littles, skyscrapers, xsums, regions, rules } for a variant puzzle (variant.js), or nothing for a classic one.
+// dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, regions, rules } for a variant puzzle (variant.js), or nothing for a classic one.
 // `level` is
 // the maker's rating; it names the level on screen and nothing else. The
 // puzzle should have one answer: parseSeed refuses one that does not.

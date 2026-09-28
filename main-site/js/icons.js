@@ -62,6 +62,10 @@ export const icons = {
   renban: svg(`<path d="M5 12h14" stroke-width="3.2"/><circle cx="6" cy="18.5" r="1" fill="currentColor"/><circle cx="12" cy="18.5" r="1" fill="currentColor"/><circle cx="18" cy="18.5" r="1" fill="currentColor"/>`),
   // A line that is its own mirror image, across a dashed middle.
   palindrome: svg(`<path d="M4 17 8 8l4 7 4-7 4 9" stroke-width="2.6"/><path d="M12 3v18" stroke-width="1.2" stroke-dasharray="2 2"/>`),
+  // A greater-than sign between two cells.
+  greater: svg(`<path d="M12 3v18" stroke-width="1.2"/><path d="M9 8l6 4-6 4" stroke-width="2.2"/>`),
+  // A circle on the corner where four cells meet.
+  quad: svg(`<path d="M12 3v18M3 12h18" stroke-width="1.2"/><circle cx="12" cy="12" r="5.5"/>`),
   // A thick line with teeth either side, as a zip has.
   zipper: svg(`<path d="M4 12h16" stroke-width="2.6"/><path d="M7 12V7.5M10 12v4.5M13 12V7.5M16 12v4.5" stroke-width="1.4"/>`),
   // A line between two circles.
