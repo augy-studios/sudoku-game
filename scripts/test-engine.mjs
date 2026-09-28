@@ -12,7 +12,7 @@ import { newSeed, parseSeed, puzzleFor, madeSeed } from "../main-site/js/seed.js
 import { countSolutions, PEERS } from "../main-site/js/sudoku.js";
 import { play, packLog, unpackLog, packReplay, unpackReplay, fromWire, toWire, logText } from "../main-site/js/record.js";
 import { parseGrid, puzzleText, clashes, candidates, nextStep, bitCount, checkClues, rateLevel } from "../main-site/js/steps.js";
-import { variantSolutions, variantSolve, variantCandidates, cageProblem, thermoProblem, touching, layout, RULES } from "../main-site/js/variant.js";
+import { variantSolutions, variantSolve, variantCandidates, cageProblem, thermoProblem, arrowProblem, touching, layout, RULES } from "../main-site/js/variant.js";
 
 const killerSolutions = (grid, cages, limit) => variantSolutions(grid, { cages }, limit);
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
@@ -457,6 +457,99 @@ test("thermometers are checked, solved and carried in seeds", () => {
   const { cages } = killerPuzzle();
   const both = madeSeed("H", new Array(81).fill(0), { cages, thermos: [[0, 1]], rules: 1 });
   assert.match(both.text, /^KTD-H-/);
+});
+
+// An arrow puzzle: arrows laid through a solved grid, each walked from a
+// circle until its digits add up to the circle's, then clues taken out, in a
+// seeded order, while the answer stays the only one.
+function arrowPuzzle() {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  let x = 7;
+  const rand = () => ((x = (Math.imul(x, 1103515245) + 12345) >>> 0) / 2 ** 32);
+  const arrows = [];
+  const used = new Set();
+  while (arrows.length < 8) {
+    const circle = Math.floor(rand() * 81);
+    if (used.has(circle) || solution[circle] < 3) continue;
+    const arrow = [circle];
+    let total = 0;
+    while (total < solution[circle]) {
+      const last = arrow.at(-1);
+      const next = [...Array(81).keys()].filter(
+        (o) => touching(last, o) && !arrow.includes(o) && !used.has(o) && total + solution[o] <= solution[circle]
+      );
+      if (!next.length) break;
+      const o = next[Math.floor(rand() * next.length)];
+      arrow.push(o);
+      total += solution[o];
+    }
+    if (total !== solution[circle] || arrow.length < 3) continue;
+    arrow.forEach((c) => used.add(c));
+    arrows.push(arrow);
+  }
+  const puzzle = solution.slice();
+  for (const c of [...Array(81).keys()].sort(() => rand() - 0.5)) {
+    const d = puzzle[c];
+    puzzle[c] = 0;
+    if (variantSolutions(puzzle, { arrows }, 2)?.length !== 1) puzzle[c] = d;
+  }
+  return { puzzle, solution, arrows };
+}
+
+test("arrows are checked, solved and carried in seeds", () => {
+  assert.equal(arrowProblem([[0, 1, 2]]), null);
+  assert.equal(arrowProblem([[0, 10]]), null, "corner to corner steps are fine");
+  assert.equal(arrowProblem([[0]]).why, "length");
+  assert.equal(arrowProblem([[0, 2]]).why, "apart");
+
+  const { puzzle, solution, arrows } = arrowPuzzle();
+  for (const [circle, ...cells] of arrows) assert.equal(cells.reduce((t, c) => t + solution[c], 0), solution[circle]);
+  assert.equal(checkClues(puzzle, { arrows }).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the arrows");
+
+  // Candidates keep the answer, and a circle is at least as big as its
+  // arrow is long: a circle with two cells after it can never be a 1.
+  const cand = variantCandidates(puzzle, { arrows });
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]));
+  for (const a of arrows) if (!puzzle[a[0]]) assert.equal(cand[a[0]] & ((1 << (a.length - 1)) - 1), 0);
+
+  const grid = puzzle.slice();
+  for (let step = nextStep(grid, null, { arrows }); step; step = nextStep(grid, null, { arrows })) {
+    assert.equal(step.d, solution[step.c]);
+    grid[step.c] = step.d;
+  }
+
+  // Past the circle clashes, as does a full arrow that falls short of it.
+  const [circle, a1, a2] = arrows[0];
+  const over = new Array(81).fill(0);
+  over[circle] = 3;
+  over[a1] = 4;
+  assert.deepEqual([...clashes(over, { arrows })].sort((p, q) => p - q), [circle, a1].sort((p, q) => p - q));
+  const short = new Array(81).fill(0);
+  const two = [[circle, a1, a2]];
+  short[circle] = 9;
+  short[a1] = 1;
+  short[a2] = 2;
+  assert.equal(clashes(short, { arrows: two }).size, 3);
+  short[a2] = 0;
+  assert.equal(clashes(short, { arrows: two }).size, 0, "not yet full");
+  assert.equal(clashes(new Array(81).fill(0).map((_, c) => (c === a1 ? 9 : c === a2 ? 2 : 0)), { arrows: two }).size, 2, "past 9 with no circle");
+
+  const seed = madeSeed(rateLevel(puzzle, { arrows }), puzzle, { arrows });
+  assert.match(seed.text, /^A-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.arrows, arrows);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  assert.equal(parseSeed(madeSeed("M", puzzle, { arrows: arrows.slice(1, 2) }).text), null, "one arrow is not enough");
+
+  // The thermo puzzle's answer is the same grid, so its thermometers fit
+  // too; together they read back apart. The letters go K, T, A, the rules.
+  const { thermos } = thermoPuzzle();
+  const mixed = parseSeed(madeSeed("H", puzzle, { thermos, arrows }).text);
+  assert.match(mixed.text, /^TA-H-/);
+  assert.deepEqual([mixed.thermos, mixed.arrows], [thermos, arrows]);
+  assert.match(madeSeed("H", new Array(81).fill(0), { cages: killerPuzzle().cages, thermos, arrows, rules: 1 }).text, /^KTAD-H-/);
 });
 
 test("the solver finds clashes and candidates", () => {

@@ -431,6 +431,18 @@ body {
   stroke: var(--warn);
   opacity: 0.45;
 }
+/* Arrows: thin, so darker than a thermometer to read as well. */
+.arrow {
+  fill: none;
+  stroke: var(--muted-strong);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.6;
+}
+.arrow-pending {
+  stroke: var(--warn);
+  opacity: 0.8;
+}
 /* Diagonal and Windoku. */
 .diagonal-line {
   fill: none;
@@ -593,11 +605,9 @@ body {
 }
 .cage-bar .field-label { width: 100%; text-align: center; }
 .cage-sum-field { flex: 0 0 90px; text-align: center; }
-.solver-tools {
-  grid-template-columns: none;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-}
+/* However many tools a stage shows, in one row where they fit: with Cages,
+   Thermos and Arrows all on, a phone takes two. */
+.solver-tools { grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); }
 /* A made puzzle's seed: long, so it breaks anywhere, and selectable. */
 .made-seed {
   max-width: 460px;

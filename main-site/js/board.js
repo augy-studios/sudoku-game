@@ -7,7 +7,8 @@
 // each cage's edge, and its sum in the corner of its first cell. A Diagonal
 // puzzle has a faint line along each long diagonal, and a Windoku puzzle
 // tints its four windows. Thermometers are a thick grey line from a round
-// bulb, faint enough to read digits through. Anti-knight and anti-king have
+// bulb, faint enough to read digits through, and arrows a thin one from a
+// ring round the circle's digit to a head. Anti-knight and anti-king have
 // nothing to draw.
 
 import { ROW, COL, BOX } from "./sudoku.js";
@@ -87,9 +88,10 @@ export class BoardView {
   // highlightSame, highlightPeers, mark: { c, kind } | null, wrong?, cages?,
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
-  // digits by the solution. cages and thermos are a variant puzzle's, and
-  // rules its switches (variant.js); picked, a Set of cells, are those
-  // being gathered into a new cage, and path a thermometer being drawn.
+  // digits by the solution. cages, thermos and arrows are a variant
+  // puzzle's, and rules its switches (variant.js); picked, a Set of cells,
+  // are those being gathered into a new cage, and path a thermometer or an
+  // arrow being drawn, as pathKind says: "thermo" or "arrow".
   set(view) {
     this.view = view;
     const { puzzle, solution, values, notes, selected, interactive, mark } = view;
@@ -100,7 +102,9 @@ export class BoardView {
     this.cages = view.cages ?? [];
     this.rules = view.rules ?? 0;
     this.thermos = view.thermos ?? [];
+    this.arrows = view.arrows ?? [];
     this.path = view.path ?? [];
+    this.pathKind = view.pathKind ?? "thermo";
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
@@ -161,18 +165,19 @@ export class BoardView {
     }
   }
 
-  // The dashed outlines and sums, the diagonals and the thermometers. Only
-  // redrawn when they change, or when `resized`.
+  // The dashed outlines and sums, the diagonals, the thermometers and the
+  // arrows. Only redrawn when they change, or when `resized`.
   drawCages(resized = false) {
     const cages = this.cages ?? [];
     const thermos = this.thermos ?? [];
+    const arrows = this.arrows ?? [];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
-    const key = JSON.stringify([cages, diagonal, thermos, path]);
+    const key = JSON.stringify([cages, diagonal, thermos, arrows, path, this.pathKind]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    if (!cages.length && !diagonal && !thermos.length && !path.length) {
+    if (!cages.length && !diagonal && !thermos.length && !arrows.length && !path.length) {
       layer.innerHTML = "";
       return;
     }
@@ -237,7 +242,35 @@ export class BoardView {
         `<circle cx="${f(points[0].x)}" cy="${f(points[0].y)}" r="${f(w * 0.36)}"/></g>`
       );
     };
-    const thermoMarks = thermos.map((t) => thermo(t, "thermo")).join("") + thermo(path, "thermo thermo-pending");
-    layer.innerHTML = `${thermoMarks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}`;
+    // Arrows: a ring round the circle's digit, a line from its edge through
+    // the other cells' middles, and a head at the last.
+    const arrow = (a, cls) => {
+      if (!a.length) return "";
+      const points = a.map(centre);
+      const w = points[0].w;
+      const ring = w * 0.4;
+      let line = "";
+      if (points.length > 1) {
+        const [p, q] = points;
+        // A hidden board's cells measure nothing, so every length is 0.
+        const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+        line = `M${f(p.x + ((q.x - p.x) / len) * ring)} ${f(p.y + ((q.y - p.y) / len) * ring)}`;
+        line += points.slice(1).map((o) => `L${f(o.x)} ${f(o.y)}`).join("");
+        const end = points.at(-1);
+        const from = points.at(-2);
+        const n = Math.hypot(end.x - from.x, end.y - from.y) || 1;
+        const ux = (end.x - from.x) / n;
+        const uy = (end.y - from.y) / n;
+        const h = w * 0.2;
+        line += `M${f(end.x - ux * h - uy * h)} ${f(end.y - uy * h + ux * h)}L${f(end.x)} ${f(end.y)}L${f(end.x - ux * h + uy * h)} ${f(end.y - uy * h - ux * h)}`;
+      }
+      return (
+        `<g class="${cls}" stroke-width="${f(w * 0.06)}"><circle cx="${f(points[0].x)}" cy="${f(points[0].y)}" r="${f(ring)}"/>` +
+        `<path d="${line}"/></g>`
+      );
+    };
+    const pending = this.pathKind === "arrow" ? arrow(path, "arrow arrow-pending") : thermo(path, "thermo thermo-pending");
+    const marks = thermos.map((t) => thermo(t, "thermo")).join("") + arrows.map((a) => arrow(a, "arrow")).join("") + pending;
+    layer.innerHTML = `${marks}${diagonals}<path class="cage-line" d="${outline}"/>${sums}`;
   }
 }

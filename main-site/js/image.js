@@ -1,7 +1,7 @@
 // A puzzle drawn as a PNG, to save, print or send: the clues on a white
 // board whatever the theme, in the app's font, with the site's name under it,
-// and a variant puzzle's cages, thermometers, diagonals and windows as on
-// screen.
+// and a variant puzzle's cages, thermometers, arrows, diagonals and windows
+// as on screen.
 
 import { variantName } from "./variant.js";
 
@@ -21,14 +21,16 @@ const CAPTION = "#5b6b60";
 // Warm, so windows never pass for the boxes' green tint.
 const WINDOW_TINT = "rgba(232, 168, 56, 0.28)";
 const THERMO_GREY = "#cdd3ce";
+const ARROW_GREY = "#8f9a92";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, thermos, rules } (variant.js), or nothing for a
+// variant: { cages, thermos, arrows, rules } (variant.js), or nothing for a
 // classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
   const thermos = variant?.thermos ?? [];
+  const arrows = variant?.arrows ?? [];
   // The font may not have been needed yet on this page; the canvas only uses
   // it once it has loaded.
   try {
@@ -82,9 +84,9 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.lineTo(PAD, PAD + BOARD);
     ctx.stroke();
   }
+  const at = (c) => [PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.5) * CELL];
   // Under everything drawn after: grey, solid, with a round bulb.
   for (const t of thermos) {
-    const at = (c) => [PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.5) * CELL];
     ctx.strokeStyle = THERMO_GREY;
     ctx.fillStyle = THERMO_GREY;
     ctx.lineWidth = CELL * 0.3;
@@ -96,6 +98,31 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.beginPath();
     ctx.arc(...at(t[0]), CELL * 0.36, 0, Math.PI * 2);
     ctx.fill();
+  }
+  // As on the board: a ring round the circle, a line from its edge, a head.
+  for (const a of arrows) {
+    const ring = CELL * 0.4;
+    const h = CELL * 0.2;
+    const [x0, y0] = at(a[0]);
+    const [x1, y1] = at(a[1]);
+    const len = Math.hypot(x1 - x0, y1 - y0);
+    const [ex, ey] = at(a.at(-1));
+    const [fx, fy] = at(a.at(-2));
+    const n = Math.hypot(ex - fx, ey - fy);
+    const ux = (ex - fx) / n;
+    const uy = (ey - fy) / n;
+    ctx.strokeStyle = ARROW_GREY;
+    ctx.lineWidth = CELL * 0.05;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.arc(x0, y0, ring, 0, Math.PI * 2);
+    ctx.moveTo(x0 + ((x1 - x0) / len) * ring, y0 + ((y1 - y0) / len) * ring);
+    a.slice(1).forEach((c) => ctx.lineTo(...at(c)));
+    ctx.moveTo(ex - ux * h - uy * h, ey - uy * h + ux * h);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(ex - ux * h + uy * h, ey - uy * h - ux * h);
+    ctx.stroke();
   }
   if (cages.length) drawCages(ctx, cages);
 
@@ -110,7 +137,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ cages, thermos, rules });
+  const name = variantName({ cages, thermos, arrows, rules });
   ctx.fillText(`${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`, WIDTH / 2, PAD * 2 + BOARD + 20);
   return canvas;
 }

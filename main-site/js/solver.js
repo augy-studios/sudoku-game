@@ -14,7 +14,8 @@
 // Either can be a variant puzzle, with the rule buttons over the board:
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
 // cage); Thermo adds thermometers, drawn with the Thermos tool (tap the
-// bulb, then each next cell, Add thermo); and Diagonal, Anti-knight,
+// bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
+// way with the Arrows tool, from the circle; and Diagonal, Anti-knight,
 // Anti-king and Windoku add their rules (variant.js). Every check, hint and
 // candidate then follows them too.
 //
@@ -24,7 +25,7 @@
 import { ROW, COL } from "./sudoku.js";
 import { clashes, candidates, nextStep, bitCount, parseGrid, puzzleText, checkClues, rateLevel, MIN_CLUES } from "./steps.js";
 import { madeSeed, parseSeed } from "./seed.js";
-import { cageProblem, cageOf, thermoProblem, touching, RULES, ALL_RULES, variantName } from "./variant.js";
+import { cageProblem, cageOf, thermoProblem, arrowProblem, touching, RULES, ALL_RULES, variantName } from "./variant.js";
 import { LEVELS } from "./levels.js";
 import { BoardView } from "./board.js";
 import { getSettings, onSettingsChange } from "./settings.js";
@@ -44,9 +45,23 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer and rules are the variant's switches; cages are kept while Killer
-// is off, for when it comes back on.
-const fresh = () => ({ open: false, stage: "enter", clues: empty(), values: empty(), candidates: false, killer: false, thermo: false, rules: 0, cages: [], thermos: [] });
+// killer, thermo, arrow and rules are the variant's switches; cages are
+// kept while Killer is off, for when it comes back on, and thermometers and
+// arrows likewise.
+const fresh = () => ({
+  open: false,
+  stage: "enter",
+  clues: empty(),
+  values: empty(),
+  candidates: false,
+  killer: false,
+  thermo: false,
+  arrow: false,
+  rules: 0,
+  cages: [],
+  thermos: [],
+  arrows: [],
+});
 const states = { solver: fresh(), create: fresh() };
 let mode = "solver";
 let s = states.solver;
@@ -59,11 +74,12 @@ let history = []; // earlier states of this stage, for undo
 let cageMode = false;
 let picked = new Set();
 let editing = -1;
-// The Thermos tool, likewise: on, the path so far from the bulb, and the
-// thermometer being changed.
-let thermoMode = false;
+// The Thermos or Arrows tool, likewise: which is on, "thermo" or "arrow"
+// (LINES below), the path so far from the bulb or circle, and the line
+// being changed.
+let lineKind = null;
 let path = [];
-let editingThermo = -1;
+let editingLine = -1;
 let selected = null;
 let padDigit = 0;
 let checked = false; // Check was pressed, and nothing has changed since
@@ -80,8 +96,10 @@ const killer = () => s.killer;
 // The cages the rules use: none with Killer off, even if some are kept.
 const cages = () => (killer() && s.cages.length ? s.cages : null);
 const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
+const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
+const drawn = () => Boolean(cages() || thermos() || arrows());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
-const variant = () => (cages() || thermos() || s.rules ? { cages: cages() ?? [], thermos: thermos() ?? [], rules: s.rules } : null);
+const variant = () => (drawn() || s.rules ? { cages: cages() ?? [], thermos: thermos() ?? [], arrows: arrows() ?? [], rules: s.rules } : null);
 
 /* ---- keeping it ---- */
 
@@ -119,6 +137,9 @@ function load(which) {
   st.thermo = saved.thermo === true;
   const lines = Array.isArray(saved.thermos) ? saved.thermos : [];
   st.thermos = !thermoProblem(lines) ? lines : [];
+  st.arrow = saved.arrow === true;
+  const shafts = Array.isArray(saved.arrows) ? saved.arrows : [];
+  st.arrows = !arrowProblem(shafts) ? shafts : [];
   const kept = Array.isArray(saved.cages) ? saved.cages : [];
   st.cages = kept.every((k) => k && Array.isArray(k.cells)) && !cageProblem(kept) ? kept : [];
   if (which === "solver" && saved.stage === "solve" && ok(saved.values) && st.clues.every((d, c) => !d || saved.values[c] === d)) {
@@ -149,7 +170,7 @@ function hintText(step, reveal) {
   }
   if (kind === "single") {
     if (!variant()) return `${d} goes in ${where(c)}: every other digit is already in its row, column or box.`;
-    const parts = ["row", "column", "box", ...(cages() ? ["cage"] : []), ...(thermos() ? ["thermometers"] : [])];
+    const parts = ["row", "column", "box", ...(cages() ? ["cage"] : []), ...(thermos() ? ["thermometers"] : []), ...(arrows() ? ["arrows"] : [])];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
   }
@@ -166,6 +187,7 @@ function problemText(check) {
   if (why === "clash") return `${clashText()} Fix them first.`;
   if (why === "cages") return CAGE_PROBLEMS[check.problem.why];
   if (why === "thermos") return THERMO_PROBLEMS[check.problem.why];
+  if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
     return `A sudoku needs at least ${MIN_CLUES} clues to have only one answer, and this has ${check.n}. ${creating() ? "Add some more." : "Check for missing ones."}`;
@@ -188,6 +210,7 @@ function clashText() {
   if (s.rules) extra.push(`against the ${ruleNames()} rules`);
   if (cages()) extra.push("twice in a cage, or past a cage's sum");
   if (thermos()) extra.push("not rising along a thermometer");
+  if (arrows()) extra.push("not adding up to an arrow's circle");
   return `The red digits clash: the same digit twice in a row, column or box${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -197,6 +220,14 @@ const THERMO_PROBLEMS = {
   cell: "A thermometer has a cell off the board.",
   loop: "A thermometer cannot cross itself.",
   apart: "Each cell of a thermometer must touch the one before it.",
+};
+
+const ARROW_PROBLEMS = {
+  count: "There is room for forty arrows.",
+  length: "An arrow needs two to nine cells, its circle included.",
+  cell: "An arrow has a cell off the board.",
+  loop: "An arrow cannot cross itself.",
+  apart: "Each cell of an arrow must touch the one before it.",
 };
 
 const CAGE_PROBLEMS = {
@@ -225,15 +256,17 @@ function wrongCells() {
   return out;
 }
 
-const snapshot = () => ({ clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice(), thermos: s.thermos.slice() });
+const snapshot = () => ({ clues: s.clues.slice(), values: s.values.slice(), cages: s.cages.slice(), thermos: s.thermos.slice(), arrows: s.arrows.slice() });
 
-// Puts a new grid in this stage, or new cages, undoably.
-function change(next, nextCages = s.cages, nextThermos = s.thermos) {
+// Puts a new grid in this stage, and any of new { cages, thermos, arrows },
+// undoably.
+function change(next, { cages = s.cages, thermos = s.thermos, arrows = s.arrows } = {}) {
   history.push(snapshot());
   if (s.stage === "solve") s.values = next;
   else s.clues = next;
-  s.cages = nextCages;
-  s.thermos = nextThermos;
+  s.cages = cages;
+  s.thermos = thermos;
+  s.arrows = arrows;
   checked = false;
   pending = null;
   mark = null;
@@ -262,7 +295,7 @@ function resetStage() {
 function selectCell(c, { focus = false } = {}) {
   if (!canEdit()) return;
   if (cageMode) return pickCell(c);
-  if (thermoMode) return pickThermoCell(c);
+  if (lineKind) return pickLineCell(c);
   selected = c;
   padDigit = 0;
   render();
@@ -293,7 +326,10 @@ function advance() {
 function inputDigit(d) {
   if (!canEdit()) return;
   if (cageMode) return typeSum(String(d));
-  if (thermoMode) return say("Digits wait until the thermometer is done: tap its cells, bulb first, then Add thermo.");
+  if (lineKind) {
+    const L = LINES[lineKind];
+    return say(`Digits wait until the ${L.name} is done: tap its cells, ${L.start} first, then ${addLabel()}.`);
+  }
   if (selected == null || (s.stage === "solve" && s.clues[selected])) {
     // Nothing to put it in: light the digit up instead.
     padDigit = padDigit === d ? 0 : d;
@@ -329,7 +365,7 @@ function blank() {
 
 function erase() {
   if (cageMode) return typeSum("back");
-  if (thermoMode) return stepBack();
+  if (lineKind) return stepBack();
   if (!canEdit() || selected == null || (s.stage === "solve" && s.clues[selected]) || !grid()[selected]) return;
   const next = grid().slice();
   next[selected] = 0;
@@ -344,9 +380,10 @@ function undo() {
   s.values = back.values;
   s.cages = back.cages;
   s.thermos = back.thermos;
+  s.arrows = back.arrows;
   clearPicked();
   path = [];
-  editingThermo = -1;
+  editingLine = -1;
   checked = false;
   pending = null;
   mark = null;
@@ -356,9 +393,10 @@ function undo() {
 }
 
 function clearAll() {
-  if (s.stage !== "enter" || (!s.clues.some(Boolean) && !cages() && !thermos())) return;
+  if (s.stage !== "enter" || (!s.clues.some(Boolean) && !drawn())) return;
   endCage();
-  change(empty(), killer() ? [] : s.cages, s.thermo ? [] : s.thermos);
+  // Only what the rules on use: the rest is kept for when they come back.
+  change(empty(), { cages: killer() ? [] : s.cages, thermos: s.thermo ? [] : s.thermos, arrows: s.arrow ? [] : s.arrows });
   selected = null;
   say("Cleared. Undo brings it back.");
 }
@@ -371,12 +409,13 @@ function pasteText(text) {
     endCage();
     s.killer = Boolean(seed.cages);
     s.thermo = Boolean(seed.thermos);
+    s.arrow = Boolean(seed.arrows);
     s.rules = seed.rules ?? 0;
-    change(
-      seed.grid.slice(),
-      seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages,
-      seed.thermos ? seed.thermos.map((t) => t.slice()) : s.thermos
-    );
+    change(seed.grid.slice(), {
+      cages: seed.cages ? seed.cages.map((k) => ({ sum: k.sum, cells: k.cells.slice() })) : s.cages,
+      thermos: seed.thermos ? seed.thermos.map((t) => t.slice()) : s.thermos,
+      arrows: seed.arrows ? seed.arrows.map((a) => a.slice()) : s.arrows,
+    });
     selected = null;
     const name = variantName(seed);
     return say(`Pasted a made ${name ? `${name} ` : ""}puzzle. Tap ${goLabel()} when ready.`);
@@ -407,7 +446,7 @@ async function onSeedCopy() {
 
 // The clues as a PNG, to print or send.
 async function onImage() {
-  if (!s.clues.some(Boolean) && !cages()) return;
+  if (!s.clues.some(Boolean) && !drawn()) return;
   let ok = false;
   try {
     ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png", variant());
@@ -431,6 +470,7 @@ function onGo() {
   endCage();
   if (killer() && !s.cages.length) return say("Draw some cages first: tap Cages, then the cells of a cage, then type its sum.");
   if (s.thermo && !s.thermos.length) return say("Draw a thermometer first: tap Thermos, then the bulb and each next cell.");
+  if (s.arrow && !s.arrows.length) return say("Draw an arrow first: tap Arrows, then the circle and each cell along it.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
     // Where two answers part, so the person can see where a clue is wanted.
@@ -454,7 +494,7 @@ function onGo() {
 function madeSummary() {
   const clues = plural(s.clues.filter(Boolean).length, "clue");
   const name = variantName(made);
-  const what = name ? `a ${name} puzzle with ${made.cages ? `${plural(made.cages.length, "cage")} and ` : ""}${clues}` : `with ${clues}`;
+  const what = name ? `${/^[AEIOU]/.test(name) ? "an" : "a"} ${name} puzzle with ${made.cages ? `${plural(made.cages.length, "cage")} and ` : ""}${clues}` : `with ${clues}`;
   return `Rated ${LEVELS[made.level].name}, ${what}. Share the seed, ${name ? "" : "copy the puzzle "}or save it as an image.`;
 }
 
@@ -557,12 +597,13 @@ function toggleCandidates() {
 
 /* ---- cages ---- */
 
-// A rule button: killer, or one of RULES by key.
+// A rule button: killer, thermo, arrow, or one of RULES by key.
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
   if (key === "killer") s.killer = !s.killer;
   else if (key === "thermo") s.thermo = !s.thermo;
+  else if (key === "arrow") s.arrow = !s.arrow;
   else s.rules ^= RULES.find((r) => r.key === key).bit;
   save();
   note = "";
@@ -571,7 +612,7 @@ function toggleRule(key) {
 
 function toggleCageMode() {
   if (cageMode) return endCage(true);
-  endThermo();
+  endLine();
   cageMode = true;
   selected = null;
   padDigit = 0;
@@ -586,12 +627,12 @@ function clearPicked() {
   $("cageSum").value = "";
 }
 
-// Leaves the Cages tool, and the Thermos tool with it; `draw` to show it
-// at once.
+// Leaves the Cages tool, and the Thermos or Arrows tool with it; `draw` to
+// show it at once.
 function endCage(draw = false) {
   cageMode = false;
   clearPicked();
-  endThermo();
+  endLine();
   if (draw) {
     note = "";
     render();
@@ -636,54 +677,93 @@ function onCageAdd() {
   const next = s.cages.filter((_, i) => i !== editing).concat([{ sum, cells }]);
   const problem = cageProblem(next);
   if (problem) return say(CAGE_PROBLEMS[problem.why]);
-  change(s.clues, next.sort((a, b) => a.cells[0] - b.cells[0]));
+  change(s.clues, { cages: next.sort((a, b) => a.cells[0] - b.cells[0]) });
   clearPicked();
   say(`Cage of ${plural(cells.length, "cell")} adding to ${sum}. Tap the cells of the next one.`);
 }
 
 function onCageRemove() {
   if (editing < 0) return;
-  change(s.clues, s.cages.filter((_, i) => i !== editing));
+  change(s.clues, { cages: s.cages.filter((_, i) => i !== editing) });
   clearPicked();
   say("Cage removed. Undo brings it back.");
 }
 
-/* ---- thermometers ---- */
+/* ---- thermometers and arrows ---- */
 
-function toggleThermoMode() {
-  if (thermoMode) return endCage(true);
+// The Thermos and Arrows tools draw alike, a path from its first cell; they
+// differ in words, and in where their lines are kept.
+const LINES = {
+  thermo: {
+    list: "thermos",
+    short: "thermo",
+    name: "thermometer",
+    title: "Thermometer",
+    a: "A thermometer",
+    start: "bulb",
+    started: "Bulb placed. Tap the next cell: digits rise from the bulb.",
+    problem: thermoProblem,
+    problems: THERMO_PROBLEMS,
+  },
+  arrow: {
+    list: "arrows",
+    short: "arrow",
+    name: "arrow",
+    title: "Arrow",
+    a: "An arrow",
+    start: "circle",
+    started: "Circle placed. Tap the next cell: the digits along the arrow add up to the circle's.",
+    problem: arrowProblem,
+    problems: ARROW_PROBLEMS,
+  },
+};
+
+const addLabel = () => `${editingLine >= 0 ? "Change" : "Add"} ${LINES[lineKind].short}`;
+
+// kind: "thermo" or "arrow".
+function toggleLineMode(kind) {
+  if (lineKind === kind) return endCage(true);
   endCage();
-  thermoMode = true;
+  lineKind = kind;
   selected = null;
   padDigit = 0;
   note = "";
   render();
 }
 
-// Leaves the Thermos tool, dropping any path not added.
-function endThermo() {
-  thermoMode = false;
+// Leaves the Thermos or Arrows tool, dropping any path not added.
+function endLine() {
+  lineKind = null;
   path = [];
-  editingThermo = -1;
+  editingLine = -1;
 }
 
-// A tap in the Thermos tool: with no path, a cell of a thermometer picks it
-// up; the path's last cell takes that step back; otherwise the cell is the
-// next step, if it touches the last.
-function pickThermoCell(c) {
+// A tap in the Thermos or Arrows tool: with no path, a cell of a line picks
+// it up, and then its first cell starts another line there, for lines that
+// share a bulb or a circle; the path's last cell takes that step back;
+// otherwise the cell is the next step, if it touches the last.
+function pickLineCell(c) {
+  const L = LINES[lineKind];
+  const lines = s[L.list];
   if (!path.length) {
-    const i = s.thermos.findIndex((t) => t.includes(c));
+    const i = lines.findIndex((t) => t.includes(c));
     if (i >= 0) {
-      editingThermo = i;
-      path = s.thermos[i].slice();
+      editingLine = i;
+      path = lines[i].slice();
       note = "";
       return render();
     }
   }
+  if (editingLine >= 0 && c === path[0]) {
+    editingLine = -1;
+    path = [c];
+    note = "";
+    return render();
+  }
   if (c === path.at(-1)) return stepBack();
-  if (path.includes(c)) return say("A thermometer cannot cross itself.");
+  if (path.includes(c)) return say(L.problems.loop);
   if (path.length && !touching(path.at(-1), c)) return say("The next cell must touch the last one, along a side or at a corner.");
-  if (path.length === 9) return say("A thermometer has nine cells at most.");
+  if (path.length === 9) return say(`${L.a} has nine cells at most.`);
   path.push(c);
   note = "";
   render();
@@ -695,30 +775,34 @@ function stepBack() {
   render();
 }
 
-function thermoStatus() {
-  if (!path.length) return "Tap the bulb, then each next cell in order. Tap a thermometer already drawn to change it.";
-  if (path.length === 1) return "Bulb placed. Tap the next cell: digits rise from the bulb.";
-  return `${plural(path.length, "cell")} long. Tap on, or ${editingThermo >= 0 ? "Change thermo" : "Add thermo"}. Tapping the last cell takes it back.`;
+function lineStatus() {
+  const L = LINES[lineKind];
+  if (!path.length) return `Tap the ${L.start}, then each next cell in order. Tap ${L.a.toLowerCase()} already drawn to change it.`;
+  if (path.length === 1) return L.started;
+  const again = editingLine >= 0 ? ` Tap its ${L.start} to start another from it.` : "";
+  return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}. Tapping the last cell takes it back.${again}`;
 }
 
-function onThermoAdd() {
-  if (path.length < 2) return say("A thermometer needs two cells at least: the bulb and one more.");
-  const next = s.thermos.filter((_, i) => i !== editingThermo).concat([path.slice()]);
-  const problem = thermoProblem(next);
-  if (problem) return say(THERMO_PROBLEMS[problem.why]);
+function onLineAdd() {
+  const L = LINES[lineKind];
+  if (path.length < 2) return say(`${L.a} needs two cells at least: the ${L.start} and one more.`);
+  const next = s[L.list].filter((_, i) => i !== editingLine).concat([path.slice()]);
+  const problem = L.problem(next);
+  if (problem) return say(L.problems[problem.why]);
   const n = path.length;
-  change(s.clues, s.cages, next);
+  change(s.clues, { [L.list]: next });
   path = [];
-  editingThermo = -1;
-  say(`Thermometer of ${plural(n, "cell")} added. Tap the next bulb, or Done.`);
+  editingLine = -1;
+  say(`${L.title} of ${plural(n, "cell")} added. Tap the next ${L.start}, or Done.`);
 }
 
-function onThermoRemove() {
-  if (editingThermo < 0) return;
-  change(s.clues, s.cages, s.thermos.filter((_, i) => i !== editingThermo));
+function onLineRemove() {
+  if (editingLine < 0) return;
+  const L = LINES[lineKind];
+  change(s.clues, { [L.list]: s[L.list].filter((_, i) => i !== editingLine) });
   path = [];
-  editingThermo = -1;
-  say("Thermometer removed. Undo brings it back.");
+  editingLine = -1;
+  say(`${L.title} removed. Undo brings it back.`);
 }
 
 /* ---- drawing ---- */
@@ -727,8 +811,9 @@ function defaultStatus() {
   const n = s.clues.filter(Boolean).length;
   if (s.stage === "enter") {
     if (cageMode) return cageStatus();
-    if (thermoMode) return thermoStatus();
+    if (lineKind) return lineStatus();
     if (s.thermo && !s.thermos.length) return "A thermo puzzle: tap Thermos, then the bulb and each next cell. Digits rise from the bulb.";
+    if (s.arrow && !s.arrows.length) return "An arrow puzzle: tap Arrows, then the circle and each cell along the arrow. Its digits add up to the circle's.";
     if (clashes(s.clues, variant()).size) return clashText();
     if (killer()) {
       const k = s.cages.length;
@@ -785,11 +870,13 @@ function render() {
     wrong,
     // In the classic switch, cages kept for later are not shown.
     cages: killer() ? s.cages : null,
-    // The thermometer being changed is drawn as the path, not twice.
-    thermos: s.thermo ? s.thermos.filter((_, i) => i !== editingThermo) : null,
-    path: thermoMode ? path : [],
+    // The line being changed is drawn as the path, not twice.
+    thermos: s.thermo ? s.thermos.filter((_, i) => lineKind !== "thermo" || i !== editingLine) : null,
+    arrows: s.arrow ? s.arrows.filter((_, i) => lineKind !== "arrow" || i !== editingLine) : null,
+    path: lineKind ? path : [],
+    pathKind: lineKind ?? "thermo",
     rules: s.rules,
-    picked: cageMode ? picked : thermoMode ? new Set(path) : null,
+    picked: cageMode ? picked : lineKind ? new Set(path) : null,
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
@@ -829,9 +916,10 @@ function render() {
     solverCages: enter && killer(),
     cageBar: cageMode,
     solverThermos: enter && s.thermo,
-    thermoBar: thermoMode,
+    solverArrows: enter && s.arrow,
+    lineBar: Boolean(lineKind),
     // A variant's rules and cages do not fit in 81 characters.
-    solverCopy: !killer() && !s.thermo && !s.rules,
+    solverCopy: !killer() && !s.thermo && !s.arrow && !s.rules,
   };
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
 
@@ -842,7 +930,7 @@ function render() {
   }
   $("solverGoLabel").textContent = goLabel();
 
-  const any = s.clues.some(Boolean) || Boolean(cages());
+  const any = s.clues.some(Boolean) || drawn();
   $("solverUndo").disabled = !history.length;
   $("solverErase").disabled = !canEdit();
   $("solverClear").disabled = !any;
@@ -854,16 +942,19 @@ function render() {
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => {
     const { rule } = b.dataset;
-    const on = rule === "killer" ? s.killer : rule === "thermo" ? s.thermo : Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
+    const switches = { killer: s.killer, thermo: s.thermo, arrow: s.arrow };
+    const on = switches[rule] ?? Boolean(s.rules & RULES.find((r) => r.key === rule).bit);
     b.setAttribute("aria-pressed", String(on));
   });
   $("solverRuleLine").textContent = variant() ? `Rules: ${variantName(variant())}` : "";
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
-  $("solverThermos").setAttribute("aria-pressed", String(thermoMode));
-  if (thermoMode) {
-    $("thermoAddLabel").textContent = editingThermo >= 0 ? "Change thermo" : "Add thermo";
-    $("thermoRemove").classList.toggle("hidden", editingThermo < 0);
-    $("thermoAdd").disabled = path.length < 2;
+  $("solverThermos").setAttribute("aria-pressed", String(lineKind === "thermo"));
+  $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
+  if (lineKind) {
+    $("lineAddLabel").textContent = addLabel();
+    $("lineRemoveLabel").textContent = `Remove ${LINES[lineKind].short}`;
+    $("lineRemove").classList.toggle("hidden", editingLine < 0);
+    $("lineAdd").disabled = path.length < 2;
   }
   if (cageMode) {
     $("cageAddLabel").textContent = editing >= 0 ? "Change cage" : "Add cage";
@@ -913,8 +1004,8 @@ function onKey(e) {
   if (cageMode && /^[0-9]$/.test(e.key)) typeSum(e.key);
   else if (cageMode && e.key === "Enter") onCageAdd();
   else if (cageMode && e.key === "Escape") endCage(true);
-  else if (thermoMode && e.key === "Enter") onThermoAdd();
-  else if (thermoMode && e.key === "Escape") endCage(true);
+  else if (lineKind && e.key === "Enter") onLineAdd();
+  else if (lineKind && e.key === "Escape") endCage(true);
   else if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
   else if (s.stage === "enter" && (e.key === "0" || e.key === ".")) blank();
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
@@ -954,10 +1045,11 @@ export function initSolver({ reopen = true } = {}) {
     if (b) toggleRule(b.dataset.rule);
   });
   $("solverCages").addEventListener("click", toggleCageMode);
-  $("solverThermos").addEventListener("click", toggleThermoMode);
-  $("thermoAdd").addEventListener("click", onThermoAdd);
-  $("thermoRemove").addEventListener("click", onThermoRemove);
-  $("thermoDone").addEventListener("click", () => endCage(true));
+  $("solverThermos").addEventListener("click", () => toggleLineMode("thermo"));
+  $("solverArrows").addEventListener("click", () => toggleLineMode("arrow"));
+  $("lineAdd").addEventListener("click", onLineAdd);
+  $("lineRemove").addEventListener("click", onLineRemove);
+  $("lineDone").addEventListener("click", () => endCage(true));
   $("cageAdd").addEventListener("click", onCageAdd);
   $("cageRemove").addEventListener("click", onCageRemove);
   $("cageDone").addEventListener("click", () => endCage(true));
