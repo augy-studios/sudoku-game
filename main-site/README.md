@@ -38,7 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Counting Circles, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered Room and Full Rank clues, Row/Column Indexing marks, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Counting Circles and their sets, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered Room and Full Rank clues, Row/Column Indexing marks and single cells, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -124,8 +124,8 @@ in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings, and the Daily's with Killer picked (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected (Connected Values), Count Distinct, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
-Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Sandwich, Little Killer, Skyscrapers,
-X-Sums, Hidden Skyscraper, Numbered Room, Full Rank, Row/Col Indexing (Row/Column Indexing), Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
+Whispers), Dutch Whispers, Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Sandwich, Little Killer, Skyscrapers,
+X-Sums, Hidden Skyscraper, Numbered Room, Full Rank, No Rank Ties, Clued Rank Ties, Row/Col Indexing (Row/Column Indexing), Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
 same place in each 3x3 box hold 1 to 9), Anti-consecutive (cells sharing a
@@ -136,7 +136,10 @@ neither 10 nor 5), Global Entropy (every 2x2 square holds a low, a middle
 and a high digit), Global Mod (every 2x2 square holds one each of 1 4 7,
 2 5 8 and 3 6 9), Anti-taxicab (a digit X never has another X exactly X
 steps away along rows and columns) and Dutch Flatmates (every 5 has a 1
-above it or a 9 below it). Diagonals are drawn as faint lines and windows tinted,
+above it or a 9 below it). Dutch Whispers, No Rank Ties and Clued Rank Ties
+are switches too, with letters of their own, but options on a part rather
+than rules of the whole grid, so their buttons sit beside Whispers and Full
+Rank. Diagonals are drawn as faint lines and windows tinted,
 on the board and in a saved image; the others have nothing to draw, so the
 level chip and the rules line name them. In variant.js, diagonals, windows
 and disjoint groups are extra houses, the knight's and king's moves extra
@@ -152,20 +155,20 @@ every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
-P, V, QGT, QQD, QCC, B, L, Y, U, QHS, QNR, QFR, QRX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
+P, V, QGT, QQD, QCC, QCS, B, L, Y, U, QHS, QNR, QFR, QRX, QCX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT and QCT, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages of each kind, thermometers,
 arrows, double arrows, pill arrows, whisper lines, renban lines, palindrome lines, zipper lines,
-between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Counting Circles, Sandwich sums, Little Killer
+between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Counting Circles and more sets of them, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
-clues, Full Rank clues, indexing marks or regions (a line as its length, its first cell and each step's
-direction, a sum line with its sum first, and sum and region sum lines'
+clues, Full Rank clues, indexing marks, single indexing cells or regions (a line as its length, its first cell and each step's
+direction, a sum line with its sum first and a loop with its first cell again at the end, and sum and region sum lines'
 lengths, up to 27, and value indexing lines', up to 11, in a wider digit; a pill arrow as its pill's size, first cell and way, then its
-arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Counting Circles as a list of cells or a flag for every cell, whichever is shorter; Sandwich
-sums as every row's and column's sum or none; indexing marks as a flag for every row and column; Little Killer sums as each
+arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Counting Circles as a list of cells or a flag for every cell, whichever is shorter, and each more set the same way; Sandwich
+sums as every row's and column's sum or none; indexing marks as a flag for every row and column, and single indexing cells as a list of each cell and its way; Little Killer sums as each
 one's first cell, way and sum; regions, and each kind of cage, as which
 neighbours share one, a cage's clue after). The
 others' carry the clues only.
@@ -240,6 +243,11 @@ reach. Neighbours on a whisper line less than 5 apart show as a clash, as
 do a repeat on a renban line, and a renban line's digits once they spread
 wider than it is long. They are drawn as a thick line with no bulb, green
 for whispers and purple for renban, on the board and in a saved image.
+Dutch Whispers, a switch beside Whispers (QDW), makes every whisper line
+Dutch: neighbours differ by at least 4 (`whisperGap`), so a 5 may go on one
+beside a 1 or a 9. A puzzle is named Dutch Whispers in German Whispers'
+place, and only the Dutch rule is explained (`replaces` in rule-help.js).
+Puzzles with both kinds of line are left out, as few have them.
 
 **Palindrome.** A palindrome line's digits read the same from either end,
 so cells the same way in from each end hold the same digit, and a line's
@@ -314,8 +322,14 @@ cell, whose digit is K, so 4 2 7 4. Three to eleven cells; the solver keeps
 the Ks whose cell could hold an X, and the Xs those cells could hold. Sum
 lines are a dashed olive line, region sum lines an indigo one, and value
 indexing lines a thin dashed grey arrow from a faint disc, on the board and
-in a saved image. Sum lines here cannot close in a loop, as the other
-solver's can.
+in a saved image. A sum line can close in a loop, as the other solver's
+can: tap its first cell again once its last touches it, three to 26 cells
+(`LOOP_LINE_MOST`, one short of a line's most, as a seed writes a loop with
+its first cell again at the end). A loop has no ends, so a run may carry on
+round past where it was drawn from; the solver tries it from each cell as a
+run's start and keeps what any start leaves each cell. A full loop that
+cuts into runs from no start shows as a clash, all of it; one part filled
+waits. It is drawn joined up, last cell to first.
 
 **Kropki and XV.** They mark the side two cells share. A white dot's
 digits are consecutive and a black dot's are one double the other; an X's
@@ -349,19 +363,23 @@ the corner, its digits two to a row, on the board and in a saved image.
 **Counting Circles.** From the Interactive Sudoku Solver. A digit in a
 circle says how many circles hold that digit, so a 3 is in exactly three
 of them, and the circles hold 1 to 45 cells (`CIRCLES_MOST`): every digit
-d in d circles at most. All the circles on a puzzle count together, as
-nearly every puzzle has them; the other solver's sets of circles counted
-apart are left out. With Counting Circles on, a tap in the middle of a cell
-in the Marks tool puts a circle in or takes it out, and taps near a side or
-a corner still mark those; from the keyboard, picking a cell twice does.
+d in d circles at most. A puzzle may have more sets of circles, each
+counted on its own (`circlesets`, up to `CIRCLE_SETS_MOST` past the first,
+QCS in a seed, which only comes with QCC); no cell is in two. With Counting
+Circles on, a tap in the middle of a cell in the Marks tool puts a circle
+of the set Middle names in, moves it there from another set, or takes it
+out, and taps near a side or a corner still mark those; from the keyboard,
+picking a cell twice does. Middle steps through the sets drawn, then New
+circle set. A set left empty goes, and the sets after it move down.
 The solver tries each set of digits adding up to the number of circles:
 one holding every digit placed, none placed more than itself or with too
 few circles left for the rest, and one every empty circle can take a digit
 of. Each empty circle keeps the digits of those sets; a digit in all of
 them that needs every circle able to take it goes in them, and one with its
 count placed leaves the rest. A digit in more circles than itself, or with
-too few circles left empty to make up its count, shows as a clash. A circle
-is a ring round the cell's digit, on the board and in a saved image.
+too few circles left empty to make up its count, shows as a clash, each set
+on its own. A circle is a ring round the cell's digit, on the board and in
+a saved image; each set after the first is coloured and dashed its own way.
 
 **Sandwich and Little Killer.** Their clues sit outside the grid, so with
 either rule on, or a puzzle that has them, the board leaves a margin a cell
@@ -414,8 +432,14 @@ is where it comes among all 36, smallest first. The edge rows and columns
 each hold every digit once, so four numbers start with each digit: a rank
 of 1 to 4 starts its view with 1, 5 to 8 with 2, and so on (`rankStart`),
 and says how many of the other three are smaller (`rankBelow`). As the
-other solver has it by default, a clued number ties with none; its option
-for other ways with ties is left out. The solver fixes each clue's first
+other solver has it by default, a clued number ties with none, and its
+other two ways are switches beside Full Rank, one at a time: Clued Rank
+Ties (QCT), where a clued number may tie, its rank counting only those
+smaller, so exactly that many are smaller and no more than the rest
+larger; and No Rank Ties (QNT), where no two of the 36 read the same, clued
+or not (`tieBounds`). Only a row and a column crossing on a long diagonal
+could ever read the same (`TIE_PAIRS`), and never with 3x3 boxes, so ties
+only arise in a Jigsaw. The solver fixes each clue's first
 digit, then for every other view that could start with it tells whether its
 number is sure to be smaller, sure to be larger, or not yet known, by the
 first place their digits could differ. It needs as many smaller as the rank
@@ -423,14 +447,20 @@ says could be, and no more sure: when only just enough could be, those
 start with the digit and are ordered below it at the first place not yet
 matching, and when enough are sure, the rest cannot be. The wrong first
 digit, too many smaller or larger once both are filled up to where they
-differ, or a tie, shows as a clash. A Row/Column Indexing mark, a small
+differ, or a tie, shows as a clash; under Clued Rank Ties a tie does not,
+but too few smaller once the rest are settled does, and under No Rank Ties
+any two full rows or columns that read the same do. A Row/Column Indexing mark, a small
 pointer left of a row or above a column, makes each cell of it say where its
 line's number sits: in a marked column, a cell's digit is the column its row
 keeps that column's number in, so a 5 in column 1 puts that row's 1 in
 column 5; in a marked row, the row its column keeps that row's number in.
 It takes no number: pick the spot, Turn to Indexing if another clue can go
-there, and Add. Marking columns 1, 5 and 9 makes the 1-5-9 puzzles; the
-other solver's marking of single cells is left out. The solver keeps each
+there, and Add. Marking columns 1, 5 and 9 makes the 1-5-9 puzzles. A
+single cell can index on its own too (`indexcells`, QCX in a seed), by its
+column, as a marked column's cells do, or by its row: in the Marks tool,
+Middle picks Column indexing or Row indexing and a tap in a cell's middle
+marks it, or takes the mark off. It is shaded, with a small pointer in from
+its top edge or its left. The solver keeps each
 marked cell to the places its line's number could be, and takes the number
 out of places no digit left points to (`INDEXERS`). A digit pointing at
 some other digit, or the number somewhere the cell does not point, shows as

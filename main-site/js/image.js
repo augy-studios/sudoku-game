@@ -4,14 +4,14 @@
 // arrows, German Whispers,
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // sum lines, region sum lines, value indexing lines,
-// Kropki dots, Greater Than signs, quads, Counting Circles, XV
-// marks, diagonals and windows as on screen.
+// Kropki dots, Greater Than signs, quads, Counting Circles and their sets,
+// single indexing cells, XV marks, diagonals and windows as on screen.
 // Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered
 // Room, Full Rank and Row/Column Indexing clues sit outside the grid, in a
 // margin a cell wide the image grows by, an indexing mark's row or column
 // shaded. A Jigsaw's regions take the boxes' heavy lines and tint.
 
-import { variantName, touching, cagesOf, INDEXERS } from "./variant.js";
+import { variantName, touching, cagesOf, indexers, circleSets } from "./variant.js";
 
 const CELL = 112;
 const PAD = 36;
@@ -45,14 +45,16 @@ const LOCKOUT_BROWN = "#c2a07f";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 // Cool, so an indexing row or column never passes for a window.
 const INDEXING_TINT = "rgba(63, 134, 212, 0.16)";
+// Sets of circles after the first, in the lines' colours, as on screen.
+const CIRCLE_SET_COLOURS = ["#3f86d4", "#d4509a", "#e0692a", "#9a5bd8", "#2f9e57", "#d9a514", "#6cc0cf", "#c2a07f"];
 
 // variant: { cages, relliks, lunchboxes, looksays, equalities, equalsums,
 // samevalues, connecteds, distincts, thermos,
 // arrows, doubles, pills, whispers, renbans,
 // palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines,
-// regionsums, indexes, dots, xvs, signs, quads, circles,
+// regionsums, indexes, dots, xvs, signs, quads, circles, circlesets,
 // sandwiches,
-// littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, regions, rules } (variant.js), or nothing for
+// littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } (variant.js), or nothing for
 // a classic puzzle.
 export async function drawPuzzle(grid, variant = null) {
   const cages = variant?.cages ?? [];
@@ -83,8 +85,10 @@ export async function drawPuzzle(grid, variant = null) {
   const hiddens = variant?.hiddens ?? [];
   const rooms = variant?.rooms ?? [];
   const circles = variant?.circles ?? [];
+  const circlesets = variant?.circlesets ?? [];
   const ranks = variant?.ranks ?? [];
   const indexings = variant?.indexings ?? [];
+  const indexcells = variant?.indexcells ?? [];
   const regions = variant?.regions?.length ? variant.regions : null;
   // Room round the grid for clues outside it; the grid is drawn as without.
   const margin = [sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings].some((list) => list.length) ? CELL : 0;
@@ -115,9 +119,10 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.fillStyle = WINDOW_TINT;
     for (const r of [1, 5]) for (const c of [1, 5]) ctx.fillRect(PAD + c * CELL, PAD + r * CELL, CELL * 3, CELL * 3);
   }
-  // Row/Column Indexing's rows and columns, darker where two cross.
+  // Row/Column Indexing's rows, columns and single cells, darker where two
+  // cross.
   ctx.fillStyle = INDEXING_TINT;
-  for (const { line } of indexings) for (const { cell } of INDEXERS[line]) ctx.fillRect(PAD + (cell % 9) * CELL, PAD + Math.floor(cell / 9) * CELL, CELL, CELL);
+  for (const { cell } of indexers(indexings, indexcells)) ctx.fillRect(PAD + (cell % 9) * CELL, PAD + Math.floor(cell / 9) * CELL, CELL, CELL);
 
   const line = (width, colour, every) => {
     ctx.strokeStyle = colour;
@@ -195,9 +200,10 @@ export async function drawPuzzle(grid, variant = null) {
   ctx.lineWidth = CELL * 0.22;
   ctx.lineCap = "butt";
   ctx.setLineDash([CELL * 0.3, CELL * 0.16]);
-  for (const { cells } of sumlines) {
+  for (const { cells, loop } of sumlines) {
     ctx.beginPath();
     cells.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
+    if (loop) ctx.closePath();
     ctx.stroke();
   }
   ctx.setLineDash([]);
@@ -388,13 +394,33 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.textBaseline = "middle";
     rows.forEach((row, i) => ctx.fillText(row.join(" "), x, y + (i - (rows.length - 1) / 2) * size));
   }
-  // Counting Circles: a ring round the cell's digit, as on the board.
-  ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  for (const c of circles) {
+  // Counting Circles: a ring round the cell's digit, each set after the
+  // first coloured and dashed, as on the board.
+  circleSets(circles, circlesets).forEach((set, k) => {
+    ctx.strokeStyle = k ? CIRCLE_SET_COLOURS[(k - 1) % CIRCLE_SET_COLOURS.length] : INK;
+    ctx.lineWidth = k ? 4.5 : 3;
+    ctx.setLineDash(k ? [CELL * (0.06 + 0.04 * (k % 3)), CELL * 0.05] : []);
+    for (const c of set) {
+      ctx.beginPath();
+      ctx.arc(...at(c), CELL * 0.42, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+  ctx.setLineDash([]);
+  // A single indexing cell's pointer, in from its top edge or its left.
+  ctx.fillStyle = INK;
+  for (const { cell, line } of indexcells) {
+    const [cx, cy] = at(cell);
+    const column = line >= 9;
+    const [x, y] = column ? [cx, cy - CELL * 0.42] : [cx - CELL * 0.42, cy];
+    const [dx, dy] = column ? [0, 1] : [1, 0];
+    const k = CELL * 0.1;
     ctx.beginPath();
-    ctx.arc(...at(c), CELL * 0.42, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.moveTo(x + dx * k, y + dy * k);
+    ctx.lineTo(x - dy * k, y - dx * k);
+    ctx.lineTo(x + dy * k, y + dx * k);
+    ctx.closePath();
+    ctx.fill();
   }
   // Dots and XV marks at the middle of their side, over the grid lines.
   for (const { cells, mark } of [...dots, ...xvs]) {
@@ -511,7 +537,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, regions, rules });
+  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules });
   const caption = `${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`;
   // A long list of rules shrinks to fit across the image.
   const room = canvas.width - PAD * 2;

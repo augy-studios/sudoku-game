@@ -29,7 +29,10 @@
 // Kropki dots sit on the side two cells share, white or black, XV marks
 // there as a letter, and Greater Than signs as a chevron pointing at the
 // smaller digit. A quad is a circle on the corner where four cells meet,
-// with its digits in it, and a Counting Circle a ring round a cell's digit.
+// with its digits in it, and a Counting Circle a ring round a cell's digit,
+// each set after the first coloured and dashed its own way. A single
+// indexing cell is shaded with a small pointer in from its top or left
+// edge, and a sum line closed in a loop joins its last cell to its first.
 // Sandwich and Little Killer clues sit
 // outside the grid, in a margin a cell wide the board then leaves round it,
 // a Little Killer's with a small arrow along its diagonal; so do Skyscraper
@@ -44,7 +47,7 @@
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
-import { layout, touching, cagesOf, INDEXERS, RULES } from "./variant.js";
+import { layout, touching, cagesOf, indexers, circleSets, RULES } from "./variant.js";
 
 const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
 const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
@@ -156,10 +159,11 @@ export class BoardView {
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, relliks, lunchboxes, looksays,
   // equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
-  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, hiddens, rooms, littles,
-  // skyscrapers, xsums, ranks, indexings and regions are a variant puzzle's, and
+  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, hiddens, rooms, littles,
+  // skyscrapers, xsums, ranks, indexings, indexcells and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
-  // gathered into a new cage, and path a line being drawn, as pathKind says:
+  // gathered into a new cage, and path a line being drawn, closed in a loop
+  // with pathLoop, as pathKind says:
   // "thermo", "arrow", "doublearrow", "pillarrow" (its first pathPill cells
   // the pill), "whisper", "renban", "palindrome", "zipper",
   // "between", "lockout", "entropic", "modular", "sumline", "regionsum" or
@@ -202,8 +206,10 @@ export class BoardView {
     this.hiddens = view.hiddens ?? [];
     this.rooms = view.rooms ?? [];
     this.circles = view.circles ?? [];
+    this.circlesets = view.circlesets ?? [];
     this.ranks = view.ranks ?? [];
     this.indexings = view.indexings ?? [];
+    this.indexcells = view.indexcells ?? [];
     this.regions = view.regions ?? null;
     this.root.classList.toggle("jigsaw", Boolean(this.regions));
     // Its box for the peer highlight: a Jigsaw's region, or the 3x3 box.
@@ -212,14 +218,19 @@ export class BoardView {
     this.spot = view.spot ?? null;
     this.root.parentElement.classList.toggle("margined", Boolean(view.margin));
     this.path = view.path ?? [];
+    this.pathLoop = Boolean(view.pathLoop);
     this.pathKind = view.pathKind ?? "thermo";
     this.pathPill = view.pathPill ?? 2;
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
-    // How many indexing rows and columns each cell is in.
+    // How many indexing rows and columns each cell is in, or indexes by on
+    // its own.
     const indexed = new Array(81).fill(0);
-    for (const { line } of this.indexings) for (const { cell } of INDEXERS[line]) indexed[cell]++;
+    for (const { cell } of indexers(this.indexings, this.indexcells)) indexed[cell]++;
+    // Each circled cell's set, for its label.
+    const circled = new Map(circleSets(this.circles, this.circlesets).flatMap((set, k) => set.map((c) => [c, k])));
+    const sets = circleSets(this.circles, this.circlesets).length;
     // Each cage's first cell, or a Count Distinct cage's # cell, carries its
     // clue, as a sum line's first cell does, so its notes make room.
     const heads = new Set([...this.cages.map((cage) => cage.head), ...this.sumlines.map((t) => t.cells[0])]);
@@ -270,7 +281,7 @@ export class BoardView {
       let label = `${cellName(c).replace("r", "Row ").replace("c", ", column ")}, `;
       const cage = this.cages.find((k) => k.cells.includes(c));
       if (cage) label += `${cage.words}, `;
-      if (this.circles.includes(c)) label += "in a counting circle, ";
+      if (circled.has(c)) label += sets > 1 ? `in a counting circle of set ${circled.get(c) + 1}, ` : "in a counting circle, ";
       if (v) label += `${v}${wrong ? ", wrong" : given ? ", given" : ""}`;
       else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => notes[c] & (1 << d)).join(" ")}`;
       else label += "empty";
@@ -302,18 +313,19 @@ export class BoardView {
     const indexes = this.indexes ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? []), ...(this.signs ?? [])];
     const quads = this.quads ?? [];
-    const circles = this.circles ?? [];
+    const circles = circleSets(this.circles ?? [], this.circlesets ?? []);
+    const indexcells = this.indexcells ?? [];
     const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.hiddens ?? [], this.rooms ?? [], this.ranks ?? [], this.indexings ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
     const lines = [thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes];
-    const key = JSON.stringify([cages, diagonal, lines, edges, quads, circles, outside, margin, regions, path, this.pathKind, this.pathPill]);
+    const key = JSON.stringify([cages, diagonal, lines, edges, quads, circles, indexcells, outside, margin, regions, path, this.pathLoop, this.pathKind, this.pathPill]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, ...lines, edges, quads, circles, path, ...outside.slice(0, -1)].some((list) => list.length);
+    const drawn = [cages, ...lines, edges, quads, circles, indexcells, path, ...outside.slice(0, -1)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -496,12 +508,13 @@ export class BoardView {
       return pillArrow({ pill: t.slice(0, n).sort((p, q) => p - q), arrow: t.slice(n) }, cls);
     };
     // Sum lines: as thick as a whisper line, dashed, square-ended so the
-    // gaps show. Their sums go in the first cell's corner, as a cage's does.
-    const dashedLine = (t, cls) => {
+    // gaps show; a loop joins up its last cell to its first. Their sums go
+    // in the first cell's corner, as a cage's does.
+    const dashedLine = (t, cls, loop = false) => {
       if (!t.length) return "";
       const points = t.map(centre);
       const w = points[0].w;
-      const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("") + (t.length === 1 ? "h0" : "");
+      const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("") + (t.length === 1 ? "h0" : loop ? "Z" : "");
       return `<path class="${cls}" d="${d}" stroke-width="${f(w * 0.22)}" stroke-dasharray="${f(w * 0.3)} ${f(w * 0.16)}"/>`;
     };
     const lineSums = sumlines
@@ -537,7 +550,7 @@ export class BoardView {
       modular: line,
       between: ring,
       lockout: diamond,
-      sumline: dashedLine,
+      sumline: (t, cls) => dashedLine(t, cls, this.pathLoop),
       regionsum: line,
       valueindex: indexArrow,
     };
@@ -551,7 +564,7 @@ export class BoardView {
       entropics.map((t) => line(t, "entropic")).join("") +
       modulars.map((t) => line(t, "modular")).join("") +
       regionsums.map((t) => line(t, "regionsum")).join("") +
-      sumlines.map((t) => dashedLine(t.cells, "sumline")).join("") +
+      sumlines.map((t) => dashedLine(t.cells, "sumline", t.loop)).join("") +
       indexes.map((t) => indexArrow(t, "valueindex")).join("") +
       betweens.map((t) => ring(t, "between")).join("") +
       lockouts.map((t) => diamond(t, "lockout")).join("") +
@@ -676,13 +689,32 @@ export class BoardView {
         return `<circle class="quad-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.27)}"/>${text}`;
       })
       .join("");
-    // Counting Circles: a ring round the cell's digit.
-    const onCells = circles
-      .map((c) => {
-        const { x, y, w } = centre(c);
-        return `<circle class="counting-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.42)}"/>`;
-      })
-      .join("");
+    // Counting Circles: a ring round the cell's digit, each set after the
+    // first in a colour of its own, dashed so colour is not all that tells
+    // them apart.
+    const onCells =
+      circles
+        .flatMap((set, k) =>
+          set.map((c) => {
+            const { x, y, w } = centre(c);
+            const dash = k ? ` stroke-dasharray="${f(w * (0.06 + 0.04 * (k % 3)))} ${f(w * 0.05)}"` : "";
+            return `<circle class="counting-circle${k ? ` circle-set-${k}` : ""}" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.42)}"${dash}/>`;
+          })
+        )
+        .join("") +
+      // A single indexing cell: a small pointer in from its top edge, going
+      // by its column as a marked column's cells do, or from its left edge,
+      // by its row.
+      indexcells
+        .map(({ cell, line }) => {
+          const { x, y, w, h } = rect(cell);
+          const column = line >= 9;
+          const [px, py] = column ? [x + w / 2, y + h * 0.08] : [x + w * 0.08, y + h / 2];
+          const [dx, dy] = column ? [0, 1] : [1, 0];
+          const k = w * 0.1;
+          return `<path class="index-mark" d="M${f(px + dx * k)} ${f(py + dy * k)}L${f(px - dy * k)} ${f(py - dx * k)}L${f(px + dy * k)} ${f(py + dx * k)}Z"/>`;
+        })
+        .join("");
     layer.innerHTML = `${walls}${marks}${diagonals}${onCells}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${lineSums}${onSides}${onCorners}${outsides}`;
   }
 }

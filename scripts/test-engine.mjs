@@ -51,7 +51,10 @@ import {
   regionSumProblem,
   indexProblem,
   regionRuns,
+  loopCuts,
+  whisperGap,
   LONG_LINE_MOST,
+  LOOP_LINE_MOST,
   SUM_LINE_MAX,
   INDEX_LINE_MOST,
   ENTROPIC_KINDS,
@@ -70,11 +73,16 @@ import {
   roomProblem,
   circleProblem,
   CIRCLES_MOST,
+  circleSetProblem,
+  CIRCLE_SETS_MOST,
   rankProblem,
   RANK_MOST,
   rankStart,
   rankBelow,
+  TIE_PAIRS,
   indexingProblem,
+  indexCellProblem,
+  indexers,
   INDEXERS,
   firstHidden,
   regionProblem,
@@ -859,6 +867,49 @@ test("German Whispers lines are checked, solved and carried in seeds", () => {
   assert.equal(parseSeed(madeSeed("M", puzzle, { whispers: whispers.slice(1, 2) }).text), null, "one line is not enough");
 });
 
+// Dutch Whispers: the same lines, neighbours 4 apart at least.
+const fitsDutch = (line, o, sol) => Math.abs(sol[o] - sol[line.at(-1)]) >= 4;
+
+test("Dutch Whispers lines are checked, solved and carried in seeds", () => {
+  const dutch = rule("dutchwhispers");
+  assert.equal(whisperGap(0), 5);
+  assert.equal(whisperGap(dutch), 4);
+
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(211);
+  const whispers = layLines(solution, rand, fitsDutch);
+  assert.equal(whispers.length, 8);
+  const variant = { whispers, rules: dutch };
+  assert.equal(clashes(solution, variant).size, 0);
+  assert.ok(clashes(solution, { whispers }).size, "some neighbours only 4 apart, which German Whispers refuses");
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the lines");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^SQDW-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.equal(back.rules, dutch);
+  assert.deepEqual(back.whispers, whispers);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+
+  // A 5 may go on a Dutch line, beside a 1 or a 9 only; beside a 4, an 8 or
+  // a 9 may.
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  const line = (digits) => variantCandidates(at(digits), { whispers: [[0, 1]], rules: dutch })[1];
+  assert.equal(line({ 0: 5 }), bits(1, 9));
+  assert.equal(line({ 0: 4 }), bits(8, 9));
+  // 1 and 5 side by side clash on a German line, not a Dutch one; 2 and 5
+  // on either.
+  assert.equal(clashes(at({ 0: 1, 1: 5 }), { whispers: [[0, 1]], rules: dutch }).size, 0);
+  assert.equal(clashes(at({ 0: 1, 1: 5 }), { whispers: [[0, 1]] }).size, 2);
+  assert.equal(clashes(at({ 0: 2, 1: 5 }), { whispers: [[0, 1]], rules: dutch }).size, 2);
+});
+
 test("renban lines are checked, solved and carried in seeds", () => {
   assert.equal(renbanProblem([[0, 1, 2]]), null);
   assert.equal(renbanProblem([[0, 1, 0]]).why, "loop");
@@ -1393,6 +1444,77 @@ test("sum lines are checked, solved and carried in seeds", () => {
   const snake = { sum, cells: SNAKE.slice(0, end) };
   const full = parseSeed(madeSeed("H", made.solution, { sumlines: [snake] }).text);
   assert.deepEqual(full?.sumlines, [snake]);
+});
+
+// The eight cells round a cell, in order round it.
+const ringOf = (centre) => [-10, -9, -8, 1, 10, 9, 8, -1].map((d) => centre + d);
+// A loop of LOOP_LINE_MOST cells through the top three rows: along row 1,
+// zigzagging back through rows 2 and 3, and up to beside its first cell.
+const LONG_LOOP = [0, 1, 2, 3, 4, 5, 6, 7, 8, 17, 26, 25, 16, 15, 24, 23, 14, 13, 22, 21, 12, 11, 20, 19, 18, 9];
+
+test("sum lines closed in a loop are checked, solved and carried in seeds", () => {
+  const loop = (sum, cells) => ({ sum, cells, loop: true });
+  assert.equal(sumLineProblem([loop(3, [0, 1, 10])]), null);
+  assert.equal(sumLineProblem([loop(10, LONG_LOOP)]), null, `${LOOP_LINE_MOST} cells`);
+  assert.equal(LONG_LOOP.length, LOOP_LINE_MOST);
+  assert.equal(sumLineProblem([loop(10, SNAKE)]).why, "looplength", "a seed has no room for a loop of a long line's most");
+  assert.equal(sumLineProblem([loop(3, [0, 1])]).why, "looplength");
+  assert.equal(sumLineProblem([loop(3, [0, 1, 2])]).why, "open", "its last cell must touch its first");
+
+  // Runs of 3 from a 1: along a line the 1 starts a run, so a 2 comes next;
+  // round a loop the run may start at the cell before, so a 3 may.
+  const three = [0, 1, 10];
+  assert.equal(variantCandidates(placed({ 0: 1 }), { sumlines: [{ sum: 3, cells: three }] })[1], digitsMask(2));
+  assert.equal(variantCandidates(placed({ 0: 1 }), { sumlines: [loop(3, three)] })[1], digitsMask(2, 3));
+  assert.ok(loopCuts(3, three, placed({ 0: 1, 1: 3, 10: 2 })));
+  assert.ok(!loopCuts(4, three, placed({ 0: 1, 1: 3, 10: 2 })));
+  // A full loop that cuts no way clashes, all of it; part filled, it waits.
+  assert.equal(clashes(placed({ 0: 1, 1: 3, 10: 2 }), { sumlines: [loop(3, three)] }).size, 0);
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 3, 10: 2 }), { sumlines: [loop(4, three)] })), [0, 1, 10]);
+  assert.equal(clashes(placed({ 0: 1, 1: 3 }), { sumlines: [loop(4, three)] }).size, 0);
+
+  // Rings round cells, none sharing a cell, each with a sum it cuts into,
+  // one it cuts into only as a loop where there is one.
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const sumlines = [];
+  let loopOnly = 0;
+  const ringed = new Set();
+  for (let centre = 10; centre < 71; centre++) {
+    if (centre % 9 === 0 || centre % 9 === 8) continue;
+    const cells = ringOf(centre);
+    if (cells.some((c) => ringed.has(c))) continue;
+    const sums = [...Array(22).keys()].map((s) => s + 9).filter((s) => loopCuts(s, cells, solution));
+    const only = sums.find((s) => variantSolutions(solution, { sumlines: [{ sum: s, cells }] }, 1)?.length === 0);
+    if (!sums.length) continue;
+    if (only) loopOnly++;
+    sumlines.push(loop(only ?? sums[0], cells));
+    cells.forEach((c) => ringed.add(c));
+  }
+  assert.ok(sumlines.length >= 4 && loopOnly >= 2, `${sumlines.length} rings, ${loopOnly} only as loops`);
+  const variant = { sumlines };
+  assert.equal(clashes(solution, variant).size, 0);
+  const rand = seeded(199);
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the loops");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^QSL-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.sumlines, sumlines);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+
+  // The longest loop goes through a seed too, with a line that is none, on
+  // a grid it fits: its three boxes but one cell make 135 less that cell's
+  // digit, 126 in runs of 18 with a 9 left out.
+  const grid = variantSolve(new Array(81).fill(0), { sumlines: [loop(18, LONG_LOOP)] });
+  assert.ok(grid && loopCuts(18, LONG_LOOP, grid), "a grid fits the long loop");
+  const both = [loop(18, LONG_LOOP), { sum: grid[60] + grid[70], cells: [60, 70] }];
+  const kept = parseSeed(madeSeed("H", grid, { sumlines: both }).text);
+  assert.deepEqual(kept?.sumlines, both);
 });
 
 test("region sum lines are checked, solved and carried in seeds", () => {
@@ -2232,6 +2354,49 @@ test("Full Rank clues are checked, solved and carried in seeds", () => {
   assert.equal(seedVariantName("QNRQFRQRX-H-BBBB"), "Numbered Room, Full Rank, Row/Column Indexing");
 });
 
+// Full Rank's ties. Within 3x3 boxes no two views can tie, so these use
+// the columns as a Jigsaw's regions, and a grid where each row reads as
+// the column of its number: row 1 from the left is column 1 from the top.
+test("No Rank Ties and Clued Rank Ties decide which views may tie", () => {
+  const regions = [...Array(81).keys()].map((c) => c % 9);
+  assert.equal(regionProblem(regions), null);
+  const grid = [...Array(81).keys()].map((c) => ((Math.floor(c / 9) + (c % 9)) % 9) + 1);
+  const read = (cells) => cells.map((c) => grid[c]).join("");
+  assert.equal(read(VIEWS[0]), read(VIEWS[9]));
+  // Only rows and columns crossing on a long diagonal could tie, and with
+  // 3x3 boxes, each pair has two cells of a box in one place.
+  assert.equal(TIE_PAIRS.length, 36);
+  for (const [a, b] of TIE_PAIRS) assert.ok(a.some((c, j) => c !== b[j] && BOX[c] === BOX[b[j]]));
+
+  const none = rule("norankties");
+  const tied = rule("cluedrankties");
+  assert.equal(clashes(grid, { regions }).size, 0);
+  assert.ok(clashes(grid, { regions, rules: none }).size, "ties clash under No Rank Ties");
+  // Row 1's last cell: the 9 it has room for ties it with column 1.
+  const open = grid.slice();
+  open[8] = 0;
+  assert.equal(variantSolutions(open, { regions }, 2)?.length, 1);
+  assert.deepEqual(variantSolutions(open, { regions, rules: none }, 2), []);
+
+  // Row 1 from the left ranked 1st ties column 1 from the top: by default a
+  // clued view never ties, under Clued Rank Ties it may.
+  const first = { regions, ranks: [{ view: 0, rank: 1 }] };
+  assert.ok(clashes(grid, first).size);
+  assert.equal(clashes(grid, { ...first, rules: tied }).size, 0);
+  assert.deepEqual(variantSolutions(open, first, 2), []);
+  assert.equal(variantSolutions(open, { ...first, rules: tied }, 2)?.length, 1);
+  // Tied, the rank still counts those smaller: 2nd needs one below.
+  assert.ok(clashes(grid, { regions, ranks: [{ view: 0, rank: 2 }], rules: tied }).size);
+  // No Rank Ties with a clue on top is still no ties.
+  assert.ok(clashes(grid, { ...first, rules: none | tied }).size);
+
+  assert.equal(seedVariantName("QFRQNT-H-BBBB"), "Full Rank, No Rank Ties");
+  assert.equal(seedVariantName("QFRQCT-H-BBBB"), "Full Rank, Clued Rank Ties");
+  const seed = madeSeed("H", grid, { regions, ranks: [{ view: 0, rank: 1 }], rules: tied });
+  assert.match(seed.text, /^QFRJQCT-H-/);
+  assert.equal(parseSeed(seed.text)?.rules, tied);
+});
+
 test("Row/Column Indexing marks are checked, solved and carried in seeds", () => {
   assert.equal(indexingProblem([{ line: 0 }, { line: 17 }]), null);
   assert.equal(indexingProblem([{ line: 18 }]).why, "line");
@@ -2275,6 +2440,55 @@ test("Row/Column Indexing marks are checked, solved and carried in seeds", () =>
   assert.deepEqual(sorted(clashes(at({ 0: 5, 4: 7 }), first)), [0, 4]);
   assert.deepEqual(sorted(clashes(at({ 0: 5, 2: 1 }), first)), [0, 2]);
   assert.equal(clashes(at({ 0: 5, 4: 1 }), first).size, 0);
+});
+
+test("single Row/Column Indexing cells are checked, solved and carried in seeds", () => {
+  assert.equal(indexCellProblem([{ cell: 0, line: 0 }, { cell: 0, line: 9 }, { cell: 80, line: 17 }]), null);
+  assert.equal(indexCellProblem([{ cell: 81, line: 0 }]).why, "cell");
+  assert.equal(indexCellProblem([{ cell: 0, line: 1 }]).why, "line", "its own row or column");
+  assert.equal(indexCellProblem([{ cell: 3, line: 12 }, { cell: 3, line: 12 }]).why, "twice");
+  // A cell does as it would in its marked row or column.
+  assert.deepEqual(indexers([], [{ cell: 22, line: 13 }]), [INDEXERS[13][2]]);
+  assert.equal(indexers([{ line: 9 }], [{ cell: 0, line: 0 }]).length, 10);
+
+  // Cells of a solved grid that keep the rule one way or the other.
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const keeps = (line, cell) => {
+    const { targets, digit } = INDEXERS[line].find((x) => x.cell === cell);
+    return solution[targets[solution[cell] - 1]] === digit;
+  };
+  const indexcells = [...Array(81).keys()]
+    .flatMap((cell) => [9 + (cell % 9), Math.floor(cell / 9)].filter((line) => keeps(line, cell)).map((line) => ({ cell, line })))
+    .filter((_, i) => i % 2 === 0);
+  assert.ok(indexcells.length >= 4, `${indexcells.length} cells`);
+  const variant = { indexcells };
+  assert.equal(clashes(solution, variant).size, 0);
+  const rand = seeded(209);
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the cells");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^QCX-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.indexcells, indexcells);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  // With marked lines too, QRX then QCX.
+  const both = { indexings: [{ line: 9 }], indexcells: [{ cell: 40, line: 4 }] };
+  assert.match(madeSeed("H", puzzle, both).text, /^QRXQCX-/);
+
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  // Row 1, column 1 going by its column: a 5 there puts row 1's 1 in column
+  // 5; row 2, column 1 is no indexing cell, so its 5 says nothing.
+  const one = { indexcells: [{ cell: 0, line: 9 }] };
+  assert.equal(variantCandidates(at({ 0: 5 }), one)[4], bits(1));
+  assert.notEqual(variantCandidates(at({ 9: 5 }), one)[13], bits(1));
+  assert.deepEqual(sorted(clashes(at({ 0: 5, 4: 7 }), one)), [0, 4]);
+  assert.equal(clashes(at({ 9: 5, 13: 7 }), one).size, 0);
 });
 
 test("Counting Circles are checked, solved and carried in seeds", () => {
@@ -2323,6 +2537,47 @@ test("Counting Circles are checked, solved and carried in seeds", () => {
   assert.deepEqual(sorted(clashes(at({ 0: 4 }), { circles: [0, 13] })), [0]);
   assert.equal(clashes(at({ 0: 3 }), three).size, 0);
   assert.equal(seedVariantName("QQDQCC-H-BBBB"), "Quad, Counting Circles");
+});
+
+test("sets of Counting Circles are counted apart, solved and carried in seeds", () => {
+  assert.equal(circleSetProblem([[0], [1, 2]]), null);
+  assert.equal(circleSetProblem([]).why, "sets");
+  assert.equal(circleSetProblem(Array.from({ length: CIRCLE_SETS_MOST + 1 }, (_, i) => [i])).why, "sets");
+  assert.equal(circleSetProblem([[0], []]).why, "count");
+  assert.equal(circleSetProblem([[0, 1], [1]]).why, "twice");
+  assert.equal(checkClues(new Array(81).fill(0), { circles: [0], circlesets: [[0]] }).why, "circles", "a cell in two sets");
+
+  // Two sets that each count right, and together would not: a 1 in each.
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(203);
+  const holding = (d) => [...Array(81).keys()].filter((c) => solution[c] === d).sort(() => rand() - 0.5);
+  const [ones, threes, fours] = [holding(1), holding(3), holding(4)];
+  const circles = [ones[0], ...threes.slice(0, 3)].sort((a, b) => a - b);
+  const circlesets = [[ones[1], ...fours.slice(0, 4)].sort((a, b) => a - b)];
+  const variant = { circles, circlesets };
+  assert.equal(clashes(solution, variant).size, 0);
+  assert.ok(clashes(solution, { circles: [...circles, ...circlesets[0]] }).size, "counted together, the 1s clash");
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the circles");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^QCCQCS-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual([back.circles, back.circlesets], [circles, circlesets]);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  assert.equal(parseSeed(seed.text.replace("QCCQCS-", "QCS-")), null, "more sets only with the first");
+
+  // A set of two holds two 2s, and a set of one a 1, counted apart; together
+  // the three hold three 3s or a 1 and two 2s.
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  assert.equal(variantCandidates(at({}), { circles: [0, 13], circlesets: [[26]] })[26], bits(1));
+  assert.equal(variantCandidates(at({}), { circles: [0, 13, 26] })[26], bits(1, 2, 3));
+  assert.deepEqual(sorted(clashes(at({ 26: 2 }), { circles: [0, 13], circlesets: [[26]] })), [26]);
 });
 
 test("Skyscraper clues are checked, solved and carried in seeds", () => {
@@ -2963,13 +3218,24 @@ test("every variant rule has its explanation", () => {
     assert.equal(variantName(alone), h.name, `${key}: named as variantName names it`);
     assert.deepEqual(rulesOf(alone), [key], `${key}: found in a variant`);
   }
-  // Everything variantName knows, from each part and every switch at once.
-  const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings"]) every[list] = [1];
-  const named = variantName(every).split(", ").sort();
+  // Everything variantName knows, from each part and every switch at once;
+  // Dutch Whispers names the whisper lines in German Whispers' place, so
+  // every switch alone too.
+  const all = RULES.reduce((m, r) => m | r.bit, 0);
+  const every = { rules: all & ~rule("dutchwhispers") };
+  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"]) every[list] = [1];
+  const named = [...new Set([...variantName(every).split(", "), ...variantName({ rules: all }).split(", ")])].sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);
   assert.deepEqual(rulesOf({ cages: [1], rules: 1 }), ["killer", "diagonal"]);
+  // Dutch Whispers stands in German Whispers' place, named and explained.
+  const dutch = { whispers: [1], thermos: [1], rules: rule("dutchwhispers") | 1 };
+  assert.equal(variantName(dutch), "Thermo, Dutch Whispers, Diagonal");
+  assert.deepEqual(rulesOf(dutch), ["thermo", "dutchwhispers", "diagonal"]);
+  assert.equal(seedVariantName("TSQDW-H-BBBB"), "Thermo, Dutch Whispers");
+  // A part with two lists is found, and named once, by either.
+  assert.deepEqual(rulesOf({ circlesets: [1], indexcells: [1] }), ["counting", "rowcolindex"]);
+  assert.equal(seedVariantName("QCCQCSQRXQCX-H-BBBB"), "Counting Circles, Row/Column Indexing");
 });
 
 test("the solver finds clashes and candidates", () => {

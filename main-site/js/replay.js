@@ -159,8 +159,10 @@ export class Replay {
       hiddens: this.game.hiddens ?? null,
       rooms: this.game.rooms ?? null,
       circles: this.game.circles ?? null,
+      circlesets: this.game.circlesets ?? null,
       ranks: this.game.ranks ?? null,
       indexings: this.game.indexings ?? null,
+      indexcells: this.game.indexcells ?? null,
       regions: this.game.regions ?? null,
       margin: Boolean(this.game.sandwiches || this.game.littles || this.game.skyscrapers || this.game.xsums || this.game.hiddens || this.game.rooms || this.game.ranks || this.game.indexings),
     });

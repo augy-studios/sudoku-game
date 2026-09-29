@@ -25,14 +25,17 @@
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // drawn the same way again with their own tools, a between line from one circle to the other and a lockout line from
 // one diamond to the other; Sum Line, Region Sum and Value Indexing add sum
-// lines, with a sum typed as a cage's is, region sum lines and value
-// indexing lines, from the dot;
+// lines, with a sum typed as a cage's is, closed in a loop by tapping the
+// first cell again, region sum lines and value indexing lines, from the
+// dot; Dutch Whispers makes the whisper lines Dutch;
 // Kropki, XV and Greater Than add dots, X and V marks and signs on the
 // sides between cells, Quad circles on the corners where four meet, and
-// Counting Circles circles in cells, put down with the Marks tool;
+// Counting Circles circles in cells, in sets if need be, put down with the
+// Marks tool, which puts single Row/Column Indexing cells down too;
 // Sandwich, Little Killer, Skyscrapers, X-Sums, Hidden Skyscraper,
 // Numbered Room, Full Rank and Row/Column Indexing add clues outside the
-// grid, put down with the Outside tool in a
+// grid, No Rank Ties and Clued Rank Ties saying which Full Rank numbers may
+// tie, put down with the Outside tool in a
 // margin the board leaves for them; Jigsaw puts regions in the boxes'
 // place, cut with the Regions tool; and Diagonal, Anti-knight, Anti-king and Windoku add their
 // rules (variant.js). Every check, hint and candidate then follows them
@@ -80,6 +83,8 @@ import {
   regionSumProblem,
   indexProblem,
   LONG_LINE_MOST,
+  LOOP_LINE_MOST,
+  whisperGap,
   SUM_LINE_MAX,
   INDEX_LINE_MOST,
   LOCKOUT_GAP,
@@ -96,9 +101,13 @@ import {
   roomProblem,
   circleProblem,
   CIRCLES_MOST,
+  circleSetProblem,
+  CIRCLE_SETS_MOST,
   rankProblem,
   RANK_MOST,
   indexingProblem,
+  indexCellProblem,
+  hasRule,
   regionProblem,
   diagonalFrom,
   SANDWICH_MAX,
@@ -137,7 +146,9 @@ let board = null;
 // hiddensky, room, fullrank, rowcolindex, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each other kind of cage, line, dot, mark and
-// outside clue likewise.
+// outside clue likewise. Counting Circles' first set is circles, and any
+// more circlesets; Row/Column Indexing's marked lines are indexings, and its
+// single cells indexcells.
 const fresh = () => ({
   open: false,
   stage: "enter",
@@ -212,6 +223,7 @@ const fresh = () => ({
   signs: [],
   quads: [],
   circles: [],
+  circlesets: [],
   sandwiches: [],
   littles: [],
   skyscrapers: [],
@@ -220,6 +232,7 @@ const fresh = () => ({
   rooms: [],
   ranks: [],
   indexings: [],
+  indexcells: [],
   // A Jigsaw's regions, from the boxes until the maker cuts them.
   regions: Array.from(BOX),
 });
@@ -243,6 +256,8 @@ let editing = null;
 let lineKind = null;
 let path = [];
 let editingLine = -1;
+// Whether the sum line being drawn is closed in a loop.
+let pathLoop = false;
 // The Pills tool's pill size, 2 or 3: the path's first that many cells are
 // the pill, and the rest its arrow.
 let pillSize = 2;
@@ -251,6 +266,8 @@ let pillSize = 2;
 let markMode = false;
 let anchor = null;
 let quadAt = null;
+// What a tap in a cell's middle puts there: an index into middleKinds().
+let middle = 0;
 // The Outside tool: on, the margin spot [r, c] picked, and which of the
 // clues it can take is chosen (spotKinds below).
 let outMode = false;
@@ -310,11 +327,13 @@ const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
 const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
 const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
 const circles = () => (s.counting && s.circles.length ? s.circles : null);
+const circlesets = () => (s.counting && s.circlesets.length ? s.circlesets : null);
 const ranks = () => (s.fullrank && s.ranks.length ? s.ranks : null);
 const indexings = () => (s.rowcolindex && s.indexings.length ? s.indexings : null);
+const indexcells = () => (s.rowcolindex && s.indexcells.length ? s.indexcells : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || circles() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms() || ranks() || indexings());
+  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || circles() || circlesets() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms() || ranks() || indexings() || indexcells());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -354,8 +373,10 @@ const variant = () =>
         hiddens: hiddens() ?? [],
         rooms: rooms() ?? [],
         circles: circles() ?? [],
+        circlesets: circlesets() ?? [],
         ranks: ranks() ?? [],
         indexings: indexings() ?? [],
+        indexcells: indexcells() ?? [],
         regions: regions(),
         rules: s.rules,
       }
@@ -395,7 +416,7 @@ function load(which) {
   st.open = saved.open === true;
   st.candidates = saved.candidates === true;
   st.rules = Number.isInteger(saved.rules) ? saved.rules & ALL_RULES : 0;
-  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) {
+  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE), ...Object.entries(EXTRAS)]) {
     st[kind] = saved[kind] === true;
     const kept = Array.isArray(saved[P.list]) ? saved[P.list] : [];
     st[P.list] = !P.problem(kept) ? kept : [];
@@ -477,7 +498,7 @@ function hintText(step, reveal) {
       ...(hiddens() ? ["Hidden Skyscraper clues"] : []),
       ...(rooms() ? ["Numbered Room clues"] : []),
       ...(ranks() ? ["Full Rank clues"] : []),
-      ...(indexings() ? ["indexing rows and columns"] : []),
+      ...(indexings() || indexcells() ? ["indexing marks"] : []),
     ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
@@ -521,9 +542,10 @@ function problemText(check) {
   if (why === "xsums") return XSUM_PROBLEMS[check.problem.why];
   if (why === "hiddens") return HIDDEN_PROBLEMS[check.problem.why];
   if (why === "rooms") return ROOM_PROBLEMS[check.problem.why];
-  if (why === "circles") return CIRCLE_PROBLEMS[check.problem.why];
+  if (why === "circles" || why === "circlesets") return CIRCLE_PROBLEMS[check.problem.why];
   if (why === "ranks") return RANK_PROBLEMS[check.problem.why];
   if (why === "indexings") return INDEXING_PROBLEMS[check.problem.why];
+  if (why === "indexcells") return INDEX_CELL_PROBLEMS[check.problem.why];
   if (why === "regions") return regionText(check.problem);
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
@@ -558,7 +580,7 @@ function clashText() {
   if (arrows()) extra.push("not adding up to an arrow's circle");
   if (doubles()) extra.push("not adding up to a double arrow's two circles");
   if (pills()) extra.push("not adding up to a pill arrow's pill");
-  if (whispers()) extra.push("less than 5 apart next to each other on a whisper line");
+  if (whispers()) extra.push(`less than ${whisperGap(s.rules)} apart next to each other on a whisper line`);
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
   if (palindromes()) extra.push("not the same from either end of a palindrome line");
   if (zippers()) extra.push("not making a zipper line's total");
@@ -573,7 +595,7 @@ function clashText() {
   if (xvs()) extra.push("not adding up to an X or a V");
   if (signs()) extra.push("not larger on the open side of a sign");
   if (quads()) extra.push("leaving a quad's digit too few cells");
-  if (circles()) extra.push("in more circles than itself, or too few circles left to make up its count");
+  if (circles()) extra.push(`in more circles${circlesets() ? " of a set" : ""} than itself, or too few circles left to make up its count`);
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
   if (littles()) extra.push("not adding up to a Little Killer sum");
   if (skyscrapers()) extra.push("showing more or fewer than a Skyscraper count");
@@ -581,7 +603,7 @@ function clashText() {
   if (hiddens()) extra.push("hiding some other height first than a Hidden Skyscraper clue");
   if (rooms()) extra.push("putting some other digit where a Numbered Room's first digit points");
   if (ranks()) extra.push("starting a Full Rank row or column with the wrong digit, or ranking it too high or too low");
-  if (indexings()) extra.push("putting some other digit where an indexing cell points");
+  if (indexings() || indexcells()) extra.push("putting some other digit where an indexing cell points");
   return `The red digits clash: the same digit twice in a row, column or ${regions() ? "region" : "box"}${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -689,6 +711,8 @@ const SUM_LINE_PROBLEMS = {
   loop: "A sum line cannot cross itself.",
   apart: "Each cell of a sum line must touch the one before it.",
   sum: `A sum line's sum is 1 to ${SUM_LINE_MAX}.`,
+  looplength: `A sum line closed in a loop needs three to ${LOOP_LINE_MOST} cells.`,
+  open: "A sum line closes in a loop only where its last cell touches its first.",
 };
 
 const REGION_SUM_PROBLEMS = {
@@ -755,18 +779,25 @@ const CIRCLE_PROBLEMS = {
   count: `There is room for ${CIRCLES_MOST} counting circles: 1 to 9 in them, each digit that many times.`,
   cell: "A counting circle has a cell off the board.",
   twice: "A cell has two counting circles.",
+  sets: `There is room for ${CIRCLE_SETS_MOST + 1} sets of counting circles.`,
 };
 
 const RANK_PROBLEMS = {
   view: "A Full Rank clue goes beside a row or a column.",
   rank: `A Full Rank clue is 1 to ${RANK_MOST}: there are ${RANK_MOST} rows and columns, read from each side.`,
   twice: "That side of that row or column has a Full Rank clue already.",
-  same: "Two Full Rank clues have the same rank, and a clued one never ties.",
+  same: "Two Full Rank clues have the same rank: each rank goes beside one row or column.",
 };
 
 const INDEXING_PROBLEMS = {
   line: "An indexing mark goes left of a row or above a column.",
   twice: "That row or column has an indexing mark already.",
+};
+
+const INDEX_CELL_PROBLEMS = {
+  cell: "An indexing cell is off the board.",
+  line: "An indexing cell goes by its own row or its own column.",
+  twice: "That cell is marked that way already.",
 };
 
 // What is wrong with a Jigsaw's regions, from regionProblem, naming each
@@ -883,7 +914,7 @@ function wrongCells() {
 }
 
 // The lists of drawn parts: CAGES's, "regions", then LINES's and the others'.
-const partLists = () => [...Object.values(CAGES).map((K) => K.list), "regions", ...[LINES, EDGES, QUADS, OUTSIDE].flatMap((table) => Object.values(table).map((P) => P.list))];
+const partLists = () => [...Object.values(CAGES).map((K) => K.list), "regions", ...[LINES, EDGES, QUADS, OUTSIDE, EXTRAS].flatMap((table) => Object.values(table).map((P) => P.list))];
 
 const snapshot = () => {
   const out = { clues: s.clues.slice(), values: s.values.slice() };
@@ -1028,6 +1059,7 @@ function undo() {
   brush = null;
   path = [];
   editingLine = -1;
+  pathLoop = false;
   checked = false;
   pending = null;
   mark = null;
@@ -1041,7 +1073,7 @@ function clearAll() {
   endCage();
   // Only what the rules on use: the rest is kept for when they come back.
   const parts = {};
-  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE)]) parts[P.list] = s[kind] ? [] : s[P.list];
+  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE), ...Object.entries(EXTRAS)]) parts[P.list] = s[kind] ? [] : s[P.list];
   parts.regions = s.jigsaw ? Array.from(BOX) : s.regions;
   change(empty(), parts);
   selected = null;
@@ -1077,6 +1109,15 @@ function openSeed(found, how) {
   for (const [kind, O] of Object.entries(OUTSIDE)) {
     s[kind] = Boolean(seed[O.list]);
     parts[O.list] = seed[O.list] ? seed[O.list].map((o) => ({ ...o, ...(o.cells ? { cells: o.cells.slice() } : {}) })) : s[O.list];
+  }
+  // A seed with only single indexing cells turns Row/Column Indexing on as
+  // well; whatever of the switch's was kept for later goes with the seed's.
+  for (const [kind, X] of Object.entries(EXTRAS)) {
+    if (seed[X.list] && !s[kind]) {
+      s[kind] = true;
+      parts[X.main] = [];
+    }
+    parts[X.list] = seed[X.list] ? X.copy(seed[X.list]) : s[kind] ? [] : s[X.list];
   }
   s.jigsaw = Boolean(seed.regions);
   parts.regions = seed.regions ? seed.regions.slice() : s.regions;
@@ -1205,6 +1246,7 @@ function onGo() {
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.greater && !s.signs.length) return say("Put a sign down first: tap Marks, then near the side between two cells.");
   if (s.quad && !s.quads.length) return say("Put a quad down first: tap Marks, then near a corner where four cells meet, and type its digits.");
+  if (hasRule(s.rules, "dutchwhispers") && !whispers()) return say("Dutch Whispers changes the whisper lines: turn Whispers on and draw one, or turn Dutch Whispers off.");
   if (s.counting && !s.circles.length) return say("Put some counting circles down first: tap Marks, then the middle of a cell.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
   if (s.little && !s.littles.length) return say("Put a Little Killer sum down first: tap Outside, then a spot round the edge.");
@@ -1213,7 +1255,10 @@ function onGo() {
   if (s.hiddensky && !s.hiddens.length) return say("Put a Hidden Skyscraper clue down first: tap Outside, then a spot beside a row or column.");
   if (s.room && !s.rooms.length) return say("Put a Numbered Room clue down first: tap Outside, then a spot beside a row or column.");
   if (s.fullrank && !s.ranks.length) return say("Put a Full Rank clue down first: tap Outside, then a spot beside a row or column.");
-  if (s.rowcolindex && !s.indexings.length) return say("Put an indexing mark down first: tap Outside, then a spot left of a row or above a column.");
+  if (hasRule(s.rules, "cluedrankties") && !ranks()) return say("Clued Rank Ties changes Full Rank clues: turn Full Rank on and put one down, or turn Clued Rank Ties off.");
+  if (s.rowcolindex && !s.indexings.length && !s.indexcells.length) {
+    return say("Put an indexing mark down first: tap Outside, then a spot left of a row or above a column; or tap Marks for a single cell.");
+  }
   if (s.jigsaw && boxesStill()) return say("Cut the regions first: tap Regions, then a cell to pick its region, then cells to move into it.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
@@ -1490,11 +1535,18 @@ const clueText = (kind, cage) => (CAGES[kind].clue === "sum" ? String(cage.sum) 
 const isSwitch = (key) => key in CAGES || key === "jigsaw" || key in LINES || key in EDGES || key in QUADS || key in OUTSIDE;
 const ruleOn = (key) => (isSwitch(key) ? s[key] : Boolean(s.rules & RULES.find((r) => r.key === key).bit));
 
+// Rules that say opposite things, so one on turns the other off.
+const EITHER = [["norankties", "cluedrankties"]];
+
 function toggleRule(key) {
   if (s.stage !== "enter") return;
   endCage();
   if (isSwitch(key)) s[key] = !s[key];
   else s.rules ^= RULES.find((r) => r.key === key).bit;
+  for (const pair of EITHER) {
+    const other = pair.find((k) => k !== key);
+    if (pair.includes(key) && ruleOn(key)) s.rules &= ~RULES.find((r) => r.key === other).bit;
+  }
   save();
   note = "";
   render();
@@ -1674,7 +1726,10 @@ const LINES = {
     title: "Whisper line",
     a: "A whisper line",
     start: "end",
-    started: "One end placed. Tap the next cell: digits next to each other on the line differ by at least 5.",
+    // Dutch Whispers brings the least gap down to 4.
+    get started() {
+      return `One end placed. Tap the next cell: digits next to each other on the line differ by at least ${whisperGap(s.rules)}.`;
+    },
     problem: whisperProblem,
     problems: WHISPER_PROBLEMS,
   },
@@ -1767,6 +1822,7 @@ const LINES = {
     a: "A sum line",
     start: "end",
     sum: true,
+    loops: true,
     most: LONG_LINE_MOST,
     started: "One end placed. Tap the next cell, and type the line's sum: it cuts into runs of cells that each add up to it.",
     problem: sumLineProblem,
@@ -1816,7 +1872,8 @@ function toggleLineMode(kind) {
 // pill and then its arrow, a sum line's cells, any other the line itself.
 // copyLine copies one.
 const pathOf = (t) => (t.pill ? [...t.pill, ...t.arrow] : t.cells ?? t);
-const copyLine = (t) => (t.pill ? { pill: t.pill.slice(), arrow: t.arrow.slice() } : t.cells ? { sum: t.sum, cells: t.cells.slice() } : t.slice());
+const copyLine = (t) =>
+  t.pill ? { pill: t.pill.slice(), arrow: t.arrow.slice() } : t.cells ? { sum: t.sum, cells: t.cells.slice(), ...(t.loop ? { loop: true } : {}) } : t.slice();
 
 // Leaves the line tool, dropping any path not added. The sum typed for a
 // sum line goes too.
@@ -1824,6 +1881,7 @@ function endLine() {
   lineKind = null;
   path = [];
   editingLine = -1;
+  pathLoop = false;
   $("lineSum").value = "";
 }
 
@@ -1836,10 +1894,16 @@ function typeLineSum(key) {
 }
 const lineSumTyped = () => /^\d+$/.test($("lineSum").value.trim());
 
+// Whether the sum line being drawn can close in a loop: three cells or more,
+// its last touching its first.
+const canClose = () => LINES[lineKind].loops && !pathLoop && path.length >= 3 && touching(path[0], path.at(-1));
+
 // A tap in a line tool: with no path, a cell of a line picks it up, and
 // then its first cell (any of a pill's) starts another line there, for
 // lines that share a bulb, a circle, an end or a pill; the path's last cell
 // takes that step back; otherwise the cell is the next step, if it can be.
+// A sum line's first cell, tapped again where the line can close, closes
+// it in a loop; its first or last cell then opens it again.
 function pickLineCell(c) {
   const L = LINES[lineKind];
   const lines = s[L.list];
@@ -1848,11 +1912,24 @@ function pickLineCell(c) {
     if (i >= 0) {
       editingLine = i;
       path = pathOf(lines[i]).slice();
+      pathLoop = Boolean(lines[i].loop);
       if (L.pill) pillSize = lines[i].pill.length;
       if (L.sum) $("lineSum").value = String(lines[i].sum);
       note = "";
       return render();
     }
+  }
+  if (pathLoop) {
+    if (c !== path[0] && c !== path.at(-1)) return say(`The loop is closed. Tap its first or last cell to open it, or ${addLabel()}.`);
+    pathLoop = false;
+    note = "";
+    return render();
+  }
+  if (c === path[0] && canClose()) {
+    if (path.length > LOOP_LINE_MOST) return say(L.problems.looplength);
+    pathLoop = true;
+    note = "";
+    return render();
   }
   const head = path.slice(0, L.pill ? pillSize : 1);
   if (editingLine >= 0 && head.includes(c)) {
@@ -1896,8 +1973,10 @@ function turnPill() {
   render();
 }
 
+// A step back opens a closed loop before it takes a cell off.
 function stepBack() {
-  path.pop();
+  if (pathLoop) pathLoop = false;
+  else path.pop();
   note = "";
   render();
 }
@@ -1911,9 +1990,11 @@ function lineStatus() {
   if (L.pill && path.length === pillSize) return L.started;
   if (!path.length) return `Tap the ${L.start}, then each next cell in order. Tap ${L.a.toLowerCase()} already drawn to change it.`;
   if (path.length === 1) return L.started;
-  const again = editingLine >= 0 ? ` Tap its ${L.start} to start another from it.` : "";
   const sum = L.sum && !lineSumTyped() ? " Type its sum too." : "";
-  return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}.${sum} Tapping the last cell takes it back.${again}`;
+  if (pathLoop) return `A loop of ${plural(path.length, "cell")}: ${addLabel()}.${sum} Tapping its first or last cell opens it again.`;
+  const close = canClose() ? ` Tap its first cell to close it in a loop.` : "";
+  const again = editingLine >= 0 && !close ? ` Tap its ${L.start} to start another from it.` : "";
+  return `${plural(path.length, "cell")} long. Tap on, or ${addLabel()}.${sum} Tapping the last cell takes it back.${close}${again}`;
 }
 
 // The fewest and the most cells a kind of line has, a pill arrow's pill
@@ -1929,18 +2010,24 @@ function onLineAdd() {
   }
   if (L.sum && !lineSumTyped()) return say("Type the line's sum first.");
   const sum = Number($("lineSum").value.trim());
-  const line = L.pill ? { pill: path.slice(0, pillSize).sort((a, b) => a - b), arrow: path.slice(pillSize) } : L.sum ? { sum, cells: path.slice() } : path.slice();
+  const line = L.pill
+    ? { pill: path.slice(0, pillSize).sort((a, b) => a - b), arrow: path.slice(pillSize) }
+    : L.sum
+      ? { sum, cells: path.slice(), ...(pathLoop ? { loop: true } : {}) }
+      : path.slice();
   const next = s[L.list].filter((_, i) => i !== editingLine).concat([line]);
   const problem = L.problem(next);
   if (problem) return say(L.problems[problem.why]);
   const n = path.length;
+  const closed = pathLoop;
   change(s.clues, { [L.list]: next });
   path = [];
   editingLine = -1;
+  pathLoop = false;
   // The sum stays typed for the next line, as puzzles often give every
   // line the same.
   const runs = L.sum ? `, its runs adding up to ${sum}` : "";
-  say(`${L.title} of ${plural(n, "cell")} added${runs}. Tap the ${L.start} of the next one, or Done.`);
+  say(`${closed ? "Loop" : L.title} of ${plural(n, "cell")} added${runs}. Tap the ${L.start} of the next one, or Done.`);
 }
 
 function onLineRemove() {
@@ -1949,6 +2036,7 @@ function onLineRemove() {
   change(s.clues, { [L.list]: s[L.list].filter((_, i) => i !== editingLine) });
   path = [];
   editingLine = -1;
+  pathLoop = false;
   say(`${L.title} removed. Undo brings it back.`);
 }
 
@@ -1968,6 +2056,15 @@ const MARK_WORDS = { white: "white dot", black: "black dot", x: "X", v: "V", gt:
 const QUADS = {
   quad: { list: "quads", problem: quadProblem, copy: (quads) => quads.map((q) => ({ cell: q.cell, digits: q.digits.slice() })) },
   counting: { list: "circles", problem: circleProblem, copy: (circles) => circles.slice() },
+};
+
+// More of what a switch already puts down, in a list of its own under the
+// same switch: Counting Circles' sets past the first, and Row/Column
+// Indexing's single cells beside its marked lines (`main`). Each with how
+// to check and copy it.
+const EXTRAS = {
+  counting: { list: "circlesets", main: "circles", problem: circleSetProblem, copy: (sets) => sets.map((set) => set.slice()) },
+  rowcolindex: { list: "indexcells", main: "indexings", problem: indexCellProblem, copy: (cells) => cells.map(({ cell, line }) => ({ cell, line })) },
 };
 const capital = (text) => text[0].toUpperCase() + text.slice(1);
 
@@ -2044,9 +2141,10 @@ function sideNear(c, at) {
 
 // A tap in the Marks tool: near a side, the mark on it steps on. Nearer the
 // middle, the cell is picked, and then a tap on a cell beside it steps on
-// the mark between the two. With Counting Circles on, a tap in the middle
-// puts a circle in or takes it out instead; from the keyboard, where there
-// is no middle, a cell picked twice does.
+// the mark between the two. With Counting Circles or Row/Column Indexing
+// on, a tap in the middle puts what Middle says there, or takes it off,
+// instead; from the keyboard, where there is no middle, a cell picked twice
+// does.
 function pickMarkSide(c, at) {
   // With Quad on, a tap near a corner picks it for the quad's digits.
   const corner = s.quad ? cornerNear(c, at) : -1;
@@ -2058,29 +2156,90 @@ function pickMarkSide(c, at) {
   }
   quadAt = null;
   const sides = markCycle().length > 0;
-  if (!sides && !s.counting) return say("Tap near a corner where four cells meet to put a quad there.");
+  const middles = middleKinds().length > 0;
+  if (!sides && !middles) return say("Tap near a corner where four cells meet to put a quad there.");
   let other = sides ? sideNear(c, at) : -1;
   if (other < 0 && anchor != null && beside(Math.min(anchor, c), Math.max(anchor, c))) other = anchor;
   if (other >= 0) {
     anchor = null;
     return stepMark(Math.min(c, other), Math.max(c, other));
   }
-  if (s.counting && (at || !sides || anchor === c)) {
+  if (middles && (at || !sides || anchor === c)) {
     anchor = null;
-    return toggleCircle(c);
+    const kind = middleKind();
+    return kind.circle ? toggleCircle(c, kind.set) : toggleIndexCell(c, kind.column);
   }
   anchor = anchor === c ? null : c;
   note = "";
   render();
 }
 
-// Puts a counting circle in cell c, or takes it out.
-function toggleCircle(c) {
-  const had = s.circles.includes(c);
-  const next = had ? s.circles.filter((o) => o !== c) : s.circles.concat([c]).sort((a, b) => a - b);
-  if (!had && next.length > CIRCLES_MOST) return say(CIRCLE_PROBLEMS.count);
-  change(s.clues, { circles: next });
-  say(had ? `Circle at ${where(c)} taken off. Undo brings it back.` : `Circle at ${where(c)}: ${plural(next.length, "circle")} so far. Tap it again to take it off.`);
+// Every set of counting circles drawn: the first, then the rest.
+const allCircleSets = () => (s.circles.length ? [s.circles, ...s.circlesets] : []);
+
+// What a tap in a cell's middle can put there, with the rules on: a circle
+// of each set of Counting Circles there is, and of a new set while there is
+// room; and a cell indexing by its column, as a marked column's cells do,
+// or by its row. [{ circle: true, set } or { column }], and what Middle
+// shows for each.
+function middleKinds() {
+  const out = [];
+  if (s.counting) {
+    const n = allCircleSets().length;
+    for (let set = 0; set < Math.max(n, 1); set++) out.push({ circle: true, set, label: n < 2 ? "Circles" : `Circles, set ${set + 1}` });
+    if (n && n <= CIRCLE_SETS_MOST) out.push({ circle: true, set: n, label: "New circle set" });
+  }
+  if (s.rowcolindex) out.push({ column: true, label: "Column indexing" }, { column: false, label: "Row indexing" });
+  return out;
+}
+const middleKind = () => {
+  const kinds = middleKinds();
+  return kinds[Math.min(middle, kinds.length - 1)];
+};
+
+// The Middle button: on to the next of middleKinds.
+function turnMiddle() {
+  const kinds = middleKinds();
+  middle = (Math.min(middle, kinds.length - 1) + 1) % kinds.length;
+  note = "";
+  render();
+}
+
+// Puts a counting circle of set `set` in cell c, taking it out of any
+// other set; or takes it out, if it was in that one. A set left empty goes,
+// and those after it move down.
+function toggleCircle(c, set) {
+  const sets = allCircleSets().map((cells) => cells.filter((o) => o !== c));
+  const was = allCircleSets().findIndex((cells) => cells.includes(c));
+  if (was !== set) {
+    if (set === sets.length) sets.push([]);
+    sets[set] = sets[set].concat([c]).sort((a, b) => a - b);
+    if (sets[set].length > CIRCLES_MOST) return say(CIRCLE_PROBLEMS.count);
+  }
+  const kept = sets.filter((cells) => cells.length);
+  change(s.clues, { circles: kept[0] ?? [], circlesets: kept.slice(1) });
+  if (was === set) return say(`Circle at ${where(c)} taken off. Undo brings it back.`);
+  const count = plural(sets[set].length, "circle");
+  const of = kept.length > 1 ? ` in set ${set + 1}` : "";
+  say(`${capital(where(c))}${was >= 0 ? ` moved to set ${set + 1}` : " circled"}: ${count}${of} so far. Tap it again to take it off.`);
+}
+
+// Marks cell c as indexing by its column, or by its row, or takes the mark
+// off. A row or column marked whole already has its cells.
+function toggleIndexCell(c, column) {
+  const line = column ? 9 + COL[c] : ROW[c];
+  const name = column ? `Column ${COL[c] + 1}` : `Row ${ROW[c] + 1}`;
+  if (s.indexings.some((i) => i.line === line)) return say(`${name} has an indexing mark already, so all its cells index.`);
+  const had = s.indexcells.some((x) => x.cell === c && x.line === line);
+  const next = had
+    ? s.indexcells.filter((x) => x.cell !== c || x.line !== line)
+    : s.indexcells.concat([{ cell: c, line }]).sort((a, b) => a.cell - b.cell || b.line - a.line);
+  change(s.clues, { indexcells: next });
+  if (had) return say(`Indexing at ${where(c)} taken off. Undo brings it back.`);
+  const digit = column ? COL[c] + 1 : ROW[c] + 1;
+  const holds = `holds ${digit === 8 ? "an" : "a"} ${digit}`;
+  const says = column ? `which column of row ${ROW[c] + 1} ${holds}` : `which row of column ${COL[c] + 1} ${holds}`;
+  say(`${capital(where(c))} indexes by its ${column ? "column" : "row"}: its digit says ${says}. Tap it again to take it off.`);
 }
 
 // The next mark on the side between cells a and b, a first. A mark there
@@ -2107,12 +2266,18 @@ function markStatus() {
     const digits = s.quads.find((q) => q.cell === quadAt)?.digits;
     return `Quad at ${cornerName(quadAt)}: ${digits ? digits.join(" ") : "no digits yet"}. Type the digits its four cells hold, up to four; Erase takes the last off.`;
   }
-  if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them${s.counting ? ", or it again for a counting circle" : ""}.`;
+  const kind = middleKinds().length ? middleKind() : null;
+  const n = allCircleSets().length;
+  let what = kind?.label.toLowerCase() ?? "";
+  if (kind?.circle) what = n < 2 && kind.set < 1 ? "a counting circle" : kind.set < n ? `a circle of set ${kind.set + 1}` : "a circle of a new set";
+  if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them${kind ? `, or it again for ${what}` : ""}.`;
   const kinds = markCycle().map((m) => MARK_WORDS[m]).join(", ");
-  const tapped = s.counting ? "" : ", or tap a cell and then one beside it";
+  const tapped = kind ? "" : ", or tap a cell and then one beside it";
   const sides = kinds ? `Tap near the side between two cells to mark it${tapped}. Each tap steps on: ${kinds}, then none.` : "";
   const corners = s.quad ? "Tap near a corner where four cells meet for a quad, then type its digits." : "";
-  const middles = s.counting ? `Tap the middle of a cell to put a counting circle in it, or take it out: ${plural(s.circles.length, "circle")} so far.` : "";
+  const circled = kind?.circle ? ` ${plural(allCircleSets().flat().length, "circle")} so far.` : "";
+  const turn = middleKinds().length > 1 ? " Middle picks what goes there." : "";
+  const middles = kind ? `Tap the middle of a cell for ${what}, or to take it off.${circled}${turn}` : "";
   return [sides, corners, middles].filter(Boolean).join(" ");
 }
 
@@ -2465,7 +2630,10 @@ function defaultStatus() {
     if (s.pillarrow && !s.pills.length) {
       return "A pill arrow puzzle: tap Pills, then the pill's cells and each cell along its arrow. The pill's digits make a number, like 17, that the arrow's add up to.";
     }
-    if (s.whisper && !s.whispers.length) return "A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.";
+    if (s.whisper && !s.whispers.length) {
+      const dutch = hasRule(s.rules, "dutchwhispers");
+      return `A ${dutch ? "Dutch" : "German"} Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least ${whisperGap(s.rules)}.`;
+    }
     if (s.renban && !s.renbans.length) return "A renban puzzle: tap Renbans, then each cell along a line. Its digits are a run, like 3 4 5, in any order.";
     if (s.palindrome && !s.palindromes.length) {
       return "A palindrome puzzle: tap Palindromes, then each cell along a line. Its digits read the same from either end, like 3 7 1 7 3.";
@@ -2524,8 +2692,8 @@ function defaultStatus() {
     if (s.fullrank && !s.ranks.length) {
       return `A Full Rank puzzle: tap Outside, then a spot beside a row or column, and type where the number it reads from there comes among all ${RANK_MOST}, smallest first.`;
     }
-    if (s.rowcolindex && !s.indexings.length) {
-      return "A Row/Column Indexing puzzle: tap Outside, then a spot above a column or left of a row, and tap Add. Its digits each say where its number sits across them.";
+    if (s.rowcolindex && !s.indexings.length && !s.indexcells.length) {
+      return "A Row/Column Indexing puzzle: tap Outside, then a spot above a column or left of a row, and tap Add. Its digits each say where its number sits across them. Tap Marks for single cells.";
     }
     if (s.jigsaw && boxesStill()) return "A Jigsaw puzzle: tap Regions to cut the grid into nine regions of nine cells, in place of the boxes.";
     if (clashes(s.clues, variant()).size) return clashText();
@@ -2622,6 +2790,7 @@ function render() {
     signs: s.greater ? s.signs : null,
     quads: s.quad ? s.quads : null,
     circles: s.counting ? s.circles : null,
+    circlesets: s.counting ? s.circlesets : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
     littles: s.little ? s.littles : null,
     skyscrapers: s.skyscraper ? s.skyscrapers : null,
@@ -2630,11 +2799,13 @@ function render() {
     rooms: s.room ? s.rooms : null,
     ranks: s.fullrank ? s.ranks : null,
     indexings: s.rowcolindex ? s.indexings : null,
+    indexcells: s.rowcolindex ? s.indexcells : null,
     regions: regions(),
     margin: outsideOn(),
     spots: outMode ? openSpots() : [],
     spot: outMode ? spot : null,
     path: lineKind ? path : [],
+    pathLoop: Boolean(lineKind) && pathLoop,
     pathKind: lineKind ?? "thermo",
     pathPill: pillSize,
     rules: s.rules,
@@ -2704,7 +2875,7 @@ function render() {
     solverRegionSums: enter && s.regionsum,
     solverIndexes: enter && s.valueindex,
     lineBar: Boolean(lineKind),
-    solverMarks: enter && (s.kropki || s.xv || s.greater || s.quad || s.counting),
+    solverMarks: enter && (s.kropki || s.xv || s.greater || s.quad || s.counting || s.rowcolindex),
     markBar: markMode,
     solverOutside: enter && outsideOn(),
     outBar: outMode,
@@ -2756,6 +2927,11 @@ function render() {
   $("solverOutside").setAttribute("aria-pressed", String(outMode));
   $("solverRegions").setAttribute("aria-pressed", String(regionMode));
   $("regionReset").disabled = boxesStill();
+  if (markMode) {
+    const kinds = middleKinds();
+    $("markMiddle").classList.toggle("hidden", kinds.length < 2);
+    if (kinds.length) $("markMiddleLabel").textContent = middleKind().label;
+  }
   if (outMode) {
     const kinds = spot ? spotKinds(spot) : [];
     const held = heldAtSpot();
@@ -2916,6 +3092,7 @@ export function initSolver({ reopen = true } = {}) {
   $("solverIndexes").addEventListener("click", () => toggleLineMode("valueindex"));
   $("solverMarks").addEventListener("click", toggleMarkMode);
   $("markDone").addEventListener("click", () => endCage(true));
+  $("markMiddle").addEventListener("click", turnMiddle);
   $("solverOutside").addEventListener("click", toggleOutMode);
   $("outAdd").addEventListener("click", onOutAdd);
   $("outTurn").addEventListener("click", turnSpot);

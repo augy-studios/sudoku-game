@@ -21,12 +21,13 @@
 // lockout lines, QEN for entropic lines, QMO for modular
 // lines, QSL for sum lines, QRS for region sum lines, QVX for value
 // indexing lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
-// for quads, QCC for Counting Circles, B for Sandwich clues, L for Little
-// Killer clues, Y for Skyscraper clues, U for X-Sum clues, QHS for Hidden
-// Skyscraper clues, QNR for Numbered Room clues, QFR for Full Rank clues,
-// QRX for Row/Column Indexing marks and J for a Jigsaw's regions, which the seed then
-// carries too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF
-// for the switch rules (variant.js). Once the single
+// for quads, QCC for Counting Circles and QCS for more sets of them, B for
+// Sandwich clues, L for Little Killer clues, Y for Skyscraper clues, U for
+// X-Sum clues, QHS for Hidden Skyscraper clues, QNR for Numbered Room clues,
+// QFR for Full Rank clues, QRX for Row/Column Indexing marks, QCX for single
+// indexing cells and J for a Jigsaw's regions, which the seed then carries
+// too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT and
+// QCT for the switch rules (variant.js). Once the single
 // letters ran out, a new one became Q and two more: Q is read with the two
 // after it, and never alone, so a seed from before reads as it did.
 
@@ -79,9 +80,14 @@ import {
   roomProblem,
   circleProblem,
   CIRCLES_MOST,
+  circleSetProblem,
+  CIRCLE_SETS_MOST,
   rankProblem,
   RANK_MOST,
   indexingProblem,
+  indexCellProblem,
+  INDEX_CELLS_MOST,
+  renamed,
   regionProblem,
   sortRegions,
   VIEWS,
@@ -224,13 +230,15 @@ function decodeGrid(body) {
    way it steps from there and each step after. Then German Whispers,
    renban, palindrome, zipper, between, lockout, entropic and modular lines
    as thermometers are. Then sum lines, each its sum and then as a
-   thermometer, region sum lines and value indexing lines as thermometers,
+   thermometer, a loop with its first cell again at the end, region sum
+   lines and value indexing lines as thermometers,
    their lengths in a wider digit for their longer lines. Then Kropki dots, and then XV marks, as whichever is
    shorter: how many, and for each its side and which of the two marks it
    is; or for every side, its mark or none; and Greater Than signs the same
    way. Then quads: how many, and for each its corner, how many digits and
    each digit. Then Counting Circles, as whichever is shorter: how many,
-   and each one's cell; or for every cell, whether it has one. Then
+   and each one's cell; or for every cell, whether it has one; then how
+   many more sets of them, and each the same way. Then
    Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
    many, and for each its first cell, which way it runs and its sum. Then
@@ -238,7 +246,9 @@ function decodeGrid(body) {
    Numbered Room clues, then Full Rank clues, each as whichever is shorter:
    how many, and for each its view and its value; or for every view, its
    value or none. Then Row/Column Indexing marks: for each row and then
-   each column, whether it has one. Then a Jigsaw's regions: for each pair of neighbours, whether
+   each column, whether it has one; then single indexing cells: how many,
+   and each one's cell and whether it goes by its row or its column. Then
+   a Jigsaw's regions: for each pair of neighbours, whether
    they share a region, which gives back the regions as the shared edges
    give back cages. Each part is there only when the seed's letters say
    so, so a seed from before a part came reads as it did. */
@@ -523,6 +533,39 @@ function readCircles(take) {
 
 const sortCircles = (circles) => circles.slice().sort((a, b) => a - b);
 
+// More sets of Counting Circles: how many, then each as writeCircles has
+// it.
+function writeCircleSets(digits, sets) {
+  digits.push([sets.length - 1, CIRCLE_SETS_MOST]);
+  for (const set of sets) writeCircles(digits, set);
+}
+
+function readCircleSets(take) {
+  const count = take(CIRCLE_SETS_MOST) + 1;
+  return Array.from({ length: count }, () => readCircles(take));
+}
+
+// Each set's cells in order, the sets as they were drawn.
+const sortCircleSets = (sets) => sets.map(sortCircles);
+
+// Single indexing cells: how many, then each one's cell and its line: 0
+// for its column, doing as a marked column's cells do, 1 for its row.
+function writeIndexCells(digits, indexcells) {
+  digits.push([indexcells.length - 1, INDEX_CELLS_MOST]);
+  for (const { cell, line } of indexcells) digits.push([cell, 81], [line < 9 ? 1 : 0, 2]);
+}
+
+function readIndexCells(take) {
+  const count = take(INDEX_CELLS_MOST) + 1;
+  return Array.from({ length: count }, () => {
+    const cell = take(81);
+    return { cell, line: take(2) ? Math.floor(cell / 9) : 9 + (cell % 9) };
+  });
+}
+
+// By cell, a column's way before a row's.
+const sortIndexCells = (indexcells) => indexcells.map(({ cell, line }) => ({ cell, line })).sort((a, b) => a.cell - b.cell || b.line - a.line);
+
 // Row/Column Indexing marks: for each of the 18 lines, 1 for a mark.
 function writeIndexings(digits, indexings) {
   const marked = new Set(indexings.map((i) => i.line));
@@ -731,15 +774,26 @@ const lines = (list, letter, name, problem, most = 9) => ({
   read: (take) => readLines(take, most),
   sort: copyLines,
 });
-// Sum lines, each with its sum before its cells.
+// Sum lines, each with its sum before its cells. A loop is written with its
+// first cell again at the end, which no other line has, so a seed from
+// before loops reads as it did.
 const sumLines = {
   list: "sumlines",
   letter: "QSL",
   name: "Sum Line",
   problem: sumLineProblem,
-  write: (digits, found) => writeLines(digits, found, LONG_LINE_MOST, ({ sum }) => digits.push([sum - 1, SUM_LINE_MAX])),
-  read: (take) => readLines(take, LONG_LINE_MOST, () => ({ sum: take(SUM_LINE_MAX) + 1 })),
-  sort: (found) => found.map(({ sum, cells }) => ({ sum, cells: cells.slice() })),
+  write: (digits, found) =>
+    writeLines(
+      digits,
+      found.map((t) => (t.loop ? { sum: t.sum, cells: [...t.cells, t.cells[0]] } : t)),
+      LONG_LINE_MOST,
+      ({ sum }) => digits.push([sum - 1, SUM_LINE_MAX])
+    ),
+  read: (take) =>
+    readLines(take, LONG_LINE_MOST, () => ({ sum: take(SUM_LINE_MAX) + 1 }))?.map((t) =>
+      t.cells.length > 3 && t.cells.at(-1) === t.cells[0] ? { sum: t.sum, cells: t.cells.slice(0, -1), loop: true } : t
+    ),
+  sort: (found) => found.map(({ sum, cells, loop }) => ({ sum, cells: cells.slice(), ...(loop ? { loop: true } : {}) })),
 };
 const edges = (list, letter, name, problem, marks) => ({
   list,
@@ -787,6 +841,8 @@ const PARTS = [
   edges("signs", "QGT", "Greater Than", signProblem, SIGN_MARKS),
   { list: "quads", letter: "QQD", name: "Quad", problem: quadProblem, write: writeQuads, read: readQuads, sort: sortQuads },
   { list: "circles", letter: "QCC", name: "Counting Circles", problem: circleProblem, write: writeCircles, read: readCircles, sort: sortCircles },
+  // Only ever with the first set, QCC.
+  { list: "circlesets", letter: "QCS", name: "Counting Circles", with: "circles", problem: circleSetProblem, write: writeCircleSets, read: readCircleSets, sort: sortCircleSets },
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
   { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
   views("skyscrapers", "Y", "Skyscrapers", skyscraperProblem, "count", 9),
@@ -795,6 +851,7 @@ const PARTS = [
   views("rooms", "QNR", "Numbered Room", roomProblem, "digit", 9),
   views("ranks", "QFR", "Full Rank", rankProblem, "rank", RANK_MOST),
   { list: "indexings", letter: "QRX", name: "Row/Column Indexing", problem: indexingProblem, write: writeIndexings, read: readIndexings, sort: sortIndexings },
+  { list: "indexcells", letter: "QCX", name: "Row/Column Indexing", problem: indexCellProblem, write: writeIndexCells, read: readIndexCells, sort: sortIndexCells },
   { list: "regions", letter: "J", name: "Jigsaw", problem: regionProblem, write: writeRegions, read: readRegions, sort: sortRegions },
 ];
 
@@ -826,8 +883,8 @@ function prefixFor(parts, rules) {
 
 // The seed of a made puzzle. variant: { cages, relliks, lunchboxes,
 // looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
-// sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens,
-// rooms, ranks, indexings, regions, rules } for a variant puzzle (variant.js), or nothing for
+// sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens,
+// rooms, ranks, indexings, indexcells, regions, rules } for a variant puzzle (variant.js), or nothing for
 // a classic one.
 // `level` is
 // the maker's rating; it names the level on screen and nothing else. The
@@ -898,9 +955,11 @@ export function killerSeed(rand, level) {
 export function seedVariantName(text) {
   const head = String(text).split("-")[0].toUpperCase();
   if (LEVEL_IDS.includes(head)) return "";
-  return readLetters(head)
-    .letters.map((letter) => (PARTS.find((p) => p.letter === letter) ?? RULES.find((r) => r.letter === letter)).name)
-    .join(", ");
+  const { letters } = readLetters(head);
+  const names = letters.map((letter) => (PARTS.find((p) => p.letter === letter) ?? RULES.find((r) => r.letter === letter)).name);
+  const rules = RULES.filter((r) => letters.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
+  // A part with two letters, such as Counting Circles' sets, is named once.
+  return renamed([...new Set(names)], rules).join(", ");
 }
 
 // Parsing one means checking it has one answer, so the last few are kept.
@@ -917,10 +976,11 @@ function parseMade(letters, level, body) {
   if (PARTS.some((p) => withs[p.list])) {
     const got = decodeParts(body, withs);
     const variant = got && { ...got, rules };
-    // Each part the letters name is there, and well formed.
+    // Each part the letters name is there, well formed, and with the part it
+    // comes with, if it has one.
     const ok =
       variant &&
-      PARTS.every((p) => !withs[p.list] || (variant[p.list].length && !p.problem(variant[p.list]))) &&
+      PARTS.every((p) => !withs[p.list] || (variant[p.list].length && !p.problem(variant[p.list]) && (!p.with || withs[p.with]))) &&
       variantSolutions(got.grid, variant, 2)?.length === 1;
     seed = ok ? madeSeed(level, got.grid, variant) : null;
   } else if (rules) {

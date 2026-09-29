@@ -266,6 +266,7 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="doublearrow">Double Arrow</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="pillarrow">Pill Arrow</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="whisper">Whispers</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="dutchwhispers">Dutch Whispers</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="renban">Renban</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="palindrome">Palindrome</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="zipper">Zipper</button>
@@ -298,6 +299,8 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="hiddensky">Hidden Skyscraper</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="room">Numbered Room</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="fullrank">Full Rank</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="norankties">No Rank Ties</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="cluedrankties">Clued Rank Ties</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="rowcolindex">Row/Col Indexing</button>
                         </div>
                     </div>
@@ -346,8 +349,9 @@
                     <button id="lineDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
                 </div>
 
-                <!-- The Marks tool's: marks go down with taps, so only Done. -->
+                <!-- The Marks tool's: marks go down with taps; Middle picks what a tap in a cell's middle puts there. -->
                 <div id="markBar" class="cage-bar hidden">
+                    <button id="markMiddle" class="btn btn-quiet pill hidden" type="button"><span id="markMiddleLabel">Circles</span></button>
                     <button id="markDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
                 </div>
 

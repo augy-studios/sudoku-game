@@ -691,6 +691,17 @@ body {
   stroke-width: 1.5;
   opacity: 0.75;
 }
+/* Sets of circles after the first, each counted on its own: the lines'
+   colours, and a heavier ring so they read over a line's colour. */
+.counting-circle[class*="circle-set-"] { stroke-width: 2.2; opacity: 0.9; }
+.circle-set-1 { stroke: #3f86d4; }
+.circle-set-2 { stroke: #d4509a; }
+.circle-set-3 { stroke: #e0692a; }
+.circle-set-4 { stroke: #9a5bd8; }
+.circle-set-5 { stroke: var(--ok); }
+.circle-set-6 { stroke: #d9a514; }
+.circle-set-7 { stroke: #6cc0cf; }
+.circle-set-8 { stroke: #c2a07f; }
 /* Warm, so windows never pass for the boxes' green tint. */
 .cell.window { background: color-mix(in srgb, var(--warn) 22%, transparent); }
 /* Row/Column Indexing's rows and columns: cool, so they never pass for a

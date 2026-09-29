@@ -5,8 +5,8 @@
 // samevalues, connecteds, distincts, thermos, arrows, doubles, pills,
 // whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
 // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads,
-// circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks,
-// indexings, regions, rules }:
+// circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens,
+// rooms, ranks, indexings, indexcells, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -58,7 +58,8 @@
 //            arrow's add up to it. They may share cells, and pills.
 //   whispers German Whispers lines, paths like a thermometer's: digits next
 //            to each other on one differ by at least 5, so no 5 is ever on
-//            one. They may share cells.
+//            one; under Dutch Whispers, by at least 4 (whisperGap below).
+//            They may share cells.
 //   renbans  renban lines, paths like a thermometer's: a line's digits are
 //            a run of consecutive digits in any order, with no repeats.
 //            They may share cells.
@@ -82,11 +83,13 @@
 //            share cells.
 //   modulars modular lines, as entropic lines with the digits sorted by
 //            what is left over dividing by 3: 1 4 7, 2 5 8 and 3 6 9.
-//   sumlines sum lines, [{ sum, cells }], cells a path like a thermometer's
-//            of up to LONG_LINE_MOST cells: the line cuts into runs of
-//            cells one after another, each adding up to the sum, 1 to
-//            SUM_LINE_MAX. Digits may repeat where the rules allow. They
-//            may share cells.
+//   sumlines sum lines, [{ sum, cells, loop? }], cells a path like a
+//            thermometer's of up to LONG_LINE_MOST cells: the line cuts into
+//            runs of cells one after another, each adding up to the sum, 1
+//            to SUM_LINE_MAX. With `loop`, its last cell touches its first
+//            and the line closes there, so a run may go on round past the
+//            end; a loop has three to LOOP_LINE_MOST cells. Digits may repeat
+//            where the rules allow. They may share cells.
 //   regionsums  region sum lines, paths like a sum line's: each run of the
 //            line within one box, or a Jigsaw's region, adds up to the same
 //            total, a line that leaves a box and comes back making two runs
@@ -110,6 +113,10 @@
 //   circles  Counting Circles, a list of one to CIRCLES_MOST cells in
 //            reading order: a digit in a circle is in exactly that many
 //            circles, a 3 in three of them.
+//   circlesets  more sets of Counting Circles, [[cells]], one to
+//            CIRCLE_SETS_MOST lists like `circles`, each counted on its own:
+//            a 3 in a set's circle is in three of that set's circles. No cell
+//            is in two sets, `circles` counting as one.
 //   sandwiches  Sandwich clues outside the grid, [{ line, sum }]: line 0 to
 //            8 a row, its clue on the left, and 9 to 17 a column, its clue
 //            above. The digits between the line's 1 and its 9 add up to the
@@ -133,13 +140,18 @@
 //   ranks    Full Rank clues outside the grid, [{ view, rank }]: every row
 //            and column, read from each side, is a nine-digit number, and
 //            of those 36 this view's is the rank-th smallest, 1 to 36, tied
-//            with none (RANK_MOST below).
+//            with none (RANK_MOST below). Under Clued Rank Ties it may tie,
+//            its rank one more than how many are smaller; under No Rank
+//            Ties no two of the 36 tie, clued or not.
 //   indexings  Row/Column Indexing marks outside the grid, [{ line }]: line
 //            0 to 8 a row, its mark on the left, and 9 to 17 a column, its
 //            mark above. Each cell of a marked column holds the column its
 //            row keeps that column's number in, a 5 in column 1 putting that
 //            row's 1 in column 5; each cell of a marked row, the row its
 //            column keeps that row's number in (INDEXERS below).
+//   indexcells  single Row/Column Indexing cells, [{ cell, line }]: the
+//            cell does as it would in a marked `line`, its own row or its
+//            own column, the rest of that line unmarked.
 //   regions  a Jigsaw puzzle's regions in place of the 3x3 boxes: for each
 //            cell, 0 to 8, which region it is in. Each region is nine cells
 //            joined edge to edge, and holds 1 to 9.
@@ -156,7 +168,9 @@
 //            digit; Global Mod, every 2x2 square holds one each of 1 4 7,
 //            2 5 8 and 3 6 9; Anti-taxicab, a digit X never has another X
 //            exactly X steps away along rows and columns; Dutch Flatmates,
-//            every 5 has a 1 in the cell above it or a 9 in the cell below.
+//            every 5 has a 1 in the cell above it or a 9 in the cell below;
+//            and options on drawn parts: Dutch Whispers, No Rank Ties and
+//            Clued Rank Ties, as whispers and ranks above say.
 //
 // Diagonals, windows and disjoint groups are extra houses, like rows,
 // columns and boxes; the knight's and king's moves are extra pairs of cells
@@ -172,7 +186,8 @@
 // Flatmates depend on which digit a cell holds, so each has its own
 // narrowing (TAXICAB and flatmateBounds below). Counting Circles, Full Rank
 // and Row/Column Indexing narrow as the other clues do (circleBounds,
-// rankBounds and indexingBounds below).
+// rankBounds and indexingBounds below), and No Rank Ties the views that
+// could read the same (tieBounds below).
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
@@ -195,17 +210,33 @@ export const RULES = [
   { key: "globalmod", bit: 512, letter: "QGM", name: "Global Mod" },
   { key: "antitaxicab", bit: 1024, letter: "QAT", name: "Anti-taxicab" },
   { key: "dutchflatmates", bit: 2048, letter: "QDF", name: "Dutch Flatmates" },
+  // Options on a drawn part rather than rules of their own: Dutch Whispers
+  // makes the whisper lines Dutch, and names them in German Whispers' place.
+  { key: "dutchwhispers", bit: 4096, letter: "QDW", name: "Dutch Whispers", replaces: "German Whispers" },
+  { key: "norankties", bit: 8192, letter: "QNT", name: "No Rank Ties" },
+  { key: "cluedrankties", bit: 16384, letter: "QCT", name: "Clued Rank Ties" },
 ];
 export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 // Whether the rule `key` is among the bits in `rules`.
 export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key === key).bit);
 const has = hasRule;
 
+// Names with a rule that replaces a part's name, such as Dutch Whispers
+// for German Whispers, in that name's place, once.
+export function renamed(names, rules = 0) {
+  let out = names.slice();
+  for (const r of RULES) {
+    if (!r.replaces || !(rules & r.bit) || !out.includes(r.replaces)) continue;
+    out = out.filter((name) => name !== r.name).map((name) => (name === r.replaces ? r.name : name));
+  }
+  return out;
+}
+
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
-  if (indexings?.length) names.unshift("Row/Column Indexing");
+  if (indexings?.length || indexcells?.length) names.unshift("Row/Column Indexing");
   if (ranks?.length) names.unshift("Full Rank");
   if (rooms?.length) names.unshift("Numbered Room");
   if (hiddens?.length) names.unshift("Hidden Skyscraper");
@@ -213,7 +244,7 @@ export function variantName({ cages, relliks, lunchboxes, looksays, equalities, 
   if (skyscrapers?.length) names.unshift("Skyscrapers");
   if (littles?.length) names.unshift("Little Killer");
   if (sandwiches?.length) names.unshift("Sandwich");
-  if (circles?.length) names.unshift("Counting Circles");
+  if (circles?.length || circlesets?.length) names.unshift("Counting Circles");
   if (quads?.length) names.unshift("Quad");
   if (signs?.length) names.unshift("Greater Than");
   if (xvs?.length) names.unshift("XV");
@@ -242,7 +273,7 @@ export function variantName({ cages, relliks, lunchboxes, looksays, equalities, 
   if (lunchboxes?.length) names.unshift("Lunchbox");
   if (relliks?.length) names.unshift("Rellik Cage");
   if (cages?.length) names.unshift("Killer");
-  return names.join(", ");
+  return renamed(names, rules).join(", ");
 }
 
 /* ---- the layout a set of rules makes ---- */
@@ -628,14 +659,26 @@ export const SUM_LINE_MAX = 30;
 // nine cells on.
 export const INDEX_LINE_MOST = 11;
 
+// The most cells a sum line that closes in a loop has: a seed writes it
+// with its first cell again at the end, in a long line's room.
+export const LOOP_LINE_MOST = LONG_LINE_MOST - 1;
+
 // Sum lines: each a line of two to LONG_LINE_MOST cells, and a sum 1 to
-// SUM_LINE_MAX. null if so, or what is wrong: { why, line }, why "sum" for
-// the sum or as lineProblem says.
+// SUM_LINE_MAX; a loop three to LOOP_LINE_MOST cells, its last touching its
+// first. null if so, or what is wrong: { why, line }, why "sum" for the
+// sum, "looplength" or "open" for a loop, or as lineProblem says.
 export function sumLineProblem(lines) {
   const problem = lineProblem(lines.map((t) => t?.cells), 2, LONG_LINE_MOST);
   if (problem) return problem;
   const i = lines.findIndex(({ sum }) => !Number.isInteger(sum) || sum < 1 || sum > SUM_LINE_MAX);
-  return i >= 0 ? { why: "sum", line: i } : null;
+  if (i >= 0) return { why: "sum", line: i };
+  for (let j = 0; j < lines.length; j++) {
+    const { cells, loop } = lines[j];
+    if (!loop) continue;
+    if (cells.length < 3 || cells.length > LOOP_LINE_MOST) return { why: "looplength", line: j };
+    if (!touching(cells[0], cells.at(-1))) return { why: "open", line: j };
+  }
+  return null;
 }
 export const regionSumProblem = (lines) => lineProblem(lines, 2, LONG_LINE_MOST);
 // A value, a count and one cell to count to, at least.
@@ -818,26 +861,34 @@ function scaleBounds(list, g, free) {
   return true;
 }
 
-// FAR[m]: the digits at least 5 away from some digit in m. Never 5, which
-// has nothing that far.
-const FAR = new Int32Array(1024);
-for (let m = 2; m < 1024; m += 2) {
-  for (let d = 1; d <= 9; d++) if (m & (1 << d)) FAR[m] |= between(1, d - 5) | between(d + 5, 9);
-}
+// How far apart digits next to each other on a whisper line are at least:
+// 5 on a German Whispers line, 4 under Dutch Whispers.
+export const whisperGap = (rules = 0) => (has(rules, "dutchwhispers") ? 4 : 5);
 
-// Narrows candidates along each German Whispers line, forwards and then
-// backwards: every cell to the digits far enough from some digit the cell
-// before it can be. Placed digits count as masks of one, and `free` is
-// narrowed in place, as in thermoBounds; false if a line cannot be filled,
-// or two placed digits next to each other are too close.
-function whisperBounds(whispers, g, free) {
+// FAR[gap][m]: the digits at least `gap` away from some digit in m, for a
+// gap of 4 or 5. A 5 has nothing 5 away, and only 1 and 9 4 away.
+const FAR = [4, 5].reduce((far, gap) => {
+  far[gap] = new Int32Array(1024);
+  for (let m = 2; m < 1024; m += 2) {
+    for (let d = 1; d <= 9; d++) if (m & (1 << d)) far[gap][m] |= between(1, d - gap) | between(d + gap, 9);
+  }
+  return far;
+}, []);
+
+// Narrows candidates along each whisper line, forwards and then backwards:
+// every cell to the digits `gap` or more from some digit the cell before it
+// can be. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if a line cannot be filled, or two placed
+// digits next to each other are too close.
+function whisperBounds(whispers, g, free, gap = 5) {
+  const far = FAR[gap];
   for (const t of whispers) {
     for (const back of [false, true]) {
       let before = 0;
       for (let j = 0; j < t.length; j++) {
         const c = t[back ? t.length - 1 - j : j];
         let m = g[c] ? 1 << g[c] : free[c];
-        if (j) m &= FAR[before];
+        if (j) m &= far[before];
         if (!m) return false;
         if (!g[c]) free[c] = m;
         before = m;
@@ -1046,53 +1097,95 @@ const modularBounds = (modulars, g, free) => kindBounds(modulars, g, free, MODUL
 
 // Scratch for sumLineBounds: at each gap between two cells of a line, the
 // running totals of the run it is in, as bits 0 to sum - 1, that the cells
-// before it can reach (ahead) and the cells after it can finish (behind).
+// before it can reach (ahead) and the cells after it can finish (behind);
+// the digits each cell keeps, read from `from`; and for a loop, those it
+// keeps from any start.
 const ahead = new Int32Array(LONG_LINE_MOST + 1);
 const behind = new Int32Array(LONG_LINE_MOST + 1);
+const cutKeep = new Int32Array(LONG_LINE_MOST);
+const loopKeep = new Int32Array(LONG_LINE_MOST);
 
-// Narrows each sum line to the ways it can still be cut into runs that each
-// make its sum. Going along, each gap keeps the running totals some digits
+// The ways a line's cells, read from cells[from] on and round to the one
+// before it, can be cut into runs that each make `sum`, a run starting at
+// cells[from]. Going along, each gap keeps the running totals some digits
 // before it reach, a run starting again at 0 once it makes the sum; coming
-// back, those some digits after it finish. A cell keeps the digits that
-// take a total at the gap before it to one at the gap after that both ways
-// allow. Placed digits count as masks of one, and `free` is narrowed in
-// place, as in thermoBounds; false if the line cannot be cut so.
-function sumLineBounds(sumlines, g, free) {
-  for (const { sum, cells } of sumlines) {
-    const n = cells.length;
-    // Totals under the sum; a sum of at most 30 keeps them in 32 bits.
-    const under = (1 << sum) - 1;
-    ahead[0] = 1;
-    for (let i = 0; i < n; i++) {
-      const m = g[cells[i]] ? 1 << g[cells[i]] : free[cells[i]];
-      let next = 0;
-      for (let d = 1; d <= 9 && d <= sum; d++) {
-        if (!(m & (1 << d))) continue;
-        next |= (ahead[i] << d) & under;
-        if ((ahead[i] >> (sum - d)) & 1) next |= 1;
-      }
-      if (!next) return false;
-      ahead[i + 1] = next;
+// back, those some digits after it finish. The i-th cell read keeps the
+// digits, in cutKeep[i], that take a total at the gap before it to one at
+// the gap after that both ways allow. Placed digits count as masks of one;
+// false if the line cannot be cut so.
+function sumCuts(sum, cells, from, g, free) {
+  const n = cells.length;
+  const at = (i) => cells[(from + i) % n];
+  // Totals under the sum; a sum of at most 30 keeps them in 32 bits.
+  const under = (1 << sum) - 1;
+  ahead[0] = 1;
+  for (let i = 0; i < n; i++) {
+    const m = g[at(i)] ? 1 << g[at(i)] : free[at(i)];
+    let next = 0;
+    for (let d = 1; d <= 9 && d <= sum; d++) {
+      if (!(m & (1 << d))) continue;
+      next |= (ahead[i] << d) & under;
+      if ((ahead[i] >> (sum - d)) & 1) next |= 1;
     }
-    // The line ends as a run does, on the sum.
-    if (!(ahead[n] & 1)) return false;
-    behind[n] = 1;
-    for (let i = n - 1; i >= 0; i--) {
-      const m = g[cells[i]] ? 1 << g[cells[i]] : free[cells[i]];
-      let back = 0;
-      let keep = 0;
-      for (let d = 1; d <= 9 && d <= sum; d++) {
-        if (!(m & (1 << d))) continue;
-        const ends = behind[i + 1] & 1 ? 1 << (sum - d) : 0;
-        back |= (behind[i + 1] >> d) | ends;
-        if (((ahead[i] << d) & under & behind[i + 1]) || ahead[i] & ends) keep |= 1 << d;
-      }
-      if (!keep) return false;
-      behind[i] = back;
-      if (!g[cells[i]]) free[cells[i]] = keep;
+    if (!next) return false;
+    ahead[i + 1] = next;
+  }
+  // The line ends as a run does, on the sum.
+  if (!(ahead[n] & 1)) return false;
+  behind[n] = 1;
+  for (let i = n - 1; i >= 0; i--) {
+    const m = g[at(i)] ? 1 << g[at(i)] : free[at(i)];
+    let back = 0;
+    let keep = 0;
+    for (let d = 1; d <= 9 && d <= sum; d++) {
+      if (!(m & (1 << d))) continue;
+      const ends = behind[i + 1] & 1 ? 1 << (sum - d) : 0;
+      back |= (behind[i + 1] >> d) | ends;
+      if (((ahead[i] << d) & under & behind[i + 1]) || ahead[i] & ends) keep |= 1 << d;
     }
+    if (!keep) return false;
+    behind[i] = back;
+    cutKeep[i] = keep;
   }
   return true;
+}
+
+// Narrows each sum line to the ways it can still be cut into runs that each
+// make its sum (sumCuts above), from its first cell. Some run of a loop
+// starts at one cell or another, so a loop is tried from each, and each
+// cell keeps the digits some start leaves it. Placed digits count as masks
+// of one, and `free` is narrowed in place, as in thermoBounds; false if the
+// line cannot be cut so.
+function sumLineBounds(sumlines, g, free) {
+  for (const { sum, cells, loop } of sumlines) {
+    const n = cells.length;
+    if (!loop) {
+      if (!sumCuts(sum, cells, 0, g, free)) return false;
+      for (let i = 0; i < n; i++) if (!g[cells[i]]) free[cells[i]] = cutKeep[i];
+      continue;
+    }
+    loopKeep.fill(0, 0, n);
+    let cut = false;
+    for (let from = 0; from < n; from++) {
+      if (!sumCuts(sum, cells, from, g, free)) continue;
+      cut = true;
+      for (let i = 0; i < n; i++) loopKeep[(from + i) % n] |= cutKeep[i];
+    }
+    if (!cut) return false;
+    for (let i = 0; i < n; i++) if (!g[cells[i]]) free[cells[i]] &= loopKeep[i];
+  }
+  return true;
+}
+
+// Whether a loop's digits, all placed, cut into runs of `sum` from some
+// start: for steps.js, which has no masks to go on.
+export function loopCuts(sum, cells, grid) {
+  const masks = cells.map((c) => 1 << grid[c]);
+  const g = new Array(81).fill(0);
+  const free = new Array(81).fill(0);
+  cells.forEach((c, i) => (free[c] = masks[i]));
+  for (let from = 0; from < cells.length; from++) if (sumCuts(sum, cells, from, g, free)) return true;
+  return false;
 }
 
 // Scratch for regionSumBounds: which totals every run so far can make, and
@@ -1400,6 +1493,30 @@ export function circleProblem(circles) {
   }
   return null;
 }
+
+// The most sets of circles past the first (circlesets): nine sets in all.
+export const CIRCLE_SETS_MOST = 8;
+
+// Whether more sets of Counting Circles are well formed: one to
+// CIRCLE_SETS_MOST sets, each as circleProblem wants, no cell in two. null
+// if so, or what is wrong: { why }, why "sets", "twice" or as circleProblem
+// says.
+export function circleSetProblem(sets) {
+  if (!Array.isArray(sets) || !sets.length || sets.length > CIRCLE_SETS_MOST) return { why: "sets" };
+  const got = new Set();
+  for (const set of sets) {
+    const problem = circleProblem(set);
+    if (problem) return problem;
+    for (const c of set) {
+      if (got.has(c)) return { why: "twice" };
+      got.add(c);
+    }
+  }
+  return null;
+}
+
+// Every set of circles a variant has: `circles`, then its circlesets.
+export const circleSets = (circles = [], circlesets = []) => (circles.length ? [circles, ...circlesets] : circlesets);
 
 // DIGIT_SETS[n]: every set of different digits adding up to n, as masks.
 // n circles hold one of them, each digit d in d circles.
@@ -1795,7 +1912,10 @@ function roomBounds(rooms, g, free) {
 // every digit once, so four views start with each digit: ranks 1 to 4 start
 // with 1, 5 to 8 with 2, and so on. A clue fixes its view's first digit,
 // and how many of the other three with it are smaller, the rest larger. As
-// the solver it comes from has it by default, a clued view ties with none.
+// the solver it comes from has it by default, a clued view ties with none;
+// its other two ways are rules here: Clued Rank Ties, where a clued view
+// may tie and its rank counts only those smaller, and No Rank Ties, where
+// no two views tie at all, clues or none (tieBounds below).
 export const RANK_MOST = 36;
 
 // Whether Full Rank clues are well formed: as clues on views are, a rank 1
@@ -1865,11 +1985,14 @@ function rankUnder(lo, hi, g, free) {
 // likewise larger. When as many could be smaller as the clue says, each of
 // those starts with the digit and is smaller; when as many are sure to be,
 // any other sure smaller one does not start with it, and any other sure to
-// start with it is larger; and likewise the other way. Placed digits count
-// as masks of one, and `free` is narrowed in place, as in thermoBounds;
-// false if the clue cannot be kept.
+// start with it is larger; and likewise the other way. With `tied`, under
+// Clued Rank Ties, a clued view may tie: one the same is neither smaller
+// nor larger, so the clue says exactly how many are smaller and at most how
+// many larger, and one not smaller may be the same. Placed digits count as
+// masks of one, and `free` is narrowed in place, as in thermoBounds; false
+// if the clue cannot be kept.
 const rankOthers = [];
-function rankBounds(ranks, g, free) {
+function rankBounds(ranks, g, free, tied = false) {
   const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
   for (const { view, rank } of ranks) {
     const e = VIEWS[view];
@@ -1889,6 +2012,7 @@ function rankBounds(ranks, g, free) {
       if (w === view || !(m & bit)) continue;
       const sure = m === bit;
       const order = rankOrder(e, o, mask);
+      if (order === 0 && tied) continue;
       if (order === 0) {
         if (sure) return false;
         if (!g[o[0]]) free[o[0]] &= ~bit;
@@ -1904,19 +2028,66 @@ function rankBounds(ranks, g, free) {
       }
       rankOthers.push(o, sure, order);
     }
-    if (lessSure > below || lessCan < below || moreSure > above || moreCan < above) return false;
+    if (lessSure > below || lessCan < below || moreSure > above || (!tied && moreCan < above)) return false;
     for (let i = 0; i < rankOthers.length; i += 3) {
       const [o, sure, order] = [rankOthers[i], rankOthers[i + 1], rankOthers[i + 2]];
       const less = order !== 1 && lessCan === below;
-      const more = order !== -1 && moreCan === above;
+      // Tied, fewer larger are made up by ties, so none has to be.
+      const more = !tied && order !== -1 && moreCan === above;
       if (less && more) return false;
       if (less || more) {
         if (!g[o[0]]) free[o[0]] = bit;
         if (order === 2 && !(less ? rankUnder(o, e, g, free) : rankUnder(e, o, g, free))) return false;
       } else if (!sure && ((order === -1 && lessSure === below) || (order === 1 && moreSure === above))) {
         if (!g[o[0]]) free[o[0]] &= ~bit;
-      } else if (sure && order === 2 && lessSure === below && !rankUnder(e, o, g, free)) return false;
+      } else if (tied) continue;
+      else if (sure && order === 2 && lessSure === below && !rankUnder(e, o, g, free)) return false;
       else if (sure && order === 2 && moreSure === above && !rankUnder(o, e, g, free)) return false;
+    }
+  }
+  return true;
+}
+
+// The pairs of views that could ever read the same: in each place, the
+// same cell, or two cells in no row or column together: only a row and a
+// column crossing on a long diagonal. With 3x3 boxes not even those, as
+// each pair puts two cells of a box in one place, so only a Jigsaw's
+// regions leave a tie to rule out.
+export const TIE_PAIRS = [];
+for (let v = 0; v < 36; v++) {
+  for (let w = v + 1; w < 36; w++) {
+    const [a, b] = [VIEWS[v], VIEWS[w]];
+    if (a.every((c, j) => c === b[j] || (ROW[c] !== ROW[b[j]] && COL[c] !== COL[b[j]]))) TIE_PAIRS.push([a, b]);
+  }
+}
+
+// Under No Rank Ties: no two views read the same. For each pair that could,
+// once every place but one is sure to match, that place's cells differ.
+// Placed digits count as masks of one, and `free` is narrowed in place, as
+// in thermoBounds; false if a pair is sure to match.
+function tieBounds(g, free) {
+  const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
+  for (const [a, b] of TIE_PAIRS) {
+    let open = -1;
+    for (let j = 0; j < 9; j++) {
+      if (a[j] === b[j]) continue;
+      const [x, y] = [mask(a[j]), mask(b[j])];
+      if (x === y && POP[x] === 1) continue;
+      // Sure to differ here, or at more than one place yet: no tie to stop.
+      if (!(x & y) || open >= 0) {
+        open = -2;
+        break;
+      }
+      open = j;
+    }
+    if (open === -1) return false;
+    if (open < 0) continue;
+    for (const [c, o] of [
+      [a[open], b[open]],
+      [b[open], a[open]],
+    ]) {
+      if (g[c] || POP[mask(o)] !== 1) continue;
+      if (!(free[c] &= ~mask(o))) return false;
     }
   }
   return true;
@@ -1949,28 +2120,52 @@ export function indexingProblem(indexings) {
   return null;
 }
 
-// Narrows each indexing cell. Its targets hold `digit` once, so the cell's
-// digit is one more than how far along that is: X may be any digit whose
-// target could hold it, and a target no X is left for cannot. Placed digits
-// count as masks of one, and `free` is narrowed in place, as in
-// thermoBounds; false if no X is left.
-function indexingBounds(indexings, g, free) {
+// The most single indexing cells: every cell, both ways.
+export const INDEX_CELLS_MOST = 162;
+
+// Whether single indexing cells are well formed: a cell each, and a line
+// that is its row or its column, no cell twice the same way. null if so, or
+// what is wrong: { why, at }, why "cell", "line" or "twice".
+export function indexCellProblem(indexcells) {
+  if (indexcells.length > INDEX_CELLS_MOST) return { why: "twice", at: INDEX_CELLS_MOST };
+  const got = new Set();
+  for (let i = 0; i < indexcells.length; i++) {
+    const { cell, line } = indexcells[i] ?? {};
+    if (!Number.isInteger(cell) || cell < 0 || cell > 80) return { why: "cell", at: i };
+    if (line !== ROW[cell] && line !== 9 + COL[cell]) return { why: "line", at: i };
+    if (got.has(cell * 18 + line)) return { why: "twice", at: i };
+    got.add(cell * 18 + line);
+  }
+  return null;
+}
+
+// Every indexing cell, of a marked row or column or on its own, as
+// INDEXERS has them: [{ cell, targets, digit }].
+export const indexers = (indexings = [], indexcells = []) => [
+  ...indexings.flatMap(({ line }) => INDEXERS[line]),
+  ...indexcells.map(({ cell, line }) => INDEXERS[line].find((x) => x.cell === cell)),
+];
+
+// Narrows each indexing cell, from indexers above. Its targets hold `digit`
+// once, so the cell's digit is one more than how far along that is: X may
+// be any digit whose target could hold it, and a target no X is left for
+// cannot. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if no X is left.
+function indexingBounds(cells, g, free) {
   const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
-  for (const { line } of indexings) {
-    for (const { cell, targets, digit } of INDEXERS[line]) {
-      const bit = 1 << digit;
-      const xm = mask(cell);
-      let xs = 0;
-      for (let k = 0; k < 9; k++) if (xm & (2 << k) && mask(targets[k]) & bit) xs |= 2 << k;
-      if (!xs) return false;
-      if (!g[cell]) free[cell] = xs;
-      for (let k = 0; k < 9; k++) {
-        const t = targets[k];
-        if (xs & (2 << k)) {
-          if (xs === 2 << k && !g[t] && !(free[t] &= bit)) return false;
-        } else if (g[t] === digit) return false;
-        else if (!g[t] && !(free[t] &= ~bit)) return false;
-      }
+  for (const { cell, targets, digit } of cells) {
+    const bit = 1 << digit;
+    const xm = mask(cell);
+    let xs = 0;
+    for (let k = 0; k < 9; k++) if (xm & (2 << k) && mask(targets[k]) & bit) xs |= 2 << k;
+    if (!xs) return false;
+    if (!g[cell]) free[cell] = xs;
+    for (let k = 0; k < 9; k++) {
+      const t = targets[k];
+      if (xs & (2 << k)) {
+        if (xs === 2 << k && !g[t] && !(free[t] &= bit)) return false;
+      } else if (g[t] === digit) return false;
+      else if (!g[t] && !(free[t] &= ~bit)) return false;
     }
   }
   return true;
@@ -2538,8 +2733,10 @@ const norm = (v) => ({
   hiddens: v?.hiddens ?? [],
   rooms: v?.rooms ?? [],
   circles: v?.circles ?? [],
+  circlesets: v?.circlesets ?? [],
   ranks: v?.ranks ?? [],
   indexings: v?.indexings ?? [],
+  indexcells: v?.indexcells ?? [],
   regions: v?.regions?.length ? v.regions : null,
   rules: v?.rules ?? 0,
 });
@@ -2548,11 +2745,11 @@ const norm = (v) => ({
 // cage of whatever kind, its thermometers, arrows and other lines, its dots
 // and marks, its 2x2 squares under Global Entropy or Global Mod, the digits
 // around it under Anti-taxicab and Dutch Flatmates, the Counting Circles,
-// and the clues outside;
+// the clues outside, and under No Rank Ties the views it could tie;
 // 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, ranks, indexings, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, ranks, indexings, indexcells, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -2586,7 +2783,7 @@ export function variantCandidates(grid, variant) {
   thermoBounds(thermos, grid, out);
   arrowBounds(arrows, grid, out);
   scaleBounds(scales(doubles, pills), grid, out);
-  whisperBounds(whispers, grid, out);
+  whisperBounds(whispers, grid, out, whisperGap(rules));
   renbanBounds(renbans, grid, out);
   palindromeBounds(palindromes, grid, out);
   zipperBounds(zippers, grid, out);
@@ -2611,9 +2808,10 @@ export function variantCandidates(grid, variant) {
   xsumBounds(xsums, grid, out);
   hiddenBounds(hiddens, grid, out);
   roomBounds(rooms, grid, out);
-  circleBounds(circles, grid, out);
-  rankBounds(ranks, grid, out);
-  indexingBounds(indexings, grid, out);
+  for (const set of circleSets(circles, circlesets)) circleBounds(set, grid, out);
+  rankBounds(ranks, grid, out, has(rules, "cluedrankties"));
+  if (has(rules, "norankties")) tieBounds(grid, out);
+  indexingBounds(indexers(indexings, indexcells), grid, out);
   return out;
 }
 
@@ -2636,8 +2834,13 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, ranks, indexings, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, ranks, indexings, indexcells, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
+  const gap = whisperGap(rules);
+  const sets = circleSets(circles, circlesets);
+  const tied = has(rules, "cluedrankties");
+  const untied = has(rules, "norankties");
+  const pointers = indexers(indexings, indexcells);
   const says = sayCages(looksays);
   const sumGroups = equalsums.map(({ cells }) => piecesOf(cells));
   const sameGroups = samevalues.map(({ cells }) => piecesOf(cells));
@@ -2705,7 +2908,7 @@ function search(grid, variant, found) {
     if (thermos.length && !thermoBounds(thermos, g, free)) return null;
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
     if (balances.length && !scaleBounds(balances, g, free)) return null;
-    if (whispers.length && !whisperBounds(whispers, g, free)) return null;
+    if (whispers.length && !whisperBounds(whispers, g, free, gap)) return null;
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
     if (palindromes.length && !palindromeBounds(palindromes, g, free)) return null;
     if (zippers.length && !zipperBounds(zippers, g, free)) return null;
@@ -2730,9 +2933,10 @@ function search(grid, variant, found) {
     if (xsums.length && !xsumBounds(xsums, g, free)) return null;
     if (hiddens.length && !hiddenBounds(hiddens, g, free)) return null;
     if (rooms.length && !roomBounds(rooms, g, free)) return null;
-    if (circles.length && !circleBounds(circles, g, free)) return null;
-    if (ranks.length && !rankBounds(ranks, g, free)) return null;
-    if (indexings.length && !indexingBounds(indexings, g, free)) return null;
+    for (const set of sets) if (!circleBounds(set, g, free)) return null;
+    if (ranks.length && !rankBounds(ranks, g, free, tied)) return null;
+    if (untied && !tieBounds(g, free)) return null;
+    if (pointers.length && !indexingBounds(pointers, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

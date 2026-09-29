@@ -9,6 +9,9 @@
 // name  as variantName (variant.js) says it.
 // list  the variant's list that holds the drawn part, or none for a switch
 //       rule (RULES in variant.js, whose key is the same as this one's).
+// also  another list that holds more of the same part, if it has one.
+// replaces  the entry a switch rule stands in place of, whose rule it
+//       changes, so the two are never explained together.
 // rule  what it means, for someone solving.
 // draw  how to put it on, for someone typing a puzzle in or making one.
 
@@ -105,6 +108,12 @@ export const RULE_HELP = {
     rule: "Digits next to each other on a green line differ by at least 5, so a 5 never goes on one.",
     draw: "Tap Whispers, then each cell along the line from one end, and tap Add whisper.",
   },
+  dutchwhispers: {
+    name: "Dutch Whispers",
+    replaces: "whisper",
+    rule: "The green lines are Dutch Whispers: digits next to each other on one differ by at least 4, so a 5 on one sits only next to a 1 or a 9.",
+    draw: "Draw the lines with Whispers; this turns every one of them Dutch.",
+  },
   renban: {
     name: "Renban",
     list: "renbans",
@@ -150,8 +159,8 @@ export const RULE_HELP = {
   sumline: {
     name: "Sum Line",
     list: "sumlines",
-    rule: "A dashed olive line cuts into runs of cells one after another, each adding up to the number at its start: with 10, the line 3 7 1 9 is 3 7 and then 1 9. Digits may repeat if nothing else stops them.",
-    draw: `Tap Sum lines, then each cell along the line from one end, type its sum, 1 to ${SUM_LINE_MAX}, and tap Add sum line. The sum stays typed for the next line.`,
+    rule: "A dashed olive line cuts into runs of cells one after another, each adding up to the number at its start: with 10, the line 3 7 1 9 is 3 7 and then 1 9. A line closed in a loop has no ends, so a run may carry on round past the number. Digits may repeat if nothing else stops them.",
+    draw: `Tap Sum lines, then each cell along the line from one end, type its sum, 1 to ${SUM_LINE_MAX}, and tap Add sum line. To close it in a loop, tap its first cell again last. The sum stays typed for the next line.`,
   },
   regionsum: {
     name: "Region Sum Line",
@@ -192,8 +201,9 @@ export const RULE_HELP = {
   counting: {
     name: "Counting Circles",
     list: "circles",
-    rule: "A digit in a circle says how many circles hold that digit: a 3 in a circle means exactly three circles hold a 3. Digits outside circles are free.",
-    draw: "Tap Marks, then tap the middle of a cell to put a circle in it, or take it out. With dots or signs on too, tap a cell and then one beside it to mark the side between.",
+    also: "circlesets",
+    rule: "A digit in a circle says how many circles hold that digit: a 3 in a circle means exactly three circles hold a 3. With circles of more than one colour, each colour counts on its own. Digits outside circles are free.",
+    draw: "Tap Marks, then tap the middle of a cell to put a circle in it, or take it out. For another set of circles, counted on its own, tap the Middle button until it says New set. With dots or signs on too, tap a cell and then one beside it to mark the side between.",
   },
   sandwich: {
     name: "Sandwich",
@@ -237,11 +247,22 @@ export const RULE_HELP = {
     rule: "Every row and column, read from either side, is a nine-digit number: 36 of them. A number after # beside one says where it comes among all 36, smallest first. Ranks 1 to 4 start with 1, 5 to 8 with 2, and so on, and a clued one never ties.",
     draw: "Tap Outside, then a spot beside a row or column, type its rank, 1 to 36, and tap Add. Turn switches between the clues that can go there.",
   },
+  norankties: {
+    name: "No Rank Ties",
+    rule: "No two rows or columns, read from any side, make the same number, clued or not. Only a row and a column crossing on a long diagonal could, and only in a Jigsaw.",
+    draw: "Nothing more to draw: put Full Rank clues down with Full Rank, or none at all.",
+  },
+  cluedrankties: {
+    name: "Clued Rank Ties",
+    rule: "A clued row or column may make the same number as another. Its rank counts only those smaller, so ties share a rank: #5 means exactly four smaller, and the others starting with its digit larger or the same.",
+    draw: "Nothing more to draw: put the clues down with Full Rank.",
+  },
   rowcolindex: {
     name: "Row/Column Indexing",
     list: "indexings",
-    rule: "In a shaded column with a mark above it, each digit says which column of its row holds that column's number: a 5 in column 1 puts that row's 1 in column 5. In a shaded row with a mark on its left, each digit likewise says which row of its column holds that row's number.",
-    draw: "Tap Outside, then a spot above a column or left of a row, and tap Add. Turn switches between the clues that can go there.",
+    also: "indexcells",
+    rule: "In a shaded column with a mark above it, each digit says which column of its row holds that column's number: a 5 in column 1 puts that row's 1 in column 5. In a shaded row with a mark on its left, each digit likewise says which row of its column holds that row's number. A shaded cell with a small mark at its top does as a marked column's cells do, and one with a mark at its left as a marked row's.",
+    draw: "Tap Outside, then a spot above a column or left of a row, and tap Add. Turn switches between the clues that can go there. For a single cell, tap Marks, tap the Middle button until it says Column indexing or Row indexing, then tap the cell.",
   },
   diagonal: {
     name: "Diagonal",
@@ -310,7 +331,8 @@ export const RULE_HELP = {
 // made seed.
 export function rulesOf(variant) {
   if (!variant) return [];
-  return Object.entries(RULE_HELP)
-    .filter(([key, h]) => (h.list ? variant[h.list]?.length : (variant.rules ?? 0) & (RULES.find((r) => r.key === key)?.bit ?? 0)))
+  const keys = Object.entries(RULE_HELP)
+    .filter(([key, h]) => (h.list ? variant[h.list]?.length || variant[h.also]?.length : (variant.rules ?? 0) & (RULES.find((r) => r.key === key)?.bit ?? 0)))
     .map(([key]) => key);
+  return keys.filter((key) => !keys.some((other) => RULE_HELP[other].replaces === key));
 }

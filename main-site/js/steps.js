@@ -8,8 +8,8 @@
 // equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles,
 // pills, whispers, renbans, palindromes, zippers, betweens, lockouts,
 // entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs,
-// quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
-// ranks, indexings, regions, rules }
+// quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums,
+// hiddens, rooms, ranks, indexings, indexcells, regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -64,11 +64,17 @@ import {
   hiddenProblem,
   roomProblem,
   circleProblem,
+  circleSetProblem,
+  circleSets,
   rankProblem,
   rankStart,
   rankBelow,
+  TIE_PAIRS,
   indexingProblem,
-  INDEXERS,
+  indexCellProblem,
+  indexers,
+  whisperGap,
+  loopCuts,
   regionProblem,
   markKeeps,
   barredSides,
@@ -84,7 +90,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -138,7 +144,8 @@ export function bitCount(mask) {
 // arrow's circles, and those along a pill arrow, with the circles' or the
 // pill's, once they go past the most those could make, or fill the line
 // short of the least; digits next to each other on
-// a German Whispers line less than 5 apart; a renban line's digits that
+// a German Whispers line less than 5 apart, or under Dutch Whispers 4; a
+// renban line's digits that
 // repeat, or all of them once they spread wider than the line is long; two
 // digits the same way in from either end of a palindrome line that differ;
 // a zipper line's pairs that make a total other than its middle digit, or
@@ -150,7 +157,8 @@ export function bitCount(mask) {
 // one kind where their places differ, or of different kinds where their
 // places are the same, counted in threes; a sum line's digits, read from
 // either end up to its first empty cell, in the run that goes past its sum,
-// or at a full end, the run left short of it; the digits of a region sum
+// or at a full end, the run left short of it, and a full loop's digits
+// that cut into no such runs from any start; the digits of a region sum
 // line's full runs once they make different totals, or of a run that goes
 // past the total they agree on; a value indexing line's count when it
 // counts past the line's end, or with the first cell's digit and the one
@@ -172,12 +180,15 @@ export function bitCount(mask) {
 // view's digits from the clue on, once the first hidden one is some other
 // height, or its height shows; a Numbered Room's first digit, with the
 // digit it points at when that is some other, or with the clue's digit when
-// that sits somewhere else; a digit in more circles than itself, or all of
-// its circles once too few are left empty to make up the count; a Full
+// that sits somewhere else; a digit in more circles of its set than itself,
+// or all of them once too few are left empty to make up the count; a Full
 // Rank view's first digit when it is not its rank's, or with the views
 // starting with it once more of them are smaller, or larger, than the rank
-// allows, the places that decide it, or once one is the same number; and an
-// indexing cell, with the cell it points at when that holds some other
+// allows, the places that decide it, or once one is the same number; under
+// Clued Rank Ties, instead of that, with those tied and larger once too few
+// are smaller and the rest settled; under No Rank Ties, any two full views
+// the same; and
+// an indexing cell, with the cell it points at when that holds some other
 // digit, or with its line's number when that sits somewhere else.
 export function clashes(grid, variant = null) {
   const peers = peersOf(variant);
@@ -305,10 +316,11 @@ export function clashes(grid, variant = null) {
     });
     if (total > hi || (full && total < lo)) cells.filter((c) => grid[c]).forEach((c) => out.add(c));
   }
+  const gap = whisperGap(variant?.rules);
   for (const t of variant?.whispers ?? []) {
     for (let i = 1; i < t.length; i++) {
       const [a, b] = [t[i - 1], t[i]];
-      if (grid[a] && grid[b] && Math.abs(grid[a] - grid[b]) < 5) {
+      if (grid[a] && grid[b] && Math.abs(grid[a] - grid[b]) < gap) {
         out.add(a);
         out.add(b);
       }
@@ -377,7 +389,12 @@ export function clashes(grid, variant = null) {
       }
     }
   }
-  for (const { sum, cells } of variant?.sumlines ?? []) {
+  for (const { sum, cells, loop } of variant?.sumlines ?? []) {
+    // A loop has no end to read from: once full, it cuts or it clashes.
+    if (loop) {
+      if (cells.every((c) => grid[c]) && !loopCuts(sum, cells, grid)) cells.forEach((c) => out.add(c));
+      continue;
+    }
     for (const t of [cells, cells.slice().reverse()]) {
       let run = [];
       let total = 0;
@@ -513,12 +530,14 @@ export function clashes(grid, variant = null) {
     const at = cells.findIndex((c) => grid[c] === digit);
     if (at >= 0 && at !== x - 1) [cells[0], cells[at]].forEach((c) => out.add(c));
   }
-  const circles = variant?.circles ?? [];
-  const open = circles.filter((c) => !grid[c]).length;
-  for (let d = 1; d <= 9; d++) {
-    const have = circles.filter((c) => grid[c] === d);
-    if (have.length > d || (have.length && have.length + open < d)) have.forEach((c) => out.add(c));
+  for (const circles of circleSets(variant?.circles, variant?.circlesets)) {
+    const open = circles.filter((c) => !grid[c]).length;
+    for (let d = 1; d <= 9; d++) {
+      const have = circles.filter((c) => grid[c] === d);
+      if (have.length > d || (have.length && have.length + open < d)) have.forEach((c) => out.add(c));
+    }
   }
+  const tied = hasRule(variant?.rules, "cluedrankties");
   for (const { view, rank } of variant?.ranks ?? []) {
     const e = VIEWS[view];
     const v = rankStart(rank);
@@ -527,6 +546,7 @@ export function clashes(grid, variant = null) {
     // The others starting with it, by where they first differ, both filled.
     const smaller = [];
     const larger = [];
+    const same = [];
     VIEWS.forEach((o, w) => {
       if (w === view || grid[o[0]] !== v) return;
       for (let j = 1; j < 9; j++) {
@@ -534,7 +554,8 @@ export function clashes(grid, variant = null) {
         if (!a || !b) return;
         if (a !== b) return (b < a ? smaller : larger).push([o[0], o[j], e[j]]);
       }
-      [...e, ...o].forEach((c) => out.add(c));
+      if (!tied) [...e, ...o].forEach((c) => out.add(c));
+      same.push(o);
     });
     for (const [found, most] of [
       [smaller, rankBelow(rank)],
@@ -542,16 +563,23 @@ export function clashes(grid, variant = null) {
     ]) {
       if (found.length > most) [e[0], ...found.flat()].forEach((c) => out.add(c));
     }
-  }
-  for (const { line } of variant?.indexings ?? []) {
-    for (const { cell, targets, digit } of INDEXERS[line]) {
-      const x = grid[cell];
-      if (!x) continue;
-      const pointed = targets[x - 1];
-      if (grid[pointed] && grid[pointed] !== digit) [cell, pointed].forEach((c) => out.add(c));
-      const at = targets.findIndex((c) => grid[c] === digit);
-      if (at >= 0 && at !== x - 1) [cell, targets[at]].forEach((c) => out.add(c));
+    // Tied, the others all settled with too few smaller, ties making up the
+    // rest.
+    if (tied && smaller.length + larger.length + same.length === 3 && smaller.length < rankBelow(rank)) {
+      [...e, ...larger.flat(), ...same.flat()].forEach((c) => out.add(c));
     }
+  }
+  // No Rank Ties: two views the same, once both are full.
+  if (hasRule(variant?.rules, "norankties")) {
+    for (const [a, b] of TIE_PAIRS) if (a.every((c, j) => grid[c] && grid[c] === grid[b[j]])) [...a, ...b].forEach((c) => out.add(c));
+  }
+  for (const { cell, targets, digit } of indexers(variant?.indexings, variant?.indexcells)) {
+    const x = grid[cell];
+    if (!x) continue;
+    const pointed = targets[x - 1];
+    if (grid[pointed] && grid[pointed] !== digit) [cell, pointed].forEach((c) => out.add(c));
+    const at = targets.findIndex((c) => grid[c] === digit);
+    if (at >= 0 && at !== x - 1) [cell, targets[at]].forEach((c) => out.add(c));
   }
   return out;
 }
@@ -625,8 +653,9 @@ export const MIN_CLUES = 17;
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines",
 // "regionsums", "indexes", "dots", "xvs",
 // "signs", "quads",
-// "circles", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens",
-// "rooms", "ranks", "indexings" or "regions" (and
+// "circles" (also for a cell in two sets), "circlesets", "sandwiches",
+// "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks",
+// "indexings", "indexcells" or "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
@@ -738,12 +767,17 @@ export function checkClues(clues, variant = null) {
     ["hiddens", hiddenProblem],
     ["rooms", roomProblem],
     ["circles", circleProblem],
+    ["circlesets", circleSetProblem],
     ["ranks", rankProblem],
     ["indexings", indexingProblem],
+    ["indexcells", indexCellProblem],
   ]) {
     const problem = variant?.[list]?.length && clueProblem(variant[list]);
     if (problem) return { ok: false, why: list, problem };
   }
+  // One circle to a cell, whatever its set.
+  const circled = circleSets(variant?.circles, variant?.circlesets).flat();
+  if (new Set(circled).size < circled.length) return { ok: false, why: "circles", problem: { why: "twice" } };
   const found = isVariant(variant) ? variantSolutions(clues, variant, 2) : countSolutions(clues, 2) ? findSolutions(clues, 2) : [];
   if (!found) return { ok: false, why: "hard" };
   if (!found.length) return { ok: false, why: "none" };
