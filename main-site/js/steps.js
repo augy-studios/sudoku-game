@@ -5,10 +5,11 @@
 // the same as a cell's notes, so the board can draw one as the other.
 //
 // Each takes a variant, { cages, relliks, lunchboxes, looksays, equalities,
-// thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers,
-// betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes,
-// dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums,
-// hiddens, rooms, regions, rules }
+// equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles,
+// pills, whispers, renbans, palindromes, zippers, betweens, lockouts,
+// entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs,
+// quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions,
+// rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -22,7 +23,13 @@ import {
   lunchboxProblem,
   lookSayProblem,
   equalityProblem,
+  equalSumProblem,
+  sameValueProblem,
+  connectedProblem,
+  distinctProblem,
   sayCounts,
+  piecesOf,
+  clueMask,
   CAGE_LISTS,
   thermoProblem,
   arrowProblem,
@@ -71,7 +78,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -110,7 +117,14 @@ export function bitCount(mask) {
 // than its clue says, or all of the cage's digits once the empty cells are
 // too few for what it still owes; a 5 in an Equality cage, a digit twice
 // in one, or the digits of a half (low, high, odd or even) once it holds
-// more than half the cage; the digits of
+// more than half the cage; the digits of an Equal Sum cage's full pieces
+// once they make different totals, or of a piece that goes past the total
+// they agree on; a digit in a piece of a Same Values cage more times than
+// another piece has room for; a Connected Values cage's cells holding the
+// clue's digits once they are cut off from each other, or all its cells
+// once it is full with none of them; a Count Distinct cage's control, with
+// the digits counted, once more different ones are placed than it says, or
+// too few cells are left to reach it; the digits of
 // a thermometer that do not rise fast enough from the bulb: two cells three
 // steps apart need digits at least three apart; an arrow's digits, with
 // its circle's, once they go past the circle (or past 9 with the circle
@@ -202,6 +216,46 @@ export function clashes(grid, variant = null) {
       const some = filled.filter((c) => half.includes(grid[c]));
       if (some.length > cells.length / 2) some.forEach((c) => out.add(c));
     }
+  }
+  for (const { cells } of variant?.equalsums ?? []) {
+    const pieces = piecesOf(cells).map((piece) => {
+      const filled = piece.filter((c) => grid[c]);
+      return { filled, empty: piece.length - filled.length, total: filled.reduce((t, c) => t + grid[c], 0) };
+    });
+    const totals = new Set(pieces.filter((p) => !p.empty).map((p) => p.total));
+    if (totals.size > 1) pieces.filter((p) => !p.empty).forEach((p) => p.filled.forEach((c) => out.add(c)));
+    else if (totals.size) {
+      // Each empty cell adds 1 at least.
+      const [total] = totals;
+      pieces.filter((p) => p.total + p.empty > total).forEach((p) => p.filled.forEach((c) => out.add(c)));
+    }
+  }
+  for (const { cells } of variant?.samevalues ?? []) {
+    const pieces = piecesOf(cells);
+    for (const piece of pieces) {
+      for (let d = 1; d <= 9; d++) {
+        const have = piece.filter((c) => grid[c] === d);
+        if (pieces.some((o) => o.filter((c) => grid[c] === d || !grid[c]).length < have.length)) have.forEach((c) => out.add(c));
+      }
+    }
+  }
+  for (const { clue, cells } of variant?.connecteds ?? []) {
+    if (typeof clue !== "string") continue;
+    const want = clueMask(clue);
+    const holds = cells.filter((c) => grid[c] && want & (1 << grid[c]));
+    // The parts the cells that could still hold one make, and how many of
+    // those parts the digits placed are in.
+    const parts = piecesOf(cells.filter((c) => !grid[c] || want & (1 << grid[c])));
+    if (new Set(holds.map((c) => parts.findIndex((p) => p.includes(c)))).size > 1) holds.forEach((c) => out.add(c));
+    if (!holds.length && cells.every((c) => grid[c])) cells.forEach((c) => out.add(c));
+  }
+  for (const { control, cells } of variant?.distincts ?? []) {
+    const k = grid[control];
+    if (!k) continue;
+    const counted = cells.filter((c) => c !== control);
+    const filled = counted.filter((c) => grid[c]);
+    const seen = new Set(filled.map((c) => grid[c])).size;
+    if (seen > k || seen + counted.length - filled.length < k) [control, ...filled].forEach((c) => out.add(c));
   }
   for (const t of variant?.thermos ?? []) {
     for (let i = 0; i < t.length; i++) {
@@ -513,7 +567,8 @@ export const MIN_CLUES = 17;
 // Whether typed-in clues make a proper puzzle, with one answer:
 // { ok: true, solution }, or { ok: false, why } with why "empty", "clash",
 // "cages" (also for two cages of different kinds sharing a cell),
-// "relliks", "lunchboxes", "looksays", "equalities", "thermos", "arrows",
+// "relliks", "lunchboxes", "looksays", "equalities", "equalsums",
+// "samevalues", "connecteds", "distincts", "thermos", "arrows",
 // "doubles", "pills", "whispers", "renbans", "palindromes",
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines",
 // "regionsums", "indexes", "dots", "xvs",
@@ -545,6 +600,10 @@ export function checkClues(clues, variant = null) {
     ["lunchboxes", lunchboxProblem],
     ["looksays", lookSayProblem],
     ["equalities", equalityProblem],
+    ["equalsums", equalSumProblem],
+    ["samevalues", sameValueProblem],
+    ["connecteds", connectedProblem],
+    ["distincts", distinctProblem],
   ]) {
     const problem = variant?.[list]?.length && partProblem(variant[list]);
     if (problem) return { ok: false, why: list, problem };

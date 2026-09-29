@@ -45,6 +45,30 @@ export const RULE_HELP = {
     rule: "A dashed cage marked = holds as many odd digits as even, and as many low (1 to 4) as high (6 to 9), so never a 5. Its digits never repeat.",
     draw: "Tap Cages, then two, four, six or eight cells, and tap Add cage. With other kinds of cage on, pick Equality cage first.",
   },
+  equalsum: {
+    name: "Equal Sum",
+    list: "equalsums",
+    rule: "A dashed cage marked Σ comes in pieces apart from each other, and every piece adds up to the same total: a 7 alone, and a 3 with a 4. With more than one, ΣA's pieces match each other, and ΣB's theirs. Digits may repeat if nothing else stops them.",
+    draw: "Tap Cages, then the cells of two or more pieces, and tap Add cage. Cells touching along a side make one piece, so keep the pieces apart. With other kinds of cage on, pick Equal Sum cage first.",
+  },
+  samevalue: {
+    name: "Same Values",
+    list: "samevalues",
+    rule: "A dashed cage marked ≡ comes in pieces of the same size, apart from each other, and every piece holds the same digits in any order: 1 2 4 in one, 4 1 2 in another. A digit twice in one is twice in each.",
+    draw: "Tap Cages, then the cells of two or more pieces the same size, and tap Add cage. Cells touching along a side make one piece, so keep the pieces apart. With other kinds of cage on, pick Same Values cage first.",
+  },
+  connected: {
+    name: "Connected Values",
+    list: "connecteds",
+    rule: "In a dashed cage marked with digits, like ~135, the cells holding any of them join up edge to edge into one group, and at least one does.",
+    draw: "Tap Cages, then the cells of a cage, type its digits, like 135, and tap Add cage. With other kinds of cage on, pick Connected Values cage first.",
+  },
+  countdistinct: {
+    name: "Count Distinct",
+    list: "distincts",
+    rule: "The digit in a dashed cage's # cell is how many different digits its other cells hold: a 3 with 4 4 7 9. Those may repeat if nothing else stops them.",
+    draw: "Tap Cages, then the # cell first and the rest of the cage after it, and tap Add cage. With other kinds of cage on, pick Count Distinct cage first.",
+  },
   jigsaw: {
     name: "Jigsaw",
     list: "regions",

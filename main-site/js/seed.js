@@ -13,7 +13,8 @@
 // (short codes, below). A made variant puzzle's
 // seed starts with its rules' letters, as in "KD-H-...": K for killer cages,
 // QRC for Rellik cages, QLB for lunchboxes, QLS for Look and Say cages, QEC
-// for Equality cages,
+// for Equality cages, QES for Equal Sum cages, QSV for Same Values cages,
+// QCV for Connected Values cages, QCD for Count Distinct cages,
 // T for thermometers, A for arrows, QDA for double arrows, QPA for pill
 // arrows, S for German Whispers lines, R for renban lines, O for
 // palindrome lines, Z for zipper lines, C for between lines, F for
@@ -38,6 +39,12 @@ import {
   lunchboxProblem,
   lookSayProblem,
   equalityProblem,
+  equalSumProblem,
+  sameValueProblem,
+  connectedProblem,
+  distinctProblem,
+  piecesOf,
+  clueMask,
   LUNCHBOX_MAX,
   thermoProblem,
   arrowProblem,
@@ -199,7 +206,11 @@ function decodeGrid(body) {
    cages and Equality cages follow the same way, each kind on its own: a
    Rellik cage's and a lunchbox's clue is its sum, a Look and Say cage's is
    how many pairs and each pair's count and digit, and an Equality cage has
-   none. Then thermometers: how many, and for
+   none. Equal Sum and Same Values cages follow as their pieces, each piece
+   written as a cage with no clue, then for each piece in order of its first
+   cell which cage it is in: one already begun, or the next. A Connected
+   Values cage's clue is its digits, a Count Distinct cage's which of its
+   cells, in reading order, is the control. Then thermometers: how many, and for
    each its length, its bulb, and which way each step goes. Then arrows, the
    same way, from the circle, and double arrows the same way. Then pill
    arrows: how many, and for each its pill's size, first cell and which way
@@ -296,6 +307,30 @@ function writeSay(digits, { clue }) {
   const pairs = clue.match(/\d\d/g);
   digits.push([pairs.length - 1, 9]);
   for (const [n, d] of pairs) digits.push([Number(n), 10], [Number(d) - 1, 9]);
+}
+
+// Cages in pieces, Equal Sum or Same Values: the pieces as cages, then for
+// each piece, in order of its first cell, which cage it is in, counting
+// cages as their first piece comes: one of those so far, or the next.
+function writePieces(digits, cages) {
+  const pieces = cages.flatMap((cage, k) => piecesOf(cage.cells).map((cells) => ({ cells, k }))).sort((a, b) => a.cells[0] - b.cells[0]);
+  writeCages(digits, pieces, () => {});
+  const order = new Map();
+  for (const { k } of pieces) {
+    const n = order.size;
+    if (!order.has(k)) order.set(k, n);
+    digits.push([order.get(k), n + 1]);
+  }
+}
+
+function readPieces(take) {
+  const cages = [];
+  for (const { cells } of readCages(take, () => ({}))) {
+    const k = take(cages.length + 1);
+    if (k === cages.length) cages.push({ cells: [] });
+    cages[k].cells.push(...cells);
+  }
+  return cages.map(({ cells }) => ({ cells: cells.sort((a, b) => a - b) }));
 }
 
 function readSay(take) {
@@ -591,7 +626,7 @@ function decodeParts(body, withs) {
 }
 
 // A killer seed's cages, from `take`, which reads the next digit, or
-// another kind's, `clue` reading each one's clue.
+// another kind's, `clue` reading each one's clue from its cells.
 function readCages(take, clue = () => ({ sum: take(46) })) {
   const caged = [];
   for (let c = 0; c < 81; c++) caged.push(Boolean(take(2)));
@@ -606,27 +641,41 @@ function readCages(take, clue = () => ({ sum: take(46) })) {
     if (!groups.has(r)) groups.set(r, []);
     groups.get(r).push(c);
   }
-  return [...groups.values()].map((cells) => ({ ...clue(), cells }));
+  return [...groups.values()].map((cells) => ({ ...clue(cells), cells }));
 }
 
 // Cages in order of their first cell, each cage's cells in reading order,
-// with its clue, if its kind has one.
+// with its clue, if its kind has one, and its control, if it has one.
 function sortCages(cages) {
   return cages
-    .map(({ sum, clue, cells }) => ({ ...(sum != null ? { sum } : {}), ...(clue != null ? { clue } : {}), cells: cells.slice().sort((a, b) => a - b) }))
+    .map(({ sum, clue, control, cells }) => ({
+      ...(sum != null ? { sum } : {}),
+      ...(clue != null ? { clue } : {}),
+      ...(control != null ? { control } : {}),
+      cells: cells.slice().sort((a, b) => a - b),
+    }))
     .sort((a, b) => a.cells[0] - b.cells[0]);
 }
 
-// A kind of cage other than a killer's, `write` and `read` its clue's.
+// A kind of cage other than a killer's, `write` and `read` its clue's, read
+// taking the cage's cells.
 const cageKind = (list, letter, name, problem, write, read) => ({
   list,
   letter,
   name,
   problem,
   write: (digits, cages) => writeCages(digits, cages, (cage) => write(digits, cage)),
-  read: (take) => readCages(take, () => read(take)),
+  read: (take) => readCages(take, (cells) => read(take, cells)),
   sort: sortCages,
 });
+
+// A Connected Values clue, as which of the digits 1 to 9 it names: one to
+// eight of them, never all nine.
+const writeLink = (digits, { clue }) => digits.push([(clueMask(clue) >> 1) - 1, 510]);
+function readLink(take) {
+  const m = take(510) + 1;
+  return { clue: [1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => m & (1 << (d - 1))).join("") };
+}
 
 // The drawn parts, with their letters and names, in the order their letters
 // start a seed and their parts go in its body: how each is written, read,
@@ -666,6 +715,17 @@ const PARTS = [
   cageKind("lunchboxes", "QLB", "Lunchbox", lunchboxProblem, (digits, { sum }) => digits.push([sum, LUNCHBOX_MAX + 1]), (take) => ({ sum: take(LUNCHBOX_MAX + 1) })),
   cageKind("looksays", "QLS", "Look and Say", lookSayProblem, writeSay, readSay),
   cageKind("equalities", "QEC", "Equality Cage", equalityProblem, () => {}, () => ({})),
+  { list: "equalsums", letter: "QES", name: "Equal Sum", problem: equalSumProblem, write: writePieces, read: readPieces, sort: sortCages },
+  { list: "samevalues", letter: "QSV", name: "Same Values", problem: sameValueProblem, write: writePieces, read: readPieces, sort: sortCages },
+  cageKind("connecteds", "QCV", "Connected Values", connectedProblem, writeLink, readLink),
+  cageKind(
+    "distincts",
+    "QCD",
+    "Count Distinct",
+    distinctProblem,
+    (digits, { control, cells }) => digits.push([cells.indexOf(control), cells.length]),
+    (take, cells) => ({ control: cells[take(cells.length)] })
+  ),
   lines("thermos", "T", "Thermo", thermoProblem),
   lines("arrows", "A", "Arrow", arrowProblem),
   lines("doubles", "QDA", "Double Arrow", doubleProblem),
@@ -721,7 +781,7 @@ function prefixFor(parts, rules) {
 }
 
 // The seed of a made puzzle. variant: { cages, relliks, lunchboxes,
-// looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
+// looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
 // sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens,
 // rooms, regions, rules } for a variant puzzle (variant.js), or nothing for
 // a classic one.

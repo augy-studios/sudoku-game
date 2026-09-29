@@ -13,8 +13,9 @@
 //
 // Either can be a variant puzzle, with the rule buttons over the board:
 // Killer adds cages, drawn with the Cages tool (tap cells, type the sum, Add
-// cage); Rellik, Lunchbox, Look and Say and Equality add their own kinds of
-// cage with the same tool, its kind button picking which a new one is;
+// cage); Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values,
+// Connected and Count Distinct add their own kinds of cage with the same
+// tool, its kind button picking which a new one is;
 // Thermo adds thermometers, drawn with the Thermos tool (tap the
 // bulb, then each next cell, Add thermo); Arrow adds arrows, drawn the same
 // way with the Arrows tool, from the circle; Double Arrow adds double
@@ -52,6 +53,12 @@ import {
   lunchboxProblem,
   lookSayProblem,
   equalityProblem,
+  equalSumProblem,
+  sameValueProblem,
+  connectedProblem,
+  distinctProblem,
+  piecesOf,
+  linkWords,
   LUNCHBOX_MAX,
   sayWords,
   thermoProblem,
@@ -117,8 +124,8 @@ let board = null;
 // One of these for the solver and one for the maker, each kept in this
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
-// killer, rellik, lunchbox, looksay, equality, thermo, arrow, doublearrow,
-// pillarrow, whisper, renban, palindrome, zipper, between,
+// killer, rellik, lunchbox, looksay, equality, equalsum, samevalue,
+// connected, countdistinct, thermo, arrow, doublearrow, pillarrow, whisper, renban, palindrome, zipper, between,
 // lockout, entropic, modular, sumline, regionsum, valueindex, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each other kind of cage, line, dot, mark and
@@ -134,6 +141,10 @@ const fresh = () => ({
   lunchbox: false,
   looksay: false,
   equality: false,
+  equalsum: false,
+  samevalue: false,
+  connected: false,
+  countdistinct: false,
   thermo: false,
   arrow: false,
   doublearrow: false,
@@ -166,6 +177,10 @@ const fresh = () => ({
   lunchboxes: [],
   looksays: [],
   equalities: [],
+  equalsums: [],
+  samevalues: [],
+  connecteds: [],
+  distincts: [],
   thermos: [],
   arrows: [],
   doubles: [],
@@ -251,6 +266,10 @@ const relliks = () => (s.rellik && s.relliks.length ? s.relliks : null);
 const lunchboxes = () => (s.lunchbox && s.lunchboxes.length ? s.lunchboxes : null);
 const looksays = () => (s.looksay && s.looksays.length ? s.looksays : null);
 const equalities = () => (s.equality && s.equalities.length ? s.equalities : null);
+const equalsums = () => (s.equalsum && s.equalsums.length ? s.equalsums : null);
+const samevalues = () => (s.samevalue && s.samevalues.length ? s.samevalues : null);
+const connecteds = () => (s.connected && s.connecteds.length ? s.connecteds : null);
+const distincts = () => (s.countdistinct && s.distincts.length ? s.distincts : null);
 const thermos = () => (s.thermo && s.thermos.length ? s.thermos : null);
 const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
 const doubles = () => (s.doublearrow && s.doubles.length ? s.doubles : null);
@@ -278,7 +297,7 @@ const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
 const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
+  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -288,6 +307,10 @@ const variant = () =>
         lunchboxes: lunchboxes() ?? [],
         looksays: looksays() ?? [],
         equalities: equalities() ?? [],
+        equalsums: equalsums() ?? [],
+        samevalues: samevalues() ?? [],
+        connecteds: connecteds() ?? [],
+        distincts: distincts() ?? [],
         thermos: thermos() ?? [],
         arrows: arrows() ?? [],
         doubles: doubles() ?? [],
@@ -403,6 +426,10 @@ function hintText(step, reveal) {
       ...(lunchboxes() ? ["lunchbox"] : []),
       ...(looksays() ? ["Look and Say cage"] : []),
       ...(equalities() ? ["Equality cage"] : []),
+      ...(equalsums() ? ["Equal Sum cage"] : []),
+      ...(samevalues() ? ["Same Values cage"] : []),
+      ...(connecteds() ? ["Connected Values cage"] : []),
+      ...(distincts() ? ["Count Distinct cage"] : []),
       ...(thermos() ? ["thermometers"] : []),
       ...(arrows() ? ["arrows"] : []),
       ...(doubles() ? ["double arrows"] : []),
@@ -497,6 +524,10 @@ function clashText() {
   if (lunchboxes()) extra.push("twice in a lunchbox, or not making its sum between its smallest and largest");
   if (looksays()) extra.push("more or fewer of a digit than a Look and Say clue counts");
   if (equalities()) extra.push("a 5, a repeat, or too many odd, even, low or high digits in an Equality cage");
+  if (equalsums()) extra.push("pieces of an Equal Sum cage adding up to different totals");
+  if (samevalues()) extra.push("a digit in one piece of a Same Values cage that another has no room for");
+  if (connecteds()) extra.push("a Connected Values cage's digits cut off from each other, or none of them");
+  if (distincts()) extra.push("more or fewer different digits than a Count Distinct cage's # cell counts");
   if (thermos()) extra.push("not rising along a thermometer");
   if (arrows()) extra.push("not adding up to an arrow's circle");
   if (doubles()) extra.push("not adding up to a double arrow's two circles");
@@ -755,6 +786,35 @@ const EQUALITY_PROBLEMS = {
   ...CAGE_PROBLEMS,
   size: "An Equality cage needs two, four, six or eight cells: as many odd digits as even, and none a 5.",
   apart: "An Equality cage's cells must join up edge to edge.",
+};
+
+const EQUAL_SUM_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "An Equal Sum cage needs two cells at least, in two pieces or more.",
+  pieces: "An Equal Sum cage comes in two pieces or more, apart from each other: cells touching along a side are one piece.",
+  piece: "Each piece of an Equal Sum cage is one to nine cells.",
+};
+
+const SAME_VALUE_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "A Same Values cage needs two cells at least, in two pieces or more.",
+  pieces: "A Same Values cage comes in two pieces or more, apart from each other: cells touching along a side are one piece.",
+  piece: "Each piece of a Same Values cage is one to nine cells.",
+  uneven: "The pieces of a Same Values cage are all the same size.",
+};
+
+const CONNECTED_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "A Connected Values cage needs two cells at least.",
+  clue: "A Connected Values clue is one to eight different digits 1 to 9, like 135.",
+  apart: "A Connected Values cage's cells must join up edge to edge.",
+};
+
+const DISTINCT_PROBLEMS = {
+  ...CAGE_PROBLEMS,
+  size: "A Count Distinct cage needs two cells at least: the # cell and one to count.",
+  control: "A Count Distinct cage's # cell is one of its own cells.",
+  apart: "A Count Distinct cage's cells must join up edge to edge.",
 };
 
 /* ---- state ---- */
@@ -1236,8 +1296,10 @@ function toggleCandidates() {
 // The kinds of cage, all drawn with the one Cages tool; they differ in
 // their clue, their words and where they are kept. Each key is also the
 // name of the rule's switch in a stage's state. clue: what is typed for
-// one, "sum" for a number, "clue" for a Look and Say clue, or none; most,
-// how many digits of it at most; typed, what the words call it.
+// one, "sum" for a number, "clue" for digits kept as typed (after tidy, if
+// a kind has it), or none; most, how many digits of it at most; typed,
+// what the words call it; control, whether the first cell tapped is the
+// cage's control.
 const CAGES = {
   killer: {
     list: "cages",
@@ -1305,6 +1367,56 @@ const CAGES = {
     first: "Draw an Equality cage first: tap Cages, then two, four, six or eight cells.",
     intro: "An Equality puzzle: tap Cages, then two, four, six or eight cells. Each cage holds as many odd digits as even, and as many low as high.",
     added: () => "with as many odd digits as even, and low as high",
+  },
+  equalsum: {
+    list: "equalsums",
+    title: "Equal Sum cage",
+    clue: null,
+    problem: equalSumProblem,
+    problems: EQUAL_SUM_PROBLEMS,
+    tap: "Tap the cells of two or more pieces of an Equal Sum cage, apart from each other: every piece adds up to the same.",
+    first: "Draw an Equal Sum cage first: tap Cages, then the cells of two or more pieces apart from each other.",
+    intro: "An Equal Sum puzzle: tap Cages, then the cells of two or more pieces, apart from each other. Every piece of a cage adds up to the same total.",
+    added: ({ cells }) => `in ${piecesOf(cells).length} pieces adding up the same`,
+  },
+  samevalue: {
+    list: "samevalues",
+    title: "Same Values cage",
+    clue: null,
+    problem: sameValueProblem,
+    problems: SAME_VALUE_PROBLEMS,
+    tap: "Tap the cells of two or more pieces of a Same Values cage, the same size and apart from each other: every piece holds the same digits.",
+    first: "Draw a Same Values cage first: tap Cages, then the cells of two or more pieces the same size, apart from each other.",
+    intro: "A Same Values puzzle: tap Cages, then the cells of two or more pieces the same size, apart from each other. Every piece of a cage holds the same digits.",
+    added: ({ cells }) => `in ${piecesOf(cells).length} pieces holding the same digits`,
+  },
+  connected: {
+    list: "connecteds",
+    title: "Connected Values cage",
+    clue: "clue",
+    most: 9,
+    typed: "digits",
+    label: "Connected digits",
+    // The digits in rising order, each once.
+    tidy: (text) => [...new Set(text)].sort().join(""),
+    problem: connectedProblem,
+    problems: CONNECTED_PROBLEMS,
+    tap: "Tap the cells of a Connected Values cage, then type its digits, like 135: the cells holding them join up.",
+    first: "Draw a Connected Values cage first: tap Cages, then the cells of a cage, then type its digits.",
+    intro: "A Connected Values puzzle: tap Cages, then the cells of a cage, then type its digits, like 135. The cells holding any of them join up edge to edge.",
+    added: ({ clue }) => `with its ${linkWords(clue)} joined up`,
+  },
+  countdistinct: {
+    list: "distincts",
+    title: "Count Distinct cage",
+    clue: null,
+    control: true,
+    problem: distinctProblem,
+    problems: DISTINCT_PROBLEMS,
+    tap: "Tap the # cell of a Count Distinct cage first, then the rest of its cells: the # cell's digit counts the different digits in the rest.",
+    first: "Draw a Count Distinct cage first: tap Cages, then its # cell, then the rest of its cells.",
+    intro: "A Count Distinct puzzle: tap Cages, then a cage's # cell, then the rest of its cells. The # cell's digit counts the different digits in the rest.",
+    added: ({ control }) => `counting from ${where(control)}`,
   },
 };
 
@@ -1384,7 +1496,8 @@ function pickCell(c) {
     editing = held;
     cageKind = held.kind;
     const cage = s[CAGES[held.kind].list][held.index];
-    picked = new Set(cage.cells);
+    // A control goes first, as it was tapped.
+    picked = new Set(cage.control != null ? [cage.control, ...cage.cells] : cage.cells);
     $("cageSum").value = clueText(held.kind, cage);
   } else if (held && !same) {
     return say("That cell is in another cage. Add or clear this one first, then tap it to change that cage.");
@@ -1397,7 +1510,7 @@ function pickCell(c) {
 // Digits typed while gathering go to the clue; "back" takes one off.
 function typeSum(key) {
   const K = CAGES[cageKind];
-  if (!K.clue) return say("An Equality cage has no clue: tap its cells, then Add cage.");
+  if (!K.clue) return say(`${K.title}s have no clue: tap the cells, then Add cage.`);
   const box = $("cageSum");
   box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-K.most);
   note = "";
@@ -1419,16 +1532,18 @@ function cageStatus() {
   const kinds = cageKinds().length > 1 ? ` The kind button says which kind: now ${K.title}.` : "";
   if (!n) return `${K.tap} Tap a cage already drawn to change it.${kinds}`;
   const then = editing ? "Change cage" : "Add cage";
-  return `${plural(n, "cell")} picked. ${K.clue ? `Type the ${K.typed}, then ${then}` : `Tap ${then}`}.${kinds}`;
+  const head = K.control ? ` The # cell is ${where([...picked][0])}.` : "";
+  return `${plural(n, "cell")} picked.${head} ${K.clue ? `Type the ${K.typed}, then ${then}` : `Tap ${then}`}.${kinds}`;
 }
 
 function onCageAdd() {
   const K = CAGES[cageKind];
   const cells = [...picked].sort((a, b) => a - b);
   if (!cells.length) return;
-  const text = $("cageSum").value.trim();
-  if (K.clue && !/^\d+$/.test(text)) return say(`Type the ${K.typed} first.`);
-  const cage = K.clue === "sum" ? { sum: Number(text), cells } : K.clue === "clue" ? { clue: text, cells } : { cells };
+  const typed = $("cageSum").value.trim();
+  if (K.clue && !/^\d+$/.test(typed)) return say(`Type the ${K.typed} first.`);
+  const text = K.tidy ? K.tidy(typed) : typed;
+  const cage = K.clue === "sum" ? { sum: Number(text), cells } : K.clue === "clue" ? { clue: text, cells } : K.control ? { control: [...picked][0], cells } : { cells };
   // The cage picked up goes from its own kind's list, whichever that is.
   const parts = {};
   if (editing) parts[CAGES[editing.kind].list] = s[CAGES[editing.kind].list].filter((_, i) => i !== editing.index);
@@ -2367,6 +2482,10 @@ function render() {
     lunchboxes: s.lunchbox ? s.lunchboxes : null,
     looksays: s.looksay ? s.looksays : null,
     equalities: s.equality ? s.equalities : null,
+    equalsums: s.equalsum ? s.equalsums : null,
+    samevalues: s.samevalue ? s.samevalues : null,
+    connecteds: s.connected ? s.connecteds : null,
+    distincts: s.countdistinct ? s.distincts : null,
     thermos: shownLines("thermo"),
     arrows: shownLines("arrow"),
     doubles: shownLines("doublearrow"),
@@ -2546,7 +2665,7 @@ function render() {
     $("cageAdd").disabled = !picked.size;
     $("cageKind").classList.toggle("hidden", cageKinds().length < 2);
     $("cageKindLabel").textContent = K.title;
-    // An Equality cage has no clue to type.
+    // An Equality cage, among others, has no clue to type.
     for (const id of ["cageSum", "cageSumLabel"]) $(id).classList.toggle("hidden", !K.clue);
     if (K.clue) {
       $("cageSumLabel").textContent = K.label;

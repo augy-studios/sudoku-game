@@ -38,7 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say and Equality cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -123,7 +123,7 @@ while the clues go in, how to draw it), and in a Rules box over the board
 in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings, and the Daily's with Killer picked (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
-any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
+any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected (Connected Values), Count Distinct, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
 Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
@@ -151,7 +151,7 @@ and a cell with no 1 possible above it and no 9 below cannot be 5. So one solver
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
+seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
 P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
@@ -451,6 +451,37 @@ digit placed and the cells that could still take it; an Equality cage
 counts each half (low, high, odd, even) the same way. Their seed letters
 are QRC, QLB, QLS and QEC, after K, and each kind is written as killer
 cages are, with its clue: a sum, a Look and Say clue's pairs, or nothing.
+
+**Equal Sum, Same Values, Connected Values and Count Distinct.** Four more
+kinds of cage on the same Cages tool, after the other solver's rules too:
+
+- An Equal Sum cage, marked Σ, is two or more pieces apart from each
+  other, cells touching along a side being one piece, of one to nine cells
+  each. Every piece adds up to the same total, and digits may repeat.
+- A Same Values cage, marked ≡, is pieces the same way, all the same size,
+  each holding the same digits in any order, a repeat repeated in each.
+  With more than one cage of either kind, each is lettered (ΣA, ΣB), so
+  its pieces can be told from another's.
+- A Connected Values cage's clue is one to eight digits, shown after ~ as
+  ~135: the cells holding any of them join up edge to edge into one group,
+  and there is one at least. The other solver's optional size of that
+  group is left out.
+- A Count Distinct cage's # cell, the first cell tapped when it is drawn,
+  holds how many different digits the rest of the cage holds. They may
+  repeat.
+
+An Equal Sum cage narrows each piece's cells to the digits that reach a
+total every piece can make, as a sum line's runs are narrowed; a Same Values
+cage keeps a digit only where every piece has room for it, and counts each
+digit across the pieces as a Look and Say cage does; a Connected Values cage
+splits the cells that could hold its digits into parts joined edge to edge,
+and once one is sure, the other parts lose the digits; a Count Distinct
+cage's # cell is kept between the different digits placed and the most the
+rest could hold at once. Their seed letters are QES, QSV, QCV and QCD, after
+QEC. An Equal Sum or Same Values cage is written as its pieces, each a cage
+with no clue, then for each piece which cage it is in; a Connected Values
+cage's clue is which digits it names, and a Count Distinct cage's which of
+its cells is the # cell.
 
 **Copy puzzle.** On every game, its result and the solver: the puzzle's clues
 as 81 characters with . for blanks, which the solver's Paste and most sudoku

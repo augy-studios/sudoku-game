@@ -1,11 +1,11 @@
 // Variant sudoku: the classic rules with more on top. Pure, with no DOM, and
 // the API imports it too, to work out a made variant puzzle's answer.
 //
-// A variant is { cages, relliks, lunchboxes, looksays, equalities, thermos,
-// arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens,
-// lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs,
-// signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
-// regions, rules }:
+// A variant is { cages, relliks, lunchboxes, looksays, equalities, equalsums,
+// samevalues, connecteds, distincts, thermos, arrows, doubles, pills,
+// whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+// modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads,
+// sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -25,6 +25,21 @@
 //   equalities  Equality cages, [{ cells }] of an even number of cells: as
 //            many odd digits as even, and as many low (1 to 4) as high (6
 //            to 9), so never a 5. They never repeat.
+//   equalsums  Equal Sum cages, [{ cells }] in two or more pieces, each
+//            joined edge to edge and one to nine cells, no two touching
+//            along an edge (piecesOf below): every piece adds up to the same
+//            total. Digits may repeat where the rules allow.
+//   samevalues  Same Values cages, as Equal Sum cages with pieces all the
+//            same size: every piece holds the same digits, a digit twice in
+//            one twice in each.
+//   connecteds  Connected Values cages, [{ clue, cells }], cells joined edge
+//            to edge and clue one to eight different digits in rising
+//            order: the cells holding any of them form one group joined
+//            edge to edge, of one cell or more.
+//   distincts  Count Distinct cages, [{ control, cells }], cells joined edge
+//            to edge and control one of them: its digit is how many
+//            different digits the other cells hold. They may repeat where
+//            the rules allow.
 //   thermos  thermometers, each a path of cells from the bulb, every step
 //            to a cell touching the last, corners included. Digits rise
 //            strictly from the bulb. Thermometers may share cells.
@@ -171,7 +186,7 @@ export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key =
 const has = hasRule;
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (rooms?.length) names.unshift("Numbered Room");
@@ -199,6 +214,10 @@ export function variantName({ cages, relliks, lunchboxes, looksays, equalities, 
   if (doubles?.length) names.unshift("Double Arrow");
   if (arrows?.length) names.unshift("Arrow");
   if (thermos?.length) names.unshift("Thermo");
+  if (distincts?.length) names.unshift("Count Distinct");
+  if (connecteds?.length) names.unshift("Connected Values");
+  if (samevalues?.length) names.unshift("Same Values");
+  if (equalsums?.length) names.unshift("Equal Sum");
   if (equalities?.length) names.unshift("Equality Cage");
   if (looksays?.length) names.unshift("Look and Say");
   if (lunchboxes?.length) names.unshift("Lunchbox");
@@ -324,10 +343,11 @@ export function cageAllows(left, rest, used) {
 // Whether cages of one kind are well formed: cells 0 to 80, none in two
 // cages, each cage `least` to `most` cells (an even number, for `even`)
 // joined edge to edge, or for `straight` side by side along a row or down a
-// column in reading order, and a clue `fits` takes. null if so, or what is
-// wrong: { why, cage }, why "size", "cell", "overlap", "sum" or "clue" (as
-// `clue` names it), "apart" or "line".
-function groupProblem(cages, { least = 1, most = 9, even = false, straight = false, clue = "sum", fits }) {
+// column in reading order, or for `pieces` in pieces it passes, and a clue
+// `fits` takes. null if so, or what is wrong: { why, cage }, why "size",
+// "cell", "overlap", "sum" or "clue" (as `clue` names it), "apart", "line"
+// or what `pieces` says.
+function groupProblem(cages, { least = 1, most = 9, even = false, straight = false, pieces = null, clue = "sum", fits }) {
   const seen = new Set();
   for (let i = 0; i < cages.length; i++) {
     const cage = cages[i] ?? {};
@@ -339,7 +359,10 @@ function groupProblem(cages, { least = 1, most = 9, even = false, straight = fal
       seen.add(c);
     }
     if (fits && !fits(cage)) return { why: clue, cage: i };
-    if (straight ? !inLine(cells) : !joined(cells)) return { why: straight ? "line" : "apart", cage: i };
+    if (pieces) {
+      const why = pieces(piecesOf(cells));
+      if (why) return { why, cage: i };
+    } else if (straight ? !inLine(cells) : !joined(cells)) return { why: straight ? "line" : "apart", cage: i };
   }
   return null;
 }
@@ -365,6 +388,30 @@ export const lookSayProblem = (looksays) =>
 // Equality cages: two, four, six or eight cells, as the eight digits other
 // than 5 have room for.
 export const equalityProblem = (equalities) => groupProblem(equalities, { least: 2, most: 8, even: true });
+// Equal Sum cages: two pieces or more, "pieces" if not, each one to nine
+// cells, "piece" if not.
+const splitProblem = (ps) => (ps.length < 2 ? "pieces" : ps.some((p) => p.length > 9) ? "piece" : null);
+export const equalSumProblem = (equalsums) => groupProblem(equalsums, { least: 2, most: 81, pieces: splitProblem });
+// Same Values cages: as Equal Sum cages, with pieces all the same size,
+// "uneven" if not.
+export const sameValueProblem = (samevalues) =>
+  groupProblem(samevalues, { least: 2, most: 81, pieces: (ps) => splitProblem(ps) ?? (ps.some((p) => p.length !== ps[0].length) ? "uneven" : null) });
+// Connected Values cages: two cells or more, and one to eight different
+// digits in rising order.
+export const connectedProblem = (connecteds) =>
+  groupProblem(connecteds, { least: 2, most: 81, clue: "clue", fits: ({ clue }) => typeof clue === "string" && /^[1-9]{1,8}$/.test(clue) && [...clue].every((d, i) => !i || d > clue[i - 1]) });
+// Count Distinct cages: two cells or more, the control among them,
+// "control" if not.
+export const distinctProblem = (distincts) => groupProblem(distincts, { least: 2, most: 81, clue: "control", fits: ({ control, cells }) => cells.includes(control) });
+
+// The digits a Connected Values clue names, as a mask.
+export const clueMask = (clue) => [...clue].reduce((m, d) => m | (1 << Number(d)), 0);
+
+// A Connected Values clue in words: "1s, 3s or 5s".
+export function linkWords(clue) {
+  const parts = [...clue].map((d) => `${d}s`);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} or ${parts.at(-1)}` : parts.join("");
+}
 
 // The most a lunchbox's sum can be: the digits 2 to 8.
 export const LUNCHBOX_MAX = 35;
@@ -406,9 +453,15 @@ export function sayWords(clue) {
   return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts.join("");
 }
 
+// A cage of a kind in pieces, as named among those of its kind: "" alone,
+// or A, B and so on.
+const pieceName = (i, n) => (n > 1 ? String.fromCharCode(65 + (i % 26)) : "");
+
 // Every kind of cage, as the lists that hold them, in the order their rule
 // buttons go: what each shows in its first cell's corner, what it is
-// called for a screen reader, and whether it is drawn solid, not dashed.
+// called for a screen reader, whether it is drawn solid, not dashed, and
+// whether it is drawn a piece at a time. label and words take the cage,
+// its place in its list and how many the list has.
 export const CAGE_LISTS = [
   { list: "cages", label: ({ sum }) => String(sum), words: ({ sum, cells }) => `cage of ${cells.length} adding to ${sum}` },
   { list: "relliks", label: ({ sum }) => `≠${sum}`, words: ({ sum, cells }) => `Rellik cage of ${cells.length}, no digits adding to ${sum}` },
@@ -424,12 +477,62 @@ export const CAGE_LISTS = [
     words: ({ clue, cells }) => `Look and Say cage of ${cells.length}, ${sayWords(clue)}`,
   },
   { list: "equalities", label: () => "=", words: ({ cells }) => `Equality cage of ${cells.length}` },
+  {
+    list: "equalsums",
+    label: (_, i, n) => `Σ${pieceName(i, n)}`,
+    words: ({ cells }, i, n) => `Equal Sum cage${n > 1 ? ` ${pieceName(i, n)}` : ""}, ${piecesOf(cells).length} pieces adding up the same`,
+    split: true,
+  },
+  {
+    list: "samevalues",
+    label: (_, i, n) => `≡${pieceName(i, n)}`,
+    words: ({ cells }, i, n) => `Same Values cage${n > 1 ? ` ${pieceName(i, n)}` : ""}, ${piecesOf(cells).length} pieces holding the same digits`,
+    split: true,
+  },
+  { list: "connecteds", label: ({ clue }) => `~${clue}`, words: ({ clue, cells }) => `Connected Values cage of ${cells.length}, its ${linkWords(clue)} joined up` },
+  { list: "distincts", label: () => "#", words: ({ cells }) => `Count Distinct cage of ${cells.length}, the # cell counting the different digits in the rest` },
 ];
 
-// Every cage of every kind in `v`, for drawing: [{ cells, label, words,
-// solid }].
+// Every cage of every kind in `v`, for drawing, a cage in pieces a piece at
+// a time: [{ cells, head, label, words, solid }], head the cell its label
+// goes in, a Count Distinct cage's control or else its first.
 export const cagesOf = (v) =>
-  CAGE_LISTS.flatMap(({ list, label, words, solid = false }) => (v?.[list] ?? []).map((cage) => ({ cells: cage.cells, label: label(cage), words: words(cage), solid })));
+  CAGE_LISTS.flatMap(({ list, label, words, solid = false, split = false }) => {
+    const all = v?.[list] ?? [];
+    return all.flatMap((cage, i) =>
+      (split ? piecesOf(cage.cells) : [cage.cells]).map((cells) => ({
+        cells,
+        head: cage.control ?? Math.min(...cells),
+        label: label(cage, i, all.length),
+        words: words(cage, i, all.length),
+        solid,
+      }))
+    );
+  });
+
+// A cage's cells as the pieces they make joined edge to edge, each in
+// reading order, in order of their first cell.
+export function piecesOf(cells) {
+  const set = new Set(cells);
+  const done = new Set();
+  const out = [];
+  for (const start of [...cells].sort((a, b) => a - b)) {
+    if (done.has(start)) continue;
+    const piece = [start];
+    done.add(start);
+    for (let k = 0; k < piece.length; k++) {
+      const c = piece[k];
+      for (const n of [c - 9, c + 9, COL[c] > 0 ? c - 1 : -1, COL[c] < 8 ? c + 1 : -1]) {
+        if (set.has(n) && !done.has(n)) {
+          done.add(n);
+          piece.push(n);
+        }
+      }
+    }
+    out.push(piece.sort((a, b) => a - b));
+  }
+  return out;
+}
 
 // Every cell reachable from the first through edges within the group.
 function joined(cells) {
@@ -1882,6 +1985,241 @@ function equalityBounds(equalities, g, free) {
   return true;
 }
 
+/* ---- Equal Sum, Same Values, Connected Values and Count Distinct cages ---- */
+
+// The most a piece of an Equal Sum cage can add up to: nine 9s.
+const PIECE_TOP = 81;
+// Scratch for equalSumBounds: at each gap between two cells of a piece,
+// whether the cells before it can add up to each total (sumAhead), and
+// whether from each total there the cells after it can reach one every
+// piece can make (sumBehind); and those totals (sumCommon).
+const sumAhead = Array.from({ length: 10 }, () => new Uint8Array(PIECE_TOP + 1));
+const sumBehind = Array.from({ length: 10 }, () => new Uint8Array(PIECE_TOP + 1));
+const sumCommon = new Uint8Array(PIECE_TOP + 1);
+
+// Fills sumAhead for a piece. Placed digits count as masks of one.
+function piecesAhead(piece, g, free) {
+  sumAhead[0].fill(0);
+  sumAhead[0][0] = 1;
+  for (let i = 0; i < piece.length; i++) {
+    const m = g[piece[i]] ? 1 << g[piece[i]] : free[piece[i]];
+    const from = sumAhead[i];
+    const to = sumAhead[i + 1];
+    to.fill(0);
+    for (let t = 0; t <= 9 * i; t++) {
+      if (!from[t]) continue;
+      for (let d = 1; d <= 9; d++) if (m & (1 << d)) to[t + d] = 1;
+    }
+  }
+}
+
+// Narrows each Equal Sum cage, as piecesOf splits it, to the totals every
+// piece can make, and each cell to the digits that take its piece to one of
+// them, going along the piece and coming back as sumLineBounds does. Digits
+// may repeat. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if the pieces share no total.
+function equalSumBounds(groups, g, free) {
+  for (const pieces of groups) {
+    sumCommon.fill(1);
+    for (const piece of pieces) {
+      piecesAhead(piece, g, free);
+      const end = sumAhead[piece.length];
+      for (let t = 0; t <= PIECE_TOP; t++) sumCommon[t] &= end[t];
+    }
+    if (!sumCommon.includes(1)) return false;
+    for (const piece of pieces) {
+      const n = piece.length;
+      piecesAhead(piece, g, free);
+      sumBehind[n].set(sumCommon);
+      for (let i = n - 1; i >= 0; i--) {
+        const c = piece[i];
+        const m = g[c] ? 1 << g[c] : free[c];
+        const before = sumAhead[i];
+        const after = sumBehind[i + 1];
+        const back = sumBehind[i];
+        back.fill(0);
+        let keep = 0;
+        for (let d = 1; d <= 9; d++) {
+          if (!(m & (1 << d))) continue;
+          for (let t = 0; t + d <= PIECE_TOP; t++) {
+            if (!after[t + d]) continue;
+            back[t] = 1;
+            if (before[t]) keep |= 1 << d;
+          }
+        }
+        if (!keep) return false;
+        if (!g[c]) free[c] = keep;
+      }
+    }
+  }
+  return true;
+}
+
+// Scratch for sameValueBounds: each piece's count of a digit placed, and
+// its empty cells that could take it.
+const sameHave = new Int32Array(81);
+const sameCan = new Int32Array(81);
+
+// Narrows each Same Values cage, as piecesOf splits it. A digit goes only
+// where every piece has a cell that could take it. Then for each digit:
+// every piece holds it as often as the one with the most placed, so no
+// piece can fall short of those; a piece already at the fewest any could
+// hold takes no more, and one that needs every cell that could take it gets
+// it there. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if the pieces cannot match.
+function sameValueBounds(groups, g, free) {
+  for (const pieces of groups) {
+    let common = ALL;
+    for (const piece of pieces) {
+      let room = 0;
+      for (const c of piece) room |= g[c] ? 1 << g[c] : free[c];
+      common &= room;
+    }
+    for (const piece of pieces) {
+      for (const c of piece) {
+        if (g[c] ? !(common & (1 << g[c])) : !(free[c] &= common)) return false;
+      }
+    }
+    for (let d = 1; d <= 9; d++) {
+      const bit = 1 << d;
+      let most = 0;
+      let least = 9;
+      for (let p = 0; p < pieces.length; p++) {
+        let have = 0;
+        let can = 0;
+        for (const c of pieces[p]) {
+          if (g[c] === d) have++;
+          else if (!g[c] && free[c] & bit) can++;
+        }
+        sameHave[p] = have;
+        sameCan[p] = can;
+        most = Math.max(most, have);
+        least = Math.min(least, have + can);
+      }
+      if (most > least) return false;
+      if (!least) continue;
+      for (let p = 0; p < pieces.length; p++) {
+        const full = sameHave[p] === least;
+        const short = sameHave[p] < most && sameHave[p] + sameCan[p] === most;
+        if (!full && !short) continue;
+        for (const c of pieces[p]) {
+          if (g[c] || !(free[c] & bit)) continue;
+          free[c] = full ? free[c] & ~bit : bit;
+          if (!free[c]) return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+// Connected Values cages with their clues read: [{ cells, want }], want the
+// clue's digits as a mask.
+export const linkCages = (connecteds = []) => connecteds.map(({ clue, cells }) => ({ cells, want: clueMask(clue) }));
+
+// Scratch for connectedBounds: which cells could hold a digit of the clue,
+// by the pass that found them (so none needs clearing), and which part of
+// those, joined edge to edge, each is in.
+const linkPass = new Float64Array(81);
+const linkPart = new Int32Array(81);
+const linkTodo = new Int32Array(81);
+let linkPasses = 0;
+
+// Narrows each Connected Values cage. The cells that could hold one of the
+// clue's digits split into parts joined edge to edge; one must be there,
+// and every cell sure to hold one must be in the same part. Once one is,
+// the cells of the other parts lose the clue's digits. Placed digits count
+// as masks of one, and `free` is narrowed in place, as in thermoBounds;
+// false if the clue's cells cannot join up.
+function connectedBounds(links, g, free) {
+  for (const { cells, want } of links) {
+    const pass = ++linkPasses;
+    for (const c of cells) {
+      if (!((g[c] ? 1 << g[c] : free[c]) & want)) continue;
+      linkPass[c] = pass;
+      linkPart[c] = 0;
+    }
+    let parts = 0;
+    for (const start of cells) {
+      if (linkPass[start] !== pass || linkPart[start]) continue;
+      linkPart[start] = ++parts;
+      linkTodo[0] = start;
+      for (let k = 0, n = 1; k < n; k++) {
+        const c = linkTodo[k];
+        for (const o of [c - 9, c + 9, COL[c] > 0 ? c - 1 : -1, COL[c] < 8 ? c + 1 : -1]) {
+          if (o < 0 || o > 80 || linkPass[o] !== pass || linkPart[o]) continue;
+          linkPart[o] = parts;
+          linkTodo[n++] = o;
+        }
+      }
+    }
+    if (!parts) return false;
+    let home = 0;
+    for (const c of cells) {
+      if (linkPass[c] !== pass || (g[c] ? 0 : free[c] & ~want)) continue;
+      if (home && linkPart[c] !== home) return false;
+      home = linkPart[c];
+    }
+    if (!home) continue;
+    for (const c of cells) if (linkPass[c] === pass && linkPart[c] !== home && !g[c] && !(free[c] &= ~want)) return false;
+  }
+  return true;
+}
+
+// Scratch for countDistinctBounds: the counted cells' masks, which cell
+// each digit is matched to, and the digits tried on this search.
+const distinctMasks = new Int32Array(81);
+const distinctOwner = new Int32Array(10);
+let distinctTried = 0;
+
+// Whether counted cell i can be matched to a digit of its own, moving those
+// matched before along if need be.
+function distinctMatch(i) {
+  for (let m = distinctMasks[i]; m; m &= m - 1) {
+    const bit = m & -m;
+    if (distinctTried & bit) continue;
+    distinctTried |= bit;
+    const d = 31 - Math.clz32(bit);
+    if (distinctOwner[d] < 0 || distinctMatch(distinctOwner[d])) {
+      distinctOwner[d] = i;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Narrows each Count Distinct cage's control to the counts its other cells
+// could still make: no more than the most different digits they can hold
+// at once, a matching of cells to digits, and no fewer than the different
+// digits placed, one more if an empty cell can take none of those. Once the
+// most the control allows is placed, the empty cells keep to digits already
+// there. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if no count is left.
+function countDistinctBounds(distincts, g, free) {
+  for (const { control, cells } of distincts) {
+    let n = 0;
+    let placed = 0;
+    for (const c of cells) {
+      if (c === control) continue;
+      distinctMasks[n++] = g[c] ? 1 << g[c] : free[c];
+      if (g[c]) placed |= 1 << g[c];
+    }
+    let fresh = 0;
+    for (const c of cells) if (c !== control && !g[c] && !(free[c] & placed)) fresh = 1;
+    distinctOwner.fill(-1);
+    let most = 0;
+    for (let i = 0; i < n && most < 9; i++) {
+      distinctTried = 0;
+      if (distinctMatch(i)) most++;
+    }
+    const counts = between(POP[placed] + fresh, most) & (g[control] ? 1 << g[control] : free[control]);
+    if (!counts) return false;
+    if (!g[control]) free[control] = counts;
+    if (POP[placed] === HIGH[counts]) for (const c of cells) if (c !== control && !g[c] && !(free[c] &= placed)) return false;
+  }
+  return true;
+}
+
 /* ---- candidates and solving ---- */
 
 const norm = (v) => ({
@@ -1890,6 +2228,10 @@ const norm = (v) => ({
   lunchboxes: v?.lunchboxes ?? [],
   looksays: v?.looksays ?? [],
   equalities: v?.equalities ?? [],
+  equalsums: v?.equalsums ?? [],
+  samevalues: v?.samevalues ?? [],
+  connecteds: v?.connecteds ?? [],
+  distincts: v?.distincts ?? [],
   thermos: v?.thermos ?? [],
   arrows: v?.arrows ?? [],
   doubles: v?.doubles ?? [],
@@ -1926,7 +2268,7 @@ const norm = (v) => ({
 // 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -1953,6 +2295,10 @@ export function variantCandidates(grid, variant) {
   lunchboxBounds(lunchboxes, grid, out);
   sayBounds(sayCages(looksays), grid, out);
   equalityBounds(equalities, grid, out);
+  equalSumBounds(equalsums.map(({ cells }) => piecesOf(cells)), grid, out);
+  sameValueBounds(samevalues.map(({ cells }) => piecesOf(cells)), grid, out);
+  connectedBounds(linkCages(connecteds), grid, out);
+  countDistinctBounds(distincts, grid, out);
   thermoBounds(thermos, grid, out);
   arrowBounds(arrows, grid, out);
   scaleBounds(scales(doubles, pills), grid, out);
@@ -2003,9 +2349,12 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const says = sayCages(looksays);
+  const sumGroups = equalsums.map(({ cells }) => piecesOf(cells));
+  const sameGroups = samevalues.map(({ cells }) => piecesOf(cells));
+  const links = linkCages(connecteds);
   const balances = scales(doubles, pills);
   const runs = regionRuns(regionsums, regions);
   const barred = barredSides(rules, dots, xvs);
@@ -2062,6 +2411,10 @@ function search(grid, variant, found) {
     if (lunchboxes.length && !lunchboxBounds(lunchboxes, g, free)) return null;
     if (says.length && !sayBounds(says, g, free)) return null;
     if (equalities.length && !equalityBounds(equalities, g, free)) return null;
+    if (sumGroups.length && !equalSumBounds(sumGroups, g, free)) return null;
+    if (sameGroups.length && !sameValueBounds(sameGroups, g, free)) return null;
+    if (links.length && !connectedBounds(links, g, free)) return null;
+    if (distincts.length && !countDistinctBounds(distincts, g, free)) return null;
     if (thermos.length && !thermoBounds(thermos, g, free)) return null;
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
     if (balances.length && !scaleBounds(balances, g, free)) return null;

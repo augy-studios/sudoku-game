@@ -25,6 +25,12 @@ import {
   lunchboxProblem,
   lookSayProblem,
   equalityProblem,
+  equalSumProblem,
+  sameValueProblem,
+  connectedProblem,
+  distinctProblem,
+  piecesOf,
+  linkWords,
   sayCounts,
   sayWords,
   cagesOf,
@@ -1661,6 +1667,160 @@ test("Equality cages are checked, solved and carried in seeds", () => {
   assert.equal(clashes(placed({ 0: 1, 1: 8 }), eq).size, 0);
 });
 
+const beside = (c) => [c - 9, c + 9, c % 9 ? c - 1 : -1, c % 9 < 8 ? c + 1 : -1].filter((n) => n >= 0 && n < 81);
+
+// Cages in two pieces laid through a solved grid: as many as `count`, each
+// piece grown edge to edge from a random cell to one of `sizes` cells (the
+// second as big as the first, for `same`), never touching the first along
+// an edge, kept when `fits` takes the two pieces' digits. None shares a
+// cell with another in `used`.
+function layPieces(solution, rand, fits, { count = 6, sizes = [1, 2, 3], same = false, used = new Set() } = {}) {
+  const grow = (want, avoid) => {
+    const cells = [Math.floor(rand() * 81)];
+    if (avoid.has(cells[0])) return null;
+    while (cells.length < want) {
+      const next = cells.flatMap(beside).filter((n) => !cells.includes(n) && !avoid.has(n));
+      if (!next.length) return null;
+      cells.push(next[Math.floor(rand() * next.length)]);
+    }
+    return cells.sort((p, q) => p - q);
+  };
+  const size = () => sizes[Math.floor(rand() * sizes.length)];
+  const out = [];
+  for (let tries = 0; out.length < count && tries < 5000; tries++) {
+    const a = grow(size(), used);
+    if (!a) continue;
+    const near = new Set([...used, ...a, ...a.flatMap(beside)]);
+    for (let again = 0; again < 300; again++) {
+      const b = grow(same ? a.length : size(), near);
+      if (!b || !fits(a.map((c) => solution[c]), b.map((c) => solution[c]))) continue;
+      const cells = [...a, ...b].sort((p, q) => p - q);
+      cells.forEach((c) => used.add(c));
+      out.push({ cells });
+      break;
+    }
+  }
+  return out.sort((p, q) => p.cells[0] - q.cells[0]);
+}
+
+const total = (digits) => digits.reduce((t, d) => t + d, 0);
+const fitsEqualSum = (a, b) => total(a) === total(b);
+const fitsSameValues = (a, b) => a.length === b.length && a.slice().sort().join() === b.slice().sort().join();
+
+// A Connected Values clue: some of the cage's digits whose cells join up,
+// and now and then a digit it has none of.
+function connectedOf(cells, solution, rand) {
+  const digits = [...new Set(cells.map((c) => solution[c]))];
+  for (let tries = 0; tries < 10; tries++) {
+    const pick = digits.filter(() => rand() < 0.5);
+    if (!pick.length) continue;
+    if (piecesOf(cells.filter((c) => pick.includes(solution[c]))).length > 1) continue;
+    const none = [1, 2, 3, 4, 5, 6, 7, 8, 9].find((d) => !digits.includes(d) && rand() < 0.2);
+    if (none) pick.push(none);
+    if (pick.length > 8) continue;
+    return { clue: pick.sort((p, q) => p - q).join(""), cells };
+  }
+  return null;
+}
+
+// A Count Distinct cage: a control whose digit counts the different digits
+// in the cage's other cells, if one of its cells has that.
+function distinctOf(cells, solution, rand) {
+  const fits = cells.filter((k) => new Set(cells.filter((c) => c !== k).map((c) => solution[c])).size === solution[k]);
+  return fits.length ? { control: fits[Math.floor(rand() * fits.length)], cells } : null;
+}
+
+// A puzzle of one kind of cage in pieces, on the same grid as cagesPuzzle.
+function piecesPuzzle(key, x, fits, options) {
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(x);
+  const cages = layPieces(solution, rand, fits, options);
+  return { puzzle: thinOut(solution, { [key]: cages }, rand), solution, [key]: cages };
+}
+
+test("Equal Sum cages are checked, solved and carried in seeds", () => {
+  assert.deepEqual(piecesOf([0, 1, 13, 30, 39]), [[0, 1], [13], [30, 39]]);
+  assert.equal(equalSumProblem([{ cells: [0, 13] }]), null);
+  assert.equal(equalSumProblem([{ cells: [0, 1] }]).why, "pieces", "one piece is no Equal Sum cage");
+  assert.equal(equalSumProblem([{ cells: [0] }]).why, "size");
+  assert.equal(equalSumProblem([{ cells: [...Array(10).keys(), 30] }]).why, "piece", "a piece of ten cells");
+  assert.equal(equalSumProblem([{ cells: [0, 13] }, { cells: [13, 40] }]).why, "overlap");
+
+  const made = piecesPuzzle("equalsums", 191, fitsEqualSum);
+  cagesRoundTrip("equalsums", "QES", made);
+  assert.ok(made.equalsums.some(({ cells }) => new Set(piecesOf(cells).map((p) => p.length)).size > 1), "pieces of different sizes among them");
+
+  // One cell against two: a 1 and a 2 make the other cell a 3. Digits may
+  // repeat: two single cells in no house together hold the same digit.
+  const sum = { equalsums: [{ cells: [0, 1, 30] }] };
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 2 }), sum)[30], digitsMask(3));
+  assert.equal(variantCandidates(placed({ 0: 4 }), { equalsums: [{ cells: [0, 13] }] })[13], digitsMask(4));
+  // Two cells making 2 is 1 and 1, which their row forbids.
+  assert.equal(variantCandidates(placed({ 30: 2 }), sum)[0], digitsMask(1));
+  assert.equal(variantSolutions(placed({ 30: 2 }), sum, 1).length, 0);
+  // Full pieces off each other clash, and so does one past the total.
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 2, 30: 4 }), sum)), [0, 1, 30]);
+  assert.deepEqual(sorted(clashes(placed({ 0: 4, 30: 4 }), sum)), [0], "4 and at least 1 more is past 4");
+  assert.equal(clashes(placed({ 0: 1, 30: 4 }), sum).size, 0);
+});
+
+test("Same Values cages are checked, solved and carried in seeds", () => {
+  assert.equal(sameValueProblem([{ cells: [0, 1, 30, 31] }]), null);
+  assert.equal(sameValueProblem([{ cells: [0, 1, 30] }]).why, "uneven");
+  assert.equal(sameValueProblem([{ cells: [0, 1] }]).why, "pieces");
+
+  cagesRoundTrip("samevalues", "QSV", piecesPuzzle("samevalues", 193, fitsSameValues, { sizes: [1, 2, 3], same: true }));
+
+  // Two pieces of two: a 1 and a 2 in one leave the other only those.
+  const same = { samevalues: [{ cells: [0, 1, 30, 31] }] };
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 2 }), same)[30], digitsMask(1, 2));
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 2, 30: 1 }), same)[31], digitsMask(2));
+  // A 1 the other piece has no room for clashes.
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 30: 3, 31: 4 }), same)), [0]);
+  assert.equal(clashes(placed({ 0: 1, 30: 3 }), same).size, 0);
+});
+
+test("Connected Values cages are checked, solved and carried in seeds", () => {
+  assert.equal(connectedProblem([{ clue: "135", cells: [0, 1] }]), null);
+  for (const clue of ["", "531", "113", "123456789", "0", 1]) assert.equal(connectedProblem([{ clue, cells: [0, 1] }]).why, "clue", String(clue));
+  assert.equal(connectedProblem([{ clue: "1", cells: [0] }]).why, "size");
+  assert.equal(connectedProblem([{ clue: "1", cells: [0, 2] }]).why, "apart");
+  assert.equal(linkWords("135"), "1s, 3s or 5s");
+
+  cagesRoundTrip("connecteds", "QCV", cagesPuzzle("connecteds", 197, connectedOf, { sizes: [3, 4, 5] }));
+
+  // With a 1 in the first cell and a 5 in the middle, the last is cut off
+  // and cannot take a 2.
+  const link = { connecteds: [{ clue: "12", cells: [0, 1, 2] }] };
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 5 }), link)[2] & digitsMask(2), 0);
+  assert.ok(variantCandidates(placed({ 0: 1 }), link)[2] & digitsMask(2), "joined up through the middle");
+  assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 5, 2: 2 }), link)), [0, 2]);
+  // Full with none of the clue's digits: one is always there.
+  assert.deepEqual(sorted(clashes(placed({ 0: 3, 1: 4, 2: 5 }), link)), [0, 1, 2]);
+  assert.equal(variantSolutions(placed({ 0: 3, 1: 4 }), { connecteds: [{ clue: "12", cells: [0, 1] }] }, 1).length, 0);
+});
+
+test("Count Distinct cages are checked, solved and carried in seeds", () => {
+  assert.equal(distinctProblem([{ control: 3, cells: [2, 3, 12] }]), null);
+  assert.equal(distinctProblem([{ control: 4, cells: [2, 3, 12] }]).why, "control");
+  assert.equal(distinctProblem([{ control: 3, cells: [3] }]).why, "size");
+
+  const made = cagesPuzzle("distincts", 199, distinctOf, { sizes: [3, 4, 5] });
+  cagesRoundTrip("distincts", "QCD", made);
+  assert.ok(made.distincts.some(({ control, cells }) => control !== cells[0]), "a control other than the first cell");
+  assert.deepEqual(cagesOf({ distincts: [{ control: 12, cells: [2, 3, 12] }] })[0].head, 12, "the # in the control");
+
+  // Cells 2 and 12 share no house, so they may repeat. Two different
+  // digits placed count 2.
+  const count = { distincts: [{ control: 3, cells: [2, 3, 12] }] };
+  assert.equal(variantCandidates(placed({}), count)[3], digitsMask(1, 2));
+  assert.equal(variantCandidates(placed({ 2: 5, 3: 1 }), count)[12], digitsMask(5), "a count of 1: the same digit again");
+  assert.equal(variantCandidates(placed({ 0: 3, 1: 4 }), { distincts: [{ control: 10, cells: [0, 1, 10] }] })[10], digitsMask(2));
+  assert.deepEqual(sorted(clashes(placed({ 3: 1, 2: 5, 12: 6 }), count)), [2, 3, 12]);
+  assert.deepEqual(sorted(clashes(placed({ 3: 3, 2: 5 }), count)), [2, 3], "one cell left cannot make three");
+  assert.equal(clashes(placed({ 3: 2, 2: 5 }), count).size, 0);
+});
+
 test("cages of every kind go together, one cage to a cell", () => {
   const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
   const used = new Set();
@@ -1670,7 +1830,11 @@ test("cages of every kind go together, one cage to a cell", () => {
   const lunchboxes = lay(131, lunchboxOf, { sizes: [3, 4], straight: true });
   const looksays = lay(137, lookSayOf);
   const equalities = lay(139, equalityOf, { sizes: [2, 4] });
-  const variant = { cages, relliks, lunchboxes, looksays, equalities };
+  const equalsums = layPieces(solution, seeded(211), fitsEqualSum, { count: 2, used });
+  const samevalues = layPieces(solution, seeded(223), fitsSameValues, { count: 2, same: true, used });
+  const connecteds = lay(227, connectedOf, { sizes: [3, 4] });
+  const distincts = lay(229, distinctOf, { sizes: [3, 4] });
+  const variant = { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts };
   for (const [list, found] of Object.entries(variant)) assert.ok(found.length, `some ${list}`);
   assert.equal(clashes(solution, variant).size, 0);
   const puzzle = thinOut(solution, variant, seeded(149));
@@ -1678,15 +1842,25 @@ test("cages of every kind go together, one cage to a cell", () => {
   stepsAgree(puzzle, solution, variant);
 
   const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-  assert.match(seed.text, /^KQRCQLBQLSQEC-[EMHX]-/);
+  assert.match(seed.text, /^KQRCQLBQLSQECQESQSVQCVQCD-[EMHX]-/);
   const back = parseSeed(seed.text);
   for (const list of Object.keys(variant)) assert.deepEqual(back[list], variant[list], list);
-  assert.equal(variantName(variant), "Killer, Rellik Cage, Lunchbox, Look and Say, Equality Cage");
-  assert.equal(seedVariantName(seed.text), "Killer, Rellik Cage, Lunchbox, Look and Say, Equality Cage");
-  assert.equal(cagesOf(variant).length, [cages, relliks, lunchboxes, looksays, equalities].flat().length);
+  const names = "Killer, Rellik Cage, Lunchbox, Look and Say, Equality Cage, Equal Sum, Same Values, Connected Values, Count Distinct";
+  assert.equal(variantName(variant), names);
+  assert.equal(seedVariantName(seed.text), names);
+  // A cage in pieces is drawn a piece at a time.
+  assert.equal(cagesOf(variant).length, [cages, relliks, lunchboxes, looksays, equalities, connecteds, distincts].flat().length + (equalsums.length + samevalues.length) * 2);
   assert.deepEqual(
-    cagesOf({ relliks: [{ sum: 7, cells: [0] }], looksays: [{ clue: "2314", cells: [1] }], equalities: [{ cells: [2, 3] }] }).map((k) => k.label),
-    ["≠7", "2×3 1×4", "="]
+    cagesOf({
+      relliks: [{ sum: 7, cells: [0] }],
+      looksays: [{ clue: "2314", cells: [1] }],
+      equalities: [{ cells: [2, 3] }],
+      equalsums: [{ cells: [4, 6] }],
+      samevalues: [{ cells: [18, 20] }, { cells: [27, 29] }],
+      connecteds: [{ clue: "135", cells: [36, 37] }],
+      distincts: [{ control: 46, cells: [45, 46] }],
+    }).map((k) => k.label),
+    ["≠7", "2×3 1×4", "=", "Σ", "Σ", "≡A", "≡A", "≡B", "≡B", "~135", "#"]
   );
 
   // Two kinds on one cell is no puzzle, though each kind alone is fine.
@@ -2603,9 +2777,15 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     const lunchboxes = layGroups(solution, seeded(157), lunchboxOf, { ...caged, sizes: [3, 4], straight: true });
     const looksays = layGroups(solution, seeded(163), lookSayOf, caged);
     const equalities = layGroups(solution, seeded(167), equalityOf, { ...caged, sizes: [2, 4] });
-    const variant = { cages, relliks, lunchboxes, looksays, equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
+    // Little room is left by now: the hardest to fit first, and the kinds in
+    // pieces last, whose pieces can be single cells.
+    const distincts = layGroups(solution, seeded(229), distinctOf, { ...caged, sizes: [2, 3] });
+    const connecteds = layGroups(solution, seeded(227), connectedOf, { ...caged, sizes: [2, 3] });
+    const equalsums = layPieces(solution, seeded(211), fitsEqualSum, caged);
+    const samevalues = layPieces(solution, seeded(223), fitsSameValues, { ...caged, same: true });
+    const variant = { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
     const name = keys.join(", ");
-    const lists = ["relliks", "lunchboxes", "looksays", "equalities", "thermos","arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+    const lists = ["relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
     for (const list of lists) assert.ok(variant[list].length, `${name}: some ${list}`);
     assert.equal(clashes(solution, variant).size, 0, `${name}: the answer keeps every rule`);
 
@@ -2618,12 +2798,12 @@ test("every drawn part at once, with each widest mix of switch rules", () => {
     stepsAgree(puzzle, solution, variant);
 
     const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
-    const letters = "KQRCQLBQLSQECTAQDAQPASROZCFQENQMOQSLQRSQVXPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
+    const letters = "KQRCQLBQLSQECQESQSVQCVQCDTAQDAQPASROZCFQENQMOQSLQRSQVXPVQGTQQDBLYUQHSQNR" + RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("");
     assert.ok(seed.text.startsWith(`${letters}-`), seed.text);
     const back = parseSeed(seed.text.toLowerCase());
     assert.ok(back, `${name}: the seed reads back`);
     assert.equal(back.text, seed.text);
-    for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
+    for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "rules"]) {
       assert.deepEqual(back[list], variant[list], `${name}: ${list}`);
     }
     assert.deepEqual(puzzleFor(back).solution, solution);
@@ -2646,7 +2826,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
+  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

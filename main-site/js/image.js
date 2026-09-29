@@ -43,7 +43,8 @@ const BETWEEN_TEAL = "#6cc0cf";
 const LOCKOUT_BROWN = "#c2a07f";
 const DIAGONAL_INK = "rgba(29, 106, 58, 0.3)";
 
-// variant: { cages, relliks, lunchboxes, looksays, equalities, thermos,
+// variant: { cages, relliks, lunchboxes, looksays, equalities, equalsums,
+// samevalues, connecteds, distincts, thermos,
 // arrows, doubles, pills, whispers, renbans,
 // palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines,
 // regionsums, indexes, dots, xvs, signs, quads,
@@ -530,7 +531,7 @@ function drawCages(ctx, cages) {
     ctx.stroke();
   }
   ctx.setLineDash([]);
-  for (const cage of cages) cornerLabel(ctx, Math.min(...cage.cells), cage.label);
+  for (const cage of cages) cornerLabel(ctx, cage.head, cage.label);
 }
 
 // A cage's clue, or a sum line's sum, in the top left corner of cell c.

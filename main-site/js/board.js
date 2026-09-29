@@ -7,7 +7,10 @@
 // each cage's edge, and its sum in the corner of its first cell. The other
 // kinds of cage are drawn the same way with their own clue there: a Rellik
 // cage's number after ≠, a Look and Say cage's pairs as 2×3, an Equality
-// cage's =, and a lunchbox's sum in a solid line, not dashed. A Diagonal
+// cage's =, a Connected Values cage's digits after ~, a Count Distinct
+// cage's # in its # cell, and a lunchbox's sum in a solid line, not dashed.
+// An Equal Sum or a Same Values cage is drawn a piece at a time, each with
+// Σ or ≡, and a letter when there are more of its kind. A Diagonal
 // puzzle has a faint line along each long diagonal, and a Windoku puzzle
 // tints its four windows. Thermometers are a thick grey line from a round
 // bulb, faint enough to read digits through, and arrows a thin one from a
@@ -149,7 +152,7 @@ export class BoardView {
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, relliks, lunchboxes, looksays,
-  // equalities, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+  // equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
   // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, hiddens, rooms, littles,
   // skyscrapers, xsums and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
@@ -208,9 +211,9 @@ export class BoardView {
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
-    // Each cage's first cell carries its sum, as a sum line's does, so its
-    // notes make room.
-    const heads = new Set([...this.cages.map((cage) => Math.min(...cage.cells)), ...this.sumlines.map((t) => t.cells[0])]);
+    // Each cage's first cell, or a Count Distinct cage's # cell, carries its
+    // clue, as a sum line's first cell does, so its notes make room.
+    const heads = new Set([...this.cages.map((cage) => cage.head), ...this.sumlines.map((t) => t.cells[0])]);
     this.drawCages();
 
     for (let c = 0; c < 81; c++) {
@@ -340,7 +343,7 @@ export class BoardView {
       }
       if (cage.solid) solid += outline;
       else dashed += outline;
-      const head = rect(Math.min(...cage.cells));
+      const head = rect(cage.head);
       // A long Look and Say clue a little smaller, to stay near its corner.
       const size = head.w * (cage.label.length > 4 ? 0.2 : 0.24);
       sums += `<text class="cage-sum" x="${f(head.x + head.w * 0.06)}" y="${f(head.y + head.w * 0.27)}" font-size="${f(size)}">${cage.label}</text>`;

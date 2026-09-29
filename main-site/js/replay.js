@@ -70,7 +70,8 @@ export class Replay {
   }
 
   // game: { puzzle, solution, log, players, cages?, relliks?, lunchboxes?,
-  // looksays?, equalities?, thermos?, arrows?,
+  // looksays?, equalities?, equalsums?, samevalues?, connecteds?,
+  // distincts?, thermos?, arrows?,
   // doubles?, pills?, whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
   // entropics?, modulars?, sumlines?, regionsums?, indexes?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
   // rules? }.
@@ -127,6 +128,10 @@ export class Replay {
       lunchboxes: this.game.lunchboxes ?? null,
       looksays: this.game.looksays ?? null,
       equalities: this.game.equalities ?? null,
+      equalsums: this.game.equalsums ?? null,
+      samevalues: this.game.samevalues ?? null,
+      connecteds: this.game.connecteds ?? null,
+      distincts: this.game.distincts ?? null,
       rules: this.game.rules ?? 0,
       thermos: this.game.thermos ?? null,
       arrows: this.game.arrows ?? null,

@@ -1,7 +1,7 @@
 # Variants still to build
 
 The puzzle types in [sigh/Interactive-Sudoku-Solver](https://github.com/sigh/Interactive-Sudoku-Solver)
-(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 10 of them.
+(`js/sudoku_constraint.js`) that uwuSudoku does not have yet: 6 of them.
 They are grouped as the rule buttons are on the Solver and Create screens,
 so each one lands in a group that already exists.
 
@@ -19,22 +19,10 @@ Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 `PARTS` and `RULES`), and the levels take E, M, H and X. The single letters
 are all taken but I, which is easily misread, so a new variant's letters are
 **Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
-QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA, QPA, QRC, QLB, QLS, QEC, QSL, QRS and QVX. Q is only read with the two after it,
+QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA, QPA, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, QSL, QRS
+and QVX. Q is only read with the two after it,
 so every seed made before still reads as it did. Put the entry in `PARTS` or
 `RULES` where its letters should go.
-
-## Cages and regions
-
-The Cages tool has a kind per cage now (Killer, Rellik, Lunchbox, Look and
-Say, Equality): a new kind of group is one more entry in `CAGES` in
-`solver.js` and `CAGE_LISTS` in `variant.js`.
-
-| Variant | Rule | Builds on |
-|---|---|---|
-| Equal Sum | Each segment of the group adds up to the same total. | Cages tool |
-| Same Values | The cells split into sets of equal size, each holding the same digits. | Cages tool |
-| Connected Values | The group's cells holding any of the given digits join up edge to edge. | Cages tool |
-| Count Distinct | The first cell's digit counts how many different digits the rest hold. | Cages tool |
 
 ## Marks between cells
 
@@ -62,6 +50,12 @@ Say, Equality): a new kind of group is one more entry in `CAGES` in
 - **Dutch Whispers** is German Whispers with a difference of 4. It could be
   an option on the Whispers line rather than a new variant.
 - A **sum line** cannot close in a loop yet, as the other solver's can.
+- **Equal Sum** and **Same Values** pieces are told apart by not touching,
+  so two pieces side by side cannot be drawn; the other solver's segments
+  can. **Connected Values** leaves out the other solver's optional size of
+  the group.
+- A new kind of cage is one more entry in `CAGES` in `solver.js` and
+  `CAGE_LISTS` in `variant.js`; one in pieces sets `split` there.
 - Not counted here: the other solver's general tools (Sum, All Different,
   Contain, Regex and NFA lines, custom pairs, Given, No Boxes, Region Size,
   Region Same Values, Replicate and the Or/And containers). They are for
@@ -69,8 +63,6 @@ Say, Equality): a new kind of group is one more entry in `CAGES` in
 
 ## Suggested order
 
-1. Equal Sum, Same Values, Connected Values and Count Distinct: groups of
-   cells on the Cages tool, which has kinds now.
-2. Counting Circles, Full Rank and Row/Column Indexing: each needs
+1. Counting Circles, Full Rank and Row/Column Indexing: each needs
    something new, marks in cells, a ranking of whole rows, or indexing.
-3. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
+2. The big ones last: Yin-Yang, Chaos Construction and Doppelgänger.
