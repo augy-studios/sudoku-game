@@ -28,9 +28,11 @@
 // lines, with a sum typed as a cage's is, region sum lines and value
 // indexing lines, from the dot;
 // Kropki, XV and Greater Than add dots, X and V marks and signs on the
-// sides between cells, and Quad circles on the corners where four meet, put
-// down with the Marks tool; Sandwich, Little Killer, Skyscrapers and
-// X-Sums add clues outside the grid, put down with the Outside tool in a
+// sides between cells, Quad circles on the corners where four meet, and
+// Counting Circles circles in cells, put down with the Marks tool;
+// Sandwich, Little Killer, Skyscrapers, X-Sums, Hidden Skyscraper,
+// Numbered Room, Full Rank and Row/Column Indexing add clues outside the
+// grid, put down with the Outside tool in a
 // margin the board leaves for them; Jigsaw puts regions in the boxes'
 // place, cut with the Regions tool; and Diagonal, Anti-knight, Anti-king and Windoku add their
 // rules (variant.js). Every check, hint and candidate then follows them
@@ -92,6 +94,11 @@ import {
   xsumProblem,
   hiddenProblem,
   roomProblem,
+  circleProblem,
+  CIRCLES_MOST,
+  rankProblem,
+  RANK_MOST,
+  indexingProblem,
   regionProblem,
   diagonalFrom,
   SANDWICH_MAX,
@@ -126,7 +133,8 @@ let board = null;
 // the clues go in; then "solve" in the solver, or "made" in the maker.
 // killer, rellik, lunchbox, looksay, equality, equalsum, samevalue,
 // connected, countdistinct, thermo, arrow, doublearrow, pillarrow, whisper, renban, palindrome, zipper, between,
-// lockout, entropic, modular, sumline, regionsum, valueindex, kropki, xv, greater, quad, sandwich, little, skyscraper, xsum, jigsaw and rules
+// lockout, entropic, modular, sumline, regionsum, valueindex, kropki, xv, greater, quad, counting, sandwich, little, skyscraper, xsum,
+// hiddensky, room, fullrank, rowcolindex, jigsaw and rules
 // are the variant's switches; cages are kept while Killer is off, for
 // when it comes back on, and each other kind of cage, line, dot, mark and
 // outside clue likewise.
@@ -164,12 +172,15 @@ const fresh = () => ({
   xv: false,
   greater: false,
   quad: false,
+  counting: false,
   sandwich: false,
   little: false,
   skyscraper: false,
   xsum: false,
   hiddensky: false,
   room: false,
+  fullrank: false,
+  rowcolindex: false,
   jigsaw: false,
   rules: 0,
   cages: [],
@@ -200,12 +211,15 @@ const fresh = () => ({
   xvs: [],
   signs: [],
   quads: [],
+  circles: [],
   sandwiches: [],
   littles: [],
   skyscrapers: [],
   xsums: [],
   hiddens: [],
   rooms: [],
+  ranks: [],
+  indexings: [],
   // A Jigsaw's regions, from the boxes until the maker cuts them.
   regions: Array.from(BOX),
 });
@@ -295,9 +309,12 @@ const skyscrapers = () => (s.skyscraper && s.skyscrapers.length ? s.skyscrapers 
 const xsums = () => (s.xsum && s.xsums.length ? s.xsums : null);
 const hiddens = () => (s.hiddensky && s.hiddens.length ? s.hiddens : null);
 const rooms = () => (s.room && s.rooms.length ? s.rooms : null);
+const circles = () => (s.counting && s.circles.length ? s.circles : null);
+const ranks = () => (s.fullrank && s.ranks.length ? s.ranks : null);
+const indexings = () => (s.rowcolindex && s.indexings.length ? s.indexings : null);
 const regions = () => (s.jigsaw ? s.regions : null);
 const drawn = () =>
-  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms());
+  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || circles() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms() || ranks() || indexings());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -336,6 +353,9 @@ const variant = () =>
         xsums: xsums() ?? [],
         hiddens: hiddens() ?? [],
         rooms: rooms() ?? [],
+        circles: circles() ?? [],
+        ranks: ranks() ?? [],
+        indexings: indexings() ?? [],
         regions: regions(),
         rules: s.rules,
       }
@@ -449,12 +469,15 @@ function hintText(step, reveal) {
       ...(xvs() ? ["X and V marks"] : []),
       ...(signs() ? ["Greater Than signs"] : []),
       ...(quads() ? ["quads"] : []),
+      ...(circles() ? ["Counting Circles"] : []),
       ...(sandwiches() ? ["Sandwich sums"] : []),
       ...(littles() ? ["Little Killer sums"] : []),
       ...(skyscrapers() ? ["Skyscraper counts"] : []),
       ...(xsums() ? ["X-Sums"] : []),
       ...(hiddens() ? ["Hidden Skyscraper clues"] : []),
       ...(rooms() ? ["Numbered Room clues"] : []),
+      ...(ranks() ? ["Full Rank clues"] : []),
+      ...(indexings() ? ["indexing rows and columns"] : []),
     ];
     const its = `its ${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
     return `${d} goes in ${where(c)}: ${its}${s.rules ? `, with the ${ruleNames()} rules,` : ""} rule out every other digit.`;
@@ -498,6 +521,9 @@ function problemText(check) {
   if (why === "xsums") return XSUM_PROBLEMS[check.problem.why];
   if (why === "hiddens") return HIDDEN_PROBLEMS[check.problem.why];
   if (why === "rooms") return ROOM_PROBLEMS[check.problem.why];
+  if (why === "circles") return CIRCLE_PROBLEMS[check.problem.why];
+  if (why === "ranks") return RANK_PROBLEMS[check.problem.why];
+  if (why === "indexings") return INDEXING_PROBLEMS[check.problem.why];
   if (why === "regions") return regionText(check.problem);
   if (why === "hard") return "The checker gave up: this has so much freedom it could not settle whether there is one answer. Add a clue or split a big cage, then check again.";
   if (why === "few") {
@@ -547,12 +573,15 @@ function clashText() {
   if (xvs()) extra.push("not adding up to an X or a V");
   if (signs()) extra.push("not larger on the open side of a sign");
   if (quads()) extra.push("leaving a quad's digit too few cells");
+  if (circles()) extra.push("in more circles than itself, or too few circles left to make up its count");
   if (sandwiches()) extra.push("not adding up to a Sandwich sum between a 1 and a 9");
   if (littles()) extra.push("not adding up to a Little Killer sum");
   if (skyscrapers()) extra.push("showing more or fewer than a Skyscraper count");
   if (xsums()) extra.push("not adding up to an X-Sum");
   if (hiddens()) extra.push("hiding some other height first than a Hidden Skyscraper clue");
   if (rooms()) extra.push("putting some other digit where a Numbered Room's first digit points");
+  if (ranks()) extra.push("starting a Full Rank row or column with the wrong digit, or ranking it too high or too low");
+  if (indexings()) extra.push("putting some other digit where an indexing cell points");
   return `The red digits clash: the same digit twice in a row, column or ${regions() ? "region" : "box"}${extra.length ? `, ${extra.join(", or ")}` : ""}.`;
 }
 
@@ -720,6 +749,24 @@ const ROOM_PROBLEMS = {
   view: "A Numbered Room clue goes beside a row or a column.",
   digit: "A Numbered Room clue is a digit, 1 to 9.",
   twice: "That side of that row or column has a Numbered Room clue already.",
+};
+
+const CIRCLE_PROBLEMS = {
+  count: `There is room for ${CIRCLES_MOST} counting circles: 1 to 9 in them, each digit that many times.`,
+  cell: "A counting circle has a cell off the board.",
+  twice: "A cell has two counting circles.",
+};
+
+const RANK_PROBLEMS = {
+  view: "A Full Rank clue goes beside a row or a column.",
+  rank: `A Full Rank clue is 1 to ${RANK_MOST}: there are ${RANK_MOST} rows and columns, read from each side.`,
+  twice: "That side of that row or column has a Full Rank clue already.",
+  same: "Two Full Rank clues have the same rank, and a clued one never ties.",
+};
+
+const INDEXING_PROBLEMS = {
+  line: "An indexing mark goes left of a row or above a column.",
+  twice: "That row or column has an indexing mark already.",
 };
 
 // What is wrong with a Jigsaw's regions, from regionProblem, naming each
@@ -1025,7 +1072,7 @@ function openSeed(found, how) {
   }
   for (const [kind, Q] of Object.entries(QUADS)) {
     s[kind] = Boolean(seed[Q.list]);
-    parts[Q.list] = seed[Q.list] ? seed[Q.list].map((q) => ({ cell: q.cell, digits: q.digits.slice() })) : s[Q.list];
+    parts[Q.list] = seed[Q.list] ? Q.copy(seed[Q.list]) : s[Q.list];
   }
   for (const [kind, O] of Object.entries(OUTSIDE)) {
     s[kind] = Boolean(seed[O.list]);
@@ -1158,12 +1205,15 @@ function onGo() {
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.greater && !s.signs.length) return say("Put a sign down first: tap Marks, then near the side between two cells.");
   if (s.quad && !s.quads.length) return say("Put a quad down first: tap Marks, then near a corner where four cells meet, and type its digits.");
+  if (s.counting && !s.circles.length) return say("Put some counting circles down first: tap Marks, then the middle of a cell.");
   if (s.sandwich && !s.sandwiches.length) return say("Put a Sandwich sum down first: tap Outside, then a spot left of a row or above a column.");
   if (s.little && !s.littles.length) return say("Put a Little Killer sum down first: tap Outside, then a spot round the edge.");
   if (s.skyscraper && !s.skyscrapers.length) return say("Put a Skyscraper count down first: tap Outside, then a spot beside a row or column.");
   if (s.xsum && !s.xsums.length) return say("Put an X-Sum down first: tap Outside, then a spot beside a row or column.");
   if (s.hiddensky && !s.hiddens.length) return say("Put a Hidden Skyscraper clue down first: tap Outside, then a spot beside a row or column.");
   if (s.room && !s.rooms.length) return say("Put a Numbered Room clue down first: tap Outside, then a spot beside a row or column.");
+  if (s.fullrank && !s.ranks.length) return say("Put a Full Rank clue down first: tap Outside, then a spot beside a row or column.");
+  if (s.rowcolindex && !s.indexings.length) return say("Put an indexing mark down first: tap Outside, then a spot left of a row or above a column.");
   if (s.jigsaw && boxesStill()) return say("Cut the regions first: tap Regions, then a cell to pick its region, then cells to move into it.");
   const check = checkClues(s.clues, variant());
   if (!check.ok) {
@@ -1913,8 +1963,12 @@ const EDGES = {
 };
 const MARK_WORDS = { white: "white dot", black: "black dot", x: "X", v: "V", gt: "sign one way", lt: "sign the other way" };
 
-// Quad's circles on corners, likewise.
-const QUADS = { quad: { list: "quads", problem: quadProblem } };
+// Quad's circles on corners, and Counting Circles' in cells, likewise, each
+// with how to copy its list.
+const QUADS = {
+  quad: { list: "quads", problem: quadProblem, copy: (quads) => quads.map((q) => ({ cell: q.cell, digits: q.digits.slice() })) },
+  counting: { list: "circles", problem: circleProblem, copy: (circles) => circles.slice() },
+};
 const capital = (text) => text[0].toUpperCase() + text.slice(1);
 
 // The marks a side steps through, with the rules on: white dot, black dot,
@@ -1990,7 +2044,9 @@ function sideNear(c, at) {
 
 // A tap in the Marks tool: near a side, the mark on it steps on. Nearer the
 // middle, the cell is picked, and then a tap on a cell beside it steps on
-// the mark between the two.
+// the mark between the two. With Counting Circles on, a tap in the middle
+// puts a circle in or takes it out instead; from the keyboard, where there
+// is no middle, a cell picked twice does.
 function pickMarkSide(c, at) {
   // With Quad on, a tap near a corner picks it for the quad's digits.
   const corner = s.quad ? cornerNear(c, at) : -1;
@@ -2001,16 +2057,30 @@ function pickMarkSide(c, at) {
     return render();
   }
   quadAt = null;
-  if (!markCycle().length) return say("Tap near a corner where four cells meet to put a quad there.");
-  let other = sideNear(c, at);
+  const sides = markCycle().length > 0;
+  if (!sides && !s.counting) return say("Tap near a corner where four cells meet to put a quad there.");
+  let other = sides ? sideNear(c, at) : -1;
   if (other < 0 && anchor != null && beside(Math.min(anchor, c), Math.max(anchor, c))) other = anchor;
-  if (other < 0) {
-    anchor = anchor === c ? null : c;
-    note = "";
-    return render();
+  if (other >= 0) {
+    anchor = null;
+    return stepMark(Math.min(c, other), Math.max(c, other));
   }
-  anchor = null;
-  stepMark(Math.min(c, other), Math.max(c, other));
+  if (s.counting && (at || !sides || anchor === c)) {
+    anchor = null;
+    return toggleCircle(c);
+  }
+  anchor = anchor === c ? null : c;
+  note = "";
+  render();
+}
+
+// Puts a counting circle in cell c, or takes it out.
+function toggleCircle(c) {
+  const had = s.circles.includes(c);
+  const next = had ? s.circles.filter((o) => o !== c) : s.circles.concat([c]).sort((a, b) => a - b);
+  if (!had && next.length > CIRCLES_MOST) return say(CIRCLE_PROBLEMS.count);
+  change(s.clues, { circles: next });
+  say(had ? `Circle at ${where(c)} taken off. Undo brings it back.` : `Circle at ${where(c)}: ${plural(next.length, "circle")} so far. Tap it again to take it off.`);
 }
 
 // The next mark on the side between cells a and b, a first. A mark there
@@ -2037,11 +2107,13 @@ function markStatus() {
     const digits = s.quads.find((q) => q.cell === quadAt)?.digits;
     return `Quad at ${cornerName(quadAt)}: ${digits ? digits.join(" ") : "no digits yet"}. Type the digits its four cells hold, up to four; Erase takes the last off.`;
   }
-  if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them.`;
+  if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them${s.counting ? ", or it again for a counting circle" : ""}.`;
   const kinds = markCycle().map((m) => MARK_WORDS[m]).join(", ");
-  const sides = kinds ? `Tap near the side between two cells to mark it, or tap a cell and then one beside it. Each tap steps on: ${kinds}, then none.` : "";
+  const tapped = s.counting ? "" : ", or tap a cell and then one beside it";
+  const sides = kinds ? `Tap near the side between two cells to mark it${tapped}. Each tap steps on: ${kinds}, then none.` : "";
   const corners = s.quad ? "Tap near a corner where four cells meet for a quad, then type its digits." : "";
-  return [sides, corners].filter(Boolean).join(" ");
+  const middles = s.counting ? `Tap the middle of a cell to put a counting circle in it, or take it out: ${plural(s.circles.length, "circle")} so far.` : "";
+  return [sides, corners, middles].filter(Boolean).join(" ");
 }
 
 /* ---- clues outside the grid ---- */
@@ -2158,6 +2230,34 @@ const OUTSIDE = {
     place: "beside a row or column for a Numbered Room clue",
     means: "a Numbered Room clue, the digit in the cell the first digit from that side counts to",
   },
+  fullrank: {
+    list: "ranks",
+    key: "rank",
+    problem: rankProblem,
+    problems: RANK_PROBLEMS,
+    spotOf: ({ view }) => viewSpot(view),
+    at: (spot) => (viewAt(spot) >= 0 ? [{ view: viewAt(spot) }] : []),
+    words: ({ view }) => `Full Rank clue for ${viewWords(view)}`,
+    turn: () => "Full Rank",
+    place: "beside a row or column for a Full Rank clue",
+    means: `a Full Rank clue, where the row or column read from that side comes among all ${RANK_MOST}, smallest first`,
+  },
+  // A mark with no number: key null.
+  rowcolindex: {
+    list: "indexings",
+    key: null,
+    problem: indexingProblem,
+    problems: INDEXING_PROBLEMS,
+    spotOf: ({ line }) => viewSpot(line),
+    at: (spot) => {
+      const view = viewAt(spot);
+      return view >= 0 && view < 18 ? [{ line: view }] : [];
+    },
+    words: ({ line }) => (line < 9 ? `Indexing mark for row ${line + 1}` : `Indexing mark for column ${line - 8}`),
+    turn: () => "Indexing",
+    place: "left of a row or above a column for an indexing mark",
+    means: "an indexing mark, each digit in its row or column saying where that line's number sits across it",
+  },
 };
 const outsideOn = () => Object.keys(OUTSIDE).some((kind) => s[kind]);
 
@@ -2217,7 +2317,7 @@ function pickSpot(at) {
   const kinds = spotKinds(at);
   if (!kinds.length) {
     clearSpot();
-    const beside = s.skyscraper || s.xsum || s.hiddensky || s.room ? "beside a row or column" : s.sandwich ? "left of a row or above a column" : "";
+    const beside = s.skyscraper || s.xsum || s.hiddensky || s.room || s.fullrank ? "beside a row or column" : s.sandwich || s.rowcolindex ? "left of a row or above a column" : "";
     const round = s.little ? "round the edge with a diagonal into the grid" : "";
     return say(`No clue goes there. Tap a spot ${[beside, round].filter(Boolean).join(", or ")}.`);
   }
@@ -2225,14 +2325,18 @@ function pickSpot(at) {
   const held = heldAtSpot();
   const clue = held && s[OUTSIDE[held.kind].list][held.index];
   choice = held ? Math.max(0, kinds.findIndex((k) => k.kind === held.kind && isBase(clue, k.base))) : 0;
-  $("outSum").value = held ? String(clue[OUTSIDE[held.kind].key]) : "";
+  $("outSum").value = held && OUTSIDE[held.kind].key ? String(clue[OUTSIDE[held.kind].key]) : "";
   note = "";
   render();
 }
 
+// Whether the picked spot's clue, as Turn has it, takes a number.
+const spotNumbered = () => Boolean(spot && OUTSIDE[spotKinds(spot)[choice].kind].key);
+
 // Digits typed while a spot is picked go to its value; "back" takes one off.
 function typeOutSum(key) {
   if (!spot) return say("Tap a spot round the edge of the grid first, then type its number.");
+  if (!spotNumbered()) return say("An indexing mark has no number: tap Add.");
   const box = $("outSum");
   box.value = key === "back" ? box.value.slice(0, -1) : (box.value + key).slice(-2);
   note = "";
@@ -2252,17 +2356,19 @@ function turnSpot() {
 function onOutAdd() {
   if (!spot) return;
   const text = $("outSum").value.trim();
-  if (!/^\d+$/.test(text)) return say("Type the number first.");
   const k = spotKinds(spot)[choice];
   const O = OUTSIDE[k.kind];
+  if (O.key && !/^\d+$/.test(text)) return say("Type the number first.");
   const parts = {};
   for (const other of Object.values(OUTSIDE)) parts[other.list] = s[other.list].filter((clue) => !sameSpot(other.spotOf(clue), spot));
-  parts[O.list].push({ ...structuredClone(k.base), [O.key]: Number(text) });
+  parts[O.list].push({ ...structuredClone(k.base), ...(O.key ? { [O.key]: Number(text) } : {}) });
+  // Kept in the order of their spots, as a seed keeps them.
+  if (!O.key) parts[O.list].sort((a, b) => a.line - b.line);
   const problem = O.problem(parts[O.list]);
   if (problem) return say(O.problems[problem.why]);
   change(s.clues, parts);
   clearSpot();
-  say(`${kindWords(k)}: ${text}. Tap the next spot, or Done.`);
+  say(`${kindWords(k)}${O.key ? `: ${text}` : " added"}. Tap the next spot, or Done.`);
 }
 
 function onOutRemove() {
@@ -2287,7 +2393,8 @@ function outStatus() {
   }
   const kinds = spotKinds(spot);
   const turn = kinds.length > 1 ? " Turn picks what goes there." : "";
-  return `${kindWords(kinds[choice])}: type it, then ${heldAtSpot() ? "Change" : "Add"}.${turn}`;
+  const add = heldAtSpot() ? "Change" : "Add";
+  return `${kindWords(kinds[choice])}: ${spotNumbered() ? `type it, then ${add}` : `tap ${add}`}.${turn}`;
 }
 
 /* ---- a Jigsaw's regions ---- */
@@ -2395,6 +2502,9 @@ function defaultStatus() {
     if (s.quad && !s.quads.length) {
       return "A Quad puzzle: tap Marks, then near a corner where four cells meet, and type the digits those four cells hold between them.";
     }
+    if (s.counting && !s.circles.length) {
+      return "A Counting Circles puzzle: tap Marks, then the middle of each cell with a circle. A digit in a circle is in exactly that many circles.";
+    }
     if (s.sandwich && !s.sandwiches.length) {
       return "A Sandwich puzzle: tap Outside, then a spot left of a row or above a column, and type the sum of the digits between its 1 and its 9.";
     }
@@ -2410,6 +2520,12 @@ function defaultStatus() {
     }
     if (s.room && !s.rooms.length) {
       return "A Numbered Room puzzle: tap Outside, then a spot beside a row or column, and type the digit in the cell the first digit from there counts to.";
+    }
+    if (s.fullrank && !s.ranks.length) {
+      return `A Full Rank puzzle: tap Outside, then a spot beside a row or column, and type where the number it reads from there comes among all ${RANK_MOST}, smallest first.`;
+    }
+    if (s.rowcolindex && !s.indexings.length) {
+      return "A Row/Column Indexing puzzle: tap Outside, then a spot above a column or left of a row, and tap Add. Its digits each say where its number sits across them.";
     }
     if (s.jigsaw && boxesStill()) return "A Jigsaw puzzle: tap Regions to cut the grid into nine regions of nine cells, in place of the boxes.";
     if (clashes(s.clues, variant()).size) return clashText();
@@ -2505,12 +2621,15 @@ function render() {
     xvs: s.xv ? s.xvs : null,
     signs: s.greater ? s.signs : null,
     quads: s.quad ? s.quads : null,
+    circles: s.counting ? s.circles : null,
     sandwiches: s.sandwich ? s.sandwiches : null,
     littles: s.little ? s.littles : null,
     skyscrapers: s.skyscraper ? s.skyscrapers : null,
     xsums: s.xsum ? s.xsums : null,
     hiddens: s.hiddensky ? s.hiddens : null,
     rooms: s.room ? s.rooms : null,
+    ranks: s.fullrank ? s.ranks : null,
+    indexings: s.rowcolindex ? s.indexings : null,
     regions: regions(),
     margin: outsideOn(),
     spots: outMode ? openSpots() : [],
@@ -2585,7 +2704,7 @@ function render() {
     solverRegionSums: enter && s.regionsum,
     solverIndexes: enter && s.valueindex,
     lineBar: Boolean(lineKind),
-    solverMarks: enter && (s.kropki || s.xv || s.greater || s.quad),
+    solverMarks: enter && (s.kropki || s.xv || s.greater || s.quad || s.counting),
     markBar: markMode,
     solverOutside: enter && outsideOn(),
     outBar: outMode,
@@ -2640,11 +2759,14 @@ function render() {
   if (outMode) {
     const kinds = spot ? spotKinds(spot) : [];
     const held = heldAtSpot();
-    for (const id of ["outSum", "outAdd"]) $(id).classList.toggle("hidden", !spot);
+    // An indexing mark has no number to type.
+    const numbered = spotNumbered();
+    $("outSum").classList.toggle("hidden", !numbered);
+    $("outAdd").classList.toggle("hidden", !spot);
     $("outTurn").classList.toggle("hidden", kinds.length < 2);
     $("outRemove").classList.toggle("hidden", !held);
     $("outAddLabel").textContent = held ? "Change" : "Add";
-    $("outAdd").disabled = !/^\d+$/.test($("outSum").value.trim());
+    $("outAdd").disabled = numbered && !/^\d+$/.test($("outSum").value.trim());
     // Turn names what it turns the spot's clue into.
     const next = kinds[(choice + 1) % kinds.length];
     if (next) $("outTurnLabel").textContent = OUTSIDE[next.kind].turn(next.base);
@@ -2829,6 +2951,13 @@ export function initSolver({ reopen = true } = {}) {
     pasteText(e.clipboardData?.getData("text"));
   });
   onSettingsChange(render);
+  // Offline, the made seed shows whole, as a short code needs a connection
+  // to open elsewhere; back online, its code again, fetched if need be.
+  window.addEventListener("offline", render);
+  window.addEventListener("online", () => {
+    if (made) showMadeCode();
+    render();
+  });
 
   const open = Object.keys(states).find((name) => states[name].open);
   if (reopen && open && !$("setup").classList.contains("hidden")) openSolver(open);

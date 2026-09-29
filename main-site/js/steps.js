@@ -8,8 +8,8 @@
 // equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles,
 // pills, whispers, renbans, palindromes, zippers, betweens, lockouts,
 // entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs,
-// quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions,
-// rules }
+// quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms,
+// ranks, indexings, regions, rules }
 // (variant.js), as an optional last argument; without one the rules are the
 // classic ones.
 
@@ -63,6 +63,12 @@ import {
   xsumProblem,
   hiddenProblem,
   roomProblem,
+  circleProblem,
+  rankProblem,
+  rankStart,
+  rankBelow,
+  indexingProblem,
+  INDEXERS,
   regionProblem,
   markKeeps,
   barredSides,
@@ -78,7 +84,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
@@ -164,9 +170,15 @@ export function bitCount(mask) {
 // they reach its 9 and some other number can; an X-Sum's first X digits
 // once they go past its sum, or fill it to some other; a Hidden Skyscraper
 // view's digits from the clue on, once the first hidden one is some other
-// height, or its height shows; and a Numbered Room's first digit, with the
+// height, or its height shows; a Numbered Room's first digit, with the
 // digit it points at when that is some other, or with the clue's digit when
-// that sits somewhere else.
+// that sits somewhere else; a digit in more circles than itself, or all of
+// its circles once too few are left empty to make up the count; a Full
+// Rank view's first digit when it is not its rank's, or with the views
+// starting with it once more of them are smaller, or larger, than the rank
+// allows, the places that decide it, or once one is the same number; and an
+// indexing cell, with the cell it points at when that holds some other
+// digit, or with its line's number when that sits somewhere else.
 export function clashes(grid, variant = null) {
   const peers = peersOf(variant);
   const out = new Set();
@@ -501,6 +513,46 @@ export function clashes(grid, variant = null) {
     const at = cells.findIndex((c) => grid[c] === digit);
     if (at >= 0 && at !== x - 1) [cells[0], cells[at]].forEach((c) => out.add(c));
   }
+  const circles = variant?.circles ?? [];
+  const open = circles.filter((c) => !grid[c]).length;
+  for (let d = 1; d <= 9; d++) {
+    const have = circles.filter((c) => grid[c] === d);
+    if (have.length > d || (have.length && have.length + open < d)) have.forEach((c) => out.add(c));
+  }
+  for (const { view, rank } of variant?.ranks ?? []) {
+    const e = VIEWS[view];
+    const v = rankStart(rank);
+    if (grid[e[0]] && grid[e[0]] !== v) out.add(e[0]);
+    if (grid[e[0]] !== v) continue;
+    // The others starting with it, by where they first differ, both filled.
+    const smaller = [];
+    const larger = [];
+    VIEWS.forEach((o, w) => {
+      if (w === view || grid[o[0]] !== v) return;
+      for (let j = 1; j < 9; j++) {
+        const [a, b] = [grid[e[j]], grid[o[j]]];
+        if (!a || !b) return;
+        if (a !== b) return (b < a ? smaller : larger).push([o[0], o[j], e[j]]);
+      }
+      [...e, ...o].forEach((c) => out.add(c));
+    });
+    for (const [found, most] of [
+      [smaller, rankBelow(rank)],
+      [larger, 3 - rankBelow(rank)],
+    ]) {
+      if (found.length > most) [e[0], ...found.flat()].forEach((c) => out.add(c));
+    }
+  }
+  for (const { line } of variant?.indexings ?? []) {
+    for (const { cell, targets, digit } of INDEXERS[line]) {
+      const x = grid[cell];
+      if (!x) continue;
+      const pointed = targets[x - 1];
+      if (grid[pointed] && grid[pointed] !== digit) [cell, pointed].forEach((c) => out.add(c));
+      const at = targets.findIndex((c) => grid[c] === digit);
+      if (at >= 0 && at !== x - 1) [cell, targets[at]].forEach((c) => out.add(c));
+    }
+  }
   return out;
 }
 
@@ -573,8 +625,8 @@ export const MIN_CLUES = 17;
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines",
 // "regionsums", "indexes", "dots", "xvs",
 // "signs", "quads",
-// "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms" or
-// "regions" (and
+// "circles", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens",
+// "rooms", "ranks", "indexings" or "regions" (and
 // problem, from cageProblem, thermoProblem and so on),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
@@ -685,6 +737,9 @@ export function checkClues(clues, variant = null) {
   for (const [list, clueProblem] of [
     ["hiddens", hiddenProblem],
     ["rooms", roomProblem],
+    ["circles", circleProblem],
+    ["ranks", rankProblem],
+    ["indexings", indexingProblem],
   ]) {
     const problem = variant?.[list]?.length && clueProblem(variant[list]);
     if (problem) return { ok: false, why: list, problem };
@@ -708,7 +763,7 @@ export function rateLevel(clues, variant = null) {
   // A puzzle with cages of any kind, or with clues outside the grid, usually
   // has few clues or none, so blanks say little: what counts is how far
   // singles get with the cages and the sums.
-  if ([...CAGE_LISTS.map((k) => k.list), "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
+  if ([...CAGE_LISTS.map((k) => k.list), "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
   if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
   return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

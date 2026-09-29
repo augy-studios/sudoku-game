@@ -12,7 +12,7 @@ import { play, toWire, fromWire, unpackLog, packReplay, unpackReplay } from "./r
 import { tally, liveScore, finalScore, timeBonus, TIME_BONUS_MAX } from "./score.js";
 import { BoardView } from "./board.js";
 import { Replay } from "./replay.js";
-import { api, localDate, findSeed, fetchCode, knownCode, seedLabel, CODE_TROUBLE } from "./api.js";
+import { api, localDate, findSeed, fetchCode, shareCode, seedLabel, CODE_TROUBLE } from "./api.js";
 import { getSettings, onSettingsChange, saveSettings } from "./settings.js";
 import { openLeaderboard, formatTime } from "./leaderboard.js";
 import { copyText, hydrateIcons, store, fillRuleHelp } from "./ui.js";
@@ -724,8 +724,11 @@ function update({ fresh = false } = {}) {
       xsums: g.seed.xsums ?? null,
       hiddens: g.seed.hiddens ?? null,
       rooms: g.seed.rooms ?? null,
+      circles: g.seed.circles ?? null,
+      ranks: g.seed.ranks ?? null,
+      indexings: g.seed.indexings ?? null,
       regions: g.seed.regions ?? null,
-      margin: Boolean(g.seed.sandwiches || g.seed.littles || g.seed.skyscrapers || g.seed.xsums || g.seed.hiddens || g.seed.rooms),
+      margin: Boolean(g.seed.sandwiches || g.seed.littles || g.seed.skyscrapers || g.seed.xsums || g.seed.hiddens || g.seed.rooms || g.seed.ranks || g.seed.indexings),
     });
   }
   renderChips(over);
@@ -782,9 +785,9 @@ function renderRules(seed) {
 }
 
 // A made puzzle's seed is too long for a chip, so its chip shows its short
-// code, or only offers to copy it.
+// code, or, offline or before the code comes, only offers to copy it.
 function seedChipText(seed) {
-  return seed.made ? (knownCode(seed.text) ?? "Copy seed") : seed.text;
+  return seed.made ? (shareCode(seed.text) ?? "Copy seed") : seed.text;
 }
 
 function renderPad(over) {
@@ -988,6 +991,9 @@ function finish(fresh) {
       xsums: g.seed.xsums,
       hiddens: g.seed.hiddens,
       rooms: g.seed.rooms,
+      circles: g.seed.circles,
+      ranks: g.seed.ranks,
+      indexings: g.seed.indexings,
       regions: g.seed.regions,
       rules: g.seed.rules,
     },
@@ -1258,6 +1264,9 @@ function watch(link) {
       xsums: link.seed.xsums,
       hiddens: link.seed.hiddens,
       rooms: link.seed.rooms,
+      circles: link.seed.circles,
+      ranks: link.seed.ranks,
+      indexings: link.seed.indexings,
       regions: link.seed.regions,
       rules: link.seed.rules,
     },
@@ -1561,6 +1570,18 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
     chip.textContent = ok ? "Seed copied" : "Copy failed";
     setTimeout(() => shownSeed() && (chip.textContent = seedChipText(shownSeed())), 1200);
   });
+  // Going offline swaps a short code for the seed itself, which opens
+  // without a connection; coming back swaps it again, fetching the code if
+  // it has not come yet.
+  const reshowSeed = () => {
+    const seed = shownSeed();
+    if (!seed?.made) return;
+    $("seedChip").textContent = seedChipText(seed);
+    if ($("resultSeed").textContent.startsWith("Seed ")) $("resultSeed").textContent = `Seed ${seedLabel(seed)}`;
+    showCode(seed);
+  };
+  window.addEventListener("online", reshowSeed);
+  window.addEventListener("offline", reshowSeed);
 
   onSettingsChange(() => {
     if (watching || isOver()) {

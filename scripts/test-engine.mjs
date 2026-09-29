@@ -68,6 +68,14 @@ import {
   xsumProblem,
   hiddenProblem,
   roomProblem,
+  circleProblem,
+  CIRCLES_MOST,
+  rankProblem,
+  RANK_MOST,
+  rankStart,
+  rankBelow,
+  indexingProblem,
+  INDEXERS,
   firstHidden,
   regionProblem,
   sortRegions,
@@ -2186,6 +2194,137 @@ test("Numbered Room clues are checked, solved and carried in seeds", () => {
   assert.equal(seedVariantName("YUQHSQNRJD-H-BBBB"), "Skyscrapers, X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal");
 });
 
+// A solved grid's Full Rank clue for a view: where its number comes among
+// all 36, smallest first. The test grid's 36 numbers are all different.
+function rankOf(solution, view) {
+  const number = (v) => VIEWS[v].map((c) => solution[c]).join("");
+  return { view, rank: VIEWS.filter((_, w) => number(w) < number(view)).length + 1 };
+}
+
+test("Full Rank clues are checked, solved and carried in seeds", () => {
+  assert.equal(rankProblem([{ view: 0, rank: 1 }, { view: 35, rank: RANK_MOST }]), null);
+  assert.equal(rankProblem([{ view: 3, rank: 37 }]).why, "rank");
+  assert.equal(rankProblem([{ view: 3, rank: 0 }]).why, "rank");
+  assert.equal(rankProblem([{ view: 36, rank: 3 }]).why, "view");
+  assert.equal(rankProblem([{ view: 3, rank: 2 }, { view: 3, rank: 4 }]).why, "twice");
+  assert.equal(rankProblem([{ view: 3, rank: 2 }, { view: 4, rank: 2 }]).why, "same", "a clued view ties with none");
+  // Ranks 1 to 4 start with 1, 5 to 8 with 2; how many of its four are below.
+  assert.deepEqual([1, 4, 5, 8, 36].map(rankStart), [1, 1, 2, 2, 9]);
+  assert.deepEqual([1, 4, 5, 8, 36].map(rankBelow), [0, 3, 0, 3, 3]);
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  assert.equal(new Set(VIEWS.map((cells) => cells.map((c) => solution[c]).join(""))).size, 36);
+  viewCluesAgree("ranks", "QFR", rankOf, 191);
+
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  // A clue fixes its view's first digit.
+  assert.equal(variantCandidates(at({}), { ranks: [{ view: 0, rank: 1 }] })[0], bits(1));
+  assert.equal(variantCandidates(at({}), { ranks: [{ view: 27, rank: 36 }] })[72], bits(9));
+  // Row 1 from the left ranked 1st and column 1 from the top 2nd share their
+  // first cell, so the row's second digit is below the column's.
+  const both = variantCandidates(at({ 1: 7 }), { ranks: [{ view: 0, rank: 1 }, { view: 9, rank: 2 }] });
+  assert.equal(both[9] & bits(2, 3, 4, 5, 6), 0);
+  // The wrong first digit clashes, as does column 1 below row 1 when row 1
+  // is ranked lowest.
+  assert.deepEqual([...clashes(at({ 0: 3 }), { ranks: [{ view: 0, rank: 5 }] })], [0]);
+  assert.deepEqual(sorted(clashes(at({ 0: 1, 1: 5, 9: 2 }), { ranks: [{ view: 0, rank: 1 }] })), [0, 1, 9]);
+  assert.equal(clashes(at({ 0: 1, 1: 2, 9: 5 }), { ranks: [{ view: 0, rank: 1 }] }).size, 0);
+  assert.equal(seedVariantName("QNRQFRQRX-H-BBBB"), "Numbered Room, Full Rank, Row/Column Indexing");
+});
+
+test("Row/Column Indexing marks are checked, solved and carried in seeds", () => {
+  assert.equal(indexingProblem([{ line: 0 }, { line: 17 }]), null);
+  assert.equal(indexingProblem([{ line: 18 }]).why, "line");
+  assert.equal(indexingProblem([{ line: 3 }, { line: 3 }]).why, "twice");
+  // Column 1's first cell points along row 1 at its 1; row 1's, down column 1.
+  assert.deepEqual(INDEXERS[9][0], { cell: 0, targets: [0, 1, 2, 3, 4, 5, 6, 7, 8], digit: 1 });
+  assert.deepEqual(INDEXERS[0][0], { cell: 0, targets: [0, 9, 18, 27, 36, 45, 54, 63, 72], digit: 1 });
+  assert.equal(INDEXERS[13][2].cell, 22);
+
+  // Columns 1, 5 and 9, as a 1-5-9 puzzle has them, and rows 2 and 7.
+  const empty = new Array(81).fill(0);
+  for (const lines of [[9, 13, 17], [1, 6]]) {
+    const indexings = lines.map((line) => ({ line }));
+    const variant = { indexings };
+    const solution = variantSolve(empty, variant);
+    for (const line of lines) for (const { cell, targets, digit } of INDEXERS[line]) assert.equal(solution[targets[solution[cell] - 1]], digit);
+    assert.equal(clashes(solution, variant).size, 0);
+    const puzzle = thinOut(solution, variant, seeded(193));
+    assert.equal(checkClues(puzzle, variant).ok, true);
+    assert.notEqual(countSolutions(puzzle, 2), 1, "needs the marks");
+    const cand = variantCandidates(puzzle, variant);
+    for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+    stepsAgree(puzzle, solution, variant);
+    const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+    assert.match(seed.text, /^QRX-[EMHX]-/);
+    const back = parseSeed(seed.text.toLowerCase());
+    assert.equal(back.text, seed.text);
+    assert.deepEqual(back.indexings, indexings);
+    assert.deepEqual(puzzleFor(back).solution, solution);
+  }
+
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  const first = { indexings: [{ line: 9 }] };
+  // A 5 in column 1 puts row 1's 1 in column 5; a 1 in column 4 puts a 4 in
+  // column 1. Down a marked row, the same.
+  assert.equal(variantCandidates(at({ 0: 5 }), first)[4], bits(1));
+  assert.equal(variantCandidates(at({ 3: 1 }), first)[0], bits(4));
+  assert.equal(variantCandidates(at({ 27: 1 }), { indexings: [{ line: 0 }] })[0], bits(4));
+  // Something else where it points clashes, as does the 1 somewhere else.
+  assert.deepEqual(sorted(clashes(at({ 0: 5, 4: 7 }), first)), [0, 4]);
+  assert.deepEqual(sorted(clashes(at({ 0: 5, 2: 1 }), first)), [0, 2]);
+  assert.equal(clashes(at({ 0: 5, 4: 1 }), first).size, 0);
+});
+
+test("Counting Circles are checked, solved and carried in seeds", () => {
+  assert.equal(circleProblem([0, 80]), null);
+  assert.equal(circleProblem([]).why, "count");
+  assert.equal(circleProblem([...Array(CIRCLES_MOST + 1).keys()]).why, "count");
+  assert.equal(circleProblem([81]).why, "cell");
+  assert.equal(circleProblem([3, 3]).why, "twice");
+
+  // Circles on a solved grid: each of some digits in as many circles as it
+  // says.
+  const { solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const rand = seeded(197);
+  const holding = (d) => [...Array(81).keys()].filter((c) => solution[c] === d).sort(() => rand() - 0.5);
+  const circles = [1, 3, 4, 6].flatMap((d) => holding(d).slice(0, d)).sort((a, b) => a - b);
+  const variant = { circles };
+  assert.equal(clashes(solution, variant).size, 0);
+  const puzzle = thinOut(solution, variant, rand);
+  assert.equal(checkClues(puzzle, variant).ok, true);
+  assert.notEqual(countSolutions(puzzle, 2), 1, "needs the circles");
+  const cand = variantCandidates(puzzle, variant);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, variant);
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^QCC-[EMHX]-/);
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.circles, circles);
+  assert.deepEqual(puzzleFor(back).solution, solution);
+  // Every digit in circles, 45 of them, goes in the seed cell by cell.
+  const all = [1, 2, 3, 4, 5, 6, 7, 8, 9].flatMap((d) => [...Array(81).keys()].filter((c) => solution[c] === d).slice(0, d)).sort((a, b) => a - b);
+  assert.equal(all.length, CIRCLES_MOST);
+  assert.deepEqual(parseSeed(madeSeed("H", solution, { circles: all }).text).circles, all);
+
+  const at = (digits) => new Array(81).fill(0).map((_, c) => digits[c] ?? 0);
+  const bits = (...ds) => ds.reduce((m, d) => m | (1 << d), 0);
+  // Three circles hold three 3s, or a 1 and two 2s.
+  const three = { circles: [0, 13, 26] };
+  assert.equal(variantCandidates(at({}), three)[13], bits(1, 2, 3));
+  assert.equal(variantCandidates(at({ 0: 3 }), three)[13], bits(3));
+  assert.equal(variantCandidates(at({ 0: 1 }), three)[26], bits(2));
+  assert.equal(variantCandidates(at({}), { circles: [0, 13] })[0], bits(2));
+  // A digit in more circles than itself clashes, as does one short with too
+  // few circles left.
+  assert.deepEqual(sorted(clashes(at({ 0: 1, 13: 1 }), three)), [0, 13]);
+  assert.deepEqual(sorted(clashes(at({ 0: 4 }), { circles: [0, 13] })), [0]);
+  assert.equal(clashes(at({ 0: 3 }), three).size, 0);
+  assert.equal(seedVariantName("QQDQCC-H-BBBB"), "Quad, Counting Circles");
+});
+
 test("Skyscraper clues are checked, solved and carried in seeds", () => {
   assert.equal(skyscraperProblem([{ view: 0, count: 1 }, { view: 35, count: 9 }]), null);
   assert.equal(skyscraperProblem([{ view: 36, count: 3 }]).why, "view");
@@ -2826,7 +2965,7 @@ test("every variant rule has its explanation", () => {
   }
   // Everything variantName knows, from each part and every switch at once.
   const every = { rules: RULES.reduce((m, r) => m | r.bit, 0) };
-  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms"]) every[list] = [1];
+  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings"]) every[list] = [1];
   const named = variantName(every).split(", ").sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

@@ -5,7 +5,8 @@
 // samevalues, connecteds, distincts, thermos, arrows, doubles, pills,
 // whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
 // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads,
-// sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules }:
+// circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks,
+// indexings, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -106,6 +107,9 @@
 //            cells meet: cell the top left of the four, in a row and column
 //            before the last, and digits one to four digits the four cells
 //            hold between them, a digit listed twice held twice.
+//   circles  Counting Circles, a list of one to CIRCLES_MOST cells in
+//            reading order: a digit in a circle is in exactly that many
+//            circles, a 3 in three of them.
 //   sandwiches  Sandwich clues outside the grid, [{ line, sum }]: line 0 to
 //            8 a row, its clue on the left, and 9 to 17 a column, its clue
 //            above. The digits between the line's 1 and its 9 add up to the
@@ -126,6 +130,16 @@
 //   rooms    Numbered Room clues outside the grid, [{ view, digit }]: the
 //            first digit from that side, X, puts `digit` in the X-th cell
 //            from that side.
+//   ranks    Full Rank clues outside the grid, [{ view, rank }]: every row
+//            and column, read from each side, is a nine-digit number, and
+//            of those 36 this view's is the rank-th smallest, 1 to 36, tied
+//            with none (RANK_MOST below).
+//   indexings  Row/Column Indexing marks outside the grid, [{ line }]: line
+//            0 to 8 a row, its mark on the left, and 9 to 17 a column, its
+//            mark above. Each cell of a marked column holds the column its
+//            row keeps that column's number in, a 5 in column 1 putting that
+//            row's 1 in column 5; each cell of a marked row, the row its
+//            column keeps that row's number in (INDEXERS below).
 //   regions  a Jigsaw puzzle's regions in place of the 3x3 boxes: for each
 //            cell, 0 to 8, which region it is in. Each region is nine cells
 //            joined edge to edge, and holds 1 to 9.
@@ -156,7 +170,9 @@
 // about 2x2 squares sort each square's digits into kinds as entropic and
 // modular lines do (squareKinds below), and Anti-taxicab and Dutch
 // Flatmates depend on which digit a cell holds, so each has its own
-// narrowing (TAXICAB and flatmateBounds below).
+// narrowing (TAXICAB and flatmateBounds below). Counting Circles, Full Rank
+// and Row/Column Indexing narrow as the other clues do (circleBounds,
+// rankBounds and indexingBounds below).
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
@@ -186,15 +202,18 @@ export const hasRule = (rules, key) => Boolean(rules & RULES.find((r) => r.key =
 const has = hasRule;
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
+  if (indexings?.length) names.unshift("Row/Column Indexing");
+  if (ranks?.length) names.unshift("Full Rank");
   if (rooms?.length) names.unshift("Numbered Room");
   if (hiddens?.length) names.unshift("Hidden Skyscraper");
   if (xsums?.length) names.unshift("X-Sums");
   if (skyscrapers?.length) names.unshift("Skyscrapers");
   if (littles?.length) names.unshift("Little Killer");
   if (sandwiches?.length) names.unshift("Sandwich");
+  if (circles?.length) names.unshift("Counting Circles");
   if (quads?.length) names.unshift("Quad");
   if (signs?.length) names.unshift("Greater Than");
   if (xvs?.length) names.unshift("XV");
@@ -1363,6 +1382,79 @@ function quadBounds(quads, g, free) {
   return true;
 }
 
+/* ---- Counting Circles ---- */
+
+// The most circles there can be: 1 to 9 all in them, each d times, is 45.
+export const CIRCLES_MOST = 45;
+
+// Whether Counting Circles' circles are well formed: one to CIRCLES_MOST
+// cells on the board, none twice. null if so, or what is wrong: { why },
+// why "count", "cell" or "twice".
+export function circleProblem(circles) {
+  if (!Array.isArray(circles) || !circles.length || circles.length > CIRCLES_MOST) return { why: "count" };
+  const got = new Set();
+  for (const c of circles) {
+    if (!Number.isInteger(c) || c < 0 || c > 80) return { why: "cell" };
+    if (got.has(c)) return { why: "twice" };
+    got.add(c);
+  }
+  return null;
+}
+
+// DIGIT_SETS[n]: every set of different digits adding up to n, as masks.
+// n circles hold one of them, each digit d in d circles.
+const DIGIT_SETS = Array.from({ length: CIRCLES_MOST + 1 }, (_, n) => COMBOS.flatMap((sets) => sets[n]));
+
+// Scratch for circleBounds: for each digit, the circles holding it, and the
+// empty ones that could.
+const circleHave = new Int32Array(10);
+const circleCan = new Int32Array(10);
+
+// Narrows the circles to the sets of digits they could still hold (DIGIT_SETS
+// above): each set holding every digit placed, no digit placed more than
+// itself or with too few circles left to reach it, and every empty circle
+// able to take one. A digit in all of those, needing every circle that
+// could take it, goes in them; one with its count placed goes from the
+// rest. Placed digits count as masks of one, and `free` is narrowed in
+// place, as in thermoBounds; false if no set is left.
+function circleBounds(circles, g, free) {
+  circleHave.fill(0);
+  circleCan.fill(0);
+  let placed = 0;
+  for (const c of circles) {
+    if (g[c]) {
+      circleHave[g[c]]++;
+      placed |= 1 << g[c];
+    } else for (let d = 1; d <= 9; d++) if (free[c] & (1 << d)) circleCan[d]++;
+  }
+  let allow = 0;
+  let must = ALL;
+  for (const set of DIGIT_SETS[circles.length] ?? []) {
+    if (placed & ~set) continue;
+    let ok = true;
+    for (let d = 1; d <= 9 && ok; d++) if (set & (1 << d) && (circleHave[d] > d || circleHave[d] + circleCan[d] < d)) ok = false;
+    for (const c of circles) if (ok && !g[c] && !(free[c] & set)) ok = false;
+    if (!ok) continue;
+    allow |= set;
+    must &= set;
+  }
+  if (!allow) return false;
+  for (const c of circles) {
+    if (g[c]) continue;
+    let m = free[c] & allow;
+    for (let d = 1; d <= 9; d++) {
+      const bit = 1 << d;
+      if (circleHave[d] === d) m &= ~bit;
+      else if (must & bit && m & bit && circleHave[d] + circleCan[d] === d) {
+        m = bit;
+        break;
+      }
+    }
+    if (!(free[c] = m)) return false;
+  }
+  return true;
+}
+
 // Narrows cells a and b, either side of a side, to digits that may sit
 // across it from one the other can be: `toA` and `toB` as ACROSS has them,
 // toA for the first cell and toB for the second, the same table for a mark
@@ -1691,6 +1783,194 @@ function roomBounds(rooms, g, free) {
         if (xs === 1 << (k + 1) && !g[c] && !(free[c] &= 1 << digit)) return false;
       } else if (g[c] === digit) return false;
       else if (!g[c]) free[c] &= ~(1 << digit);
+    }
+  }
+  return true;
+}
+
+/* ---- Full Rank ---- */
+
+// Every view reads as a number, and a Full Rank clue ranks it among all 36.
+// The views' first cells are the grid's edge rows and columns, each holding
+// every digit once, so four views start with each digit: ranks 1 to 4 start
+// with 1, 5 to 8 with 2, and so on. A clue fixes its view's first digit,
+// and how many of the other three with it are smaller, the rest larger. As
+// the solver it comes from has it by default, a clued view ties with none.
+export const RANK_MOST = 36;
+
+// Whether Full Rank clues are well formed: as clues on views are, a rank 1
+// to RANK_MOST, and no rank twice, "same" if so. null if so, or what is
+// wrong: { why, at }.
+export function rankProblem(ranks) {
+  const problem = viewProblem(ranks, "rank", 1, RANK_MOST);
+  if (problem) return problem;
+  const got = new Set();
+  for (let i = 0; i < ranks.length; i++) {
+    if (got.has(ranks[i].rank)) return { why: "same", at: i };
+    got.add(ranks[i].rank);
+  }
+  return null;
+}
+
+// The digit a rank's view starts with, and how many of the other views
+// starting with it are smaller.
+export const rankStart = (rank) => (rank + 3) >> 2;
+export const rankBelow = (rank) => (rank - 1) & 3;
+
+// How view o's number compares with view e's, on the digits `mask` says
+// their cells could hold, both starting with the same digit: -1 if o's is
+// sure to be smaller, 1 larger, 0 if they are the same, 2 if it cannot yet
+// be told. The first place along them not sure to hold the same digit
+// decides it.
+function rankOrder(e, o, mask) {
+  for (let j = 1; j < 9; j++) {
+    const a = mask(e[j]);
+    const b = mask(o[j]);
+    if (a === b && POP[a] === 1) continue;
+    if (HIGH[b] < LOW[a]) return -1;
+    if (LOW[b] > HIGH[a]) return 1;
+    return 2;
+  }
+  return 0;
+}
+
+// Narrows view lo's number to below view hi's, both starting with the same
+// digit: at the first place they are not sure to match, lo's cell keeps no
+// digit over the most hi's could be, and hi's none under the least lo's
+// could be; while that leaves them matching, on to the next place. Placed
+// digits count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if lo's cannot be below.
+function rankUnder(lo, hi, g, free) {
+  for (let j = 1; j < 9; j++) {
+    const [x, y] = [lo[j], hi[j]];
+    let a = g[x] ? 1 << g[x] : free[x];
+    let b = g[y] ? 1 << g[y] : free[y];
+    if (a === b && POP[a] === 1) continue;
+    a &= BELOW[HIGH[b] + 1];
+    if (!a) return false;
+    b &= ABOVE[LOW[a] - 1];
+    if (!b) return false;
+    if (!g[x]) free[x] = a;
+    if (!g[y]) free[y] = b;
+    if (!(a === b && POP[a] === 1)) return true;
+  }
+  return false;
+}
+
+// Narrows each Full Rank clue's view. Its first cell holds its rank's
+// digit. Each other view that could start with it is, by rankOrder, sure
+// to be smaller, sure to be larger, or either, and sure to start with it
+// or not yet; one sure to be the same cannot start with it. Then no more
+// can be sure to be smaller than the clue says, nor fewer could be, and
+// likewise larger. When as many could be smaller as the clue says, each of
+// those starts with the digit and is smaller; when as many are sure to be,
+// any other sure smaller one does not start with it, and any other sure to
+// start with it is larger; and likewise the other way. Placed digits count
+// as masks of one, and `free` is narrowed in place, as in thermoBounds;
+// false if the clue cannot be kept.
+const rankOthers = [];
+function rankBounds(ranks, g, free) {
+  const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
+  for (const { view, rank } of ranks) {
+    const e = VIEWS[view];
+    const bit = 1 << rankStart(rank);
+    const below = rankBelow(rank);
+    const above = 3 - below;
+    if (!(mask(e[0]) & bit)) return false;
+    if (!g[e[0]]) free[e[0]] = bit;
+    let lessCan = 0;
+    let lessSure = 0;
+    let moreCan = 0;
+    let moreSure = 0;
+    rankOthers.length = 0;
+    for (let w = 0; w < VIEWS.length; w++) {
+      const o = VIEWS[w];
+      const m = mask(o[0]);
+      if (w === view || !(m & bit)) continue;
+      const sure = m === bit;
+      const order = rankOrder(e, o, mask);
+      if (order === 0) {
+        if (sure) return false;
+        if (!g[o[0]]) free[o[0]] &= ~bit;
+        continue;
+      }
+      if (order !== 1) {
+        lessCan++;
+        if (sure && order === -1) lessSure++;
+      }
+      if (order !== -1) {
+        moreCan++;
+        if (sure && order === 1) moreSure++;
+      }
+      rankOthers.push(o, sure, order);
+    }
+    if (lessSure > below || lessCan < below || moreSure > above || moreCan < above) return false;
+    for (let i = 0; i < rankOthers.length; i += 3) {
+      const [o, sure, order] = [rankOthers[i], rankOthers[i + 1], rankOthers[i + 2]];
+      const less = order !== 1 && lessCan === below;
+      const more = order !== -1 && moreCan === above;
+      if (less && more) return false;
+      if (less || more) {
+        if (!g[o[0]]) free[o[0]] = bit;
+        if (order === 2 && !(less ? rankUnder(o, e, g, free) : rankUnder(e, o, g, free))) return false;
+      } else if (!sure && ((order === -1 && lessSure === below) || (order === 1 && moreSure === above))) {
+        if (!g[o[0]]) free[o[0]] &= ~bit;
+      } else if (sure && order === 2 && lessSure === below && !rankUnder(e, o, g, free)) return false;
+      else if (sure && order === 2 && moreSure === above && !rankUnder(o, e, g, free)) return false;
+    }
+  }
+  return true;
+}
+
+/* ---- Row/Column Indexing ---- */
+
+// INDEXERS[line], for each line an Indexing mark can go by: its cells as
+// [{ cell, targets, digit }]. The cell's digit, X, puts `digit` in the X-th
+// of `targets`. A marked row's cells point down their columns, at that
+// row's number; a marked column's point along their rows, at that
+// column's.
+export const INDEXERS = [...Array(18).keys()].map((line) => {
+  const i = line % 9;
+  return [...Array(9).keys()].map((j) =>
+    line < 9 ? { cell: cellAt(i, j), targets: SANDWICH_LINES[9 + j], digit: i + 1 } : { cell: cellAt(j, i), targets: SANDWICH_LINES[j], digit: i + 1 }
+  );
+});
+
+// Whether Indexing marks are well formed: a line each, no line twice. null
+// if so, or what is wrong: { why, at }.
+export function indexingProblem(indexings) {
+  const got = new Set();
+  for (let i = 0; i < indexings.length; i++) {
+    const { line } = indexings[i] ?? {};
+    if (!Number.isInteger(line) || line < 0 || line > 17) return { why: "line", at: i };
+    if (got.has(line)) return { why: "twice", at: i };
+    got.add(line);
+  }
+  return null;
+}
+
+// Narrows each indexing cell. Its targets hold `digit` once, so the cell's
+// digit is one more than how far along that is: X may be any digit whose
+// target could hold it, and a target no X is left for cannot. Placed digits
+// count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if no X is left.
+function indexingBounds(indexings, g, free) {
+  const mask = (c) => (g[c] ? 1 << g[c] : free[c]);
+  for (const { line } of indexings) {
+    for (const { cell, targets, digit } of INDEXERS[line]) {
+      const bit = 1 << digit;
+      const xm = mask(cell);
+      let xs = 0;
+      for (let k = 0; k < 9; k++) if (xm & (2 << k) && mask(targets[k]) & bit) xs |= 2 << k;
+      if (!xs) return false;
+      if (!g[cell]) free[cell] = xs;
+      for (let k = 0; k < 9; k++) {
+        const t = targets[k];
+        if (xs & (2 << k)) {
+          if (xs === 2 << k && !g[t] && !(free[t] &= bit)) return false;
+        } else if (g[t] === digit) return false;
+        else if (!g[t] && !(free[t] &= ~bit)) return false;
+      }
     }
   }
   return true;
@@ -2257,6 +2537,9 @@ const norm = (v) => ({
   xsums: v?.xsums ?? [],
   hiddens: v?.hiddens ?? [],
   rooms: v?.rooms ?? [],
+  circles: v?.circles ?? [],
+  ranks: v?.ranks ?? [],
+  indexings: v?.indexings ?? [],
   regions: v?.regions?.length ? v.regions : null,
   rules: v?.rules ?? 0,
 });
@@ -2264,11 +2547,12 @@ const norm = (v) => ({
 // What can go in each empty cell, by every cell it must differ from, its
 // cage of whatever kind, its thermometers, arrows and other lines, its dots
 // and marks, its 2x2 squares under Global Entropy or Global Mod, the digits
-// around it under Anti-taxicab and Dutch Flatmates, and the clues outside;
+// around it under Anti-taxicab and Dutch Flatmates, the Counting Circles,
+// and the clues outside;
 // 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, ranks, indexings, regions, rules } = norm(variant);
   const { peers } = layout(rules, regions);
   const allow = cages.map((cage) => {
     let used = 0;
@@ -2327,6 +2611,9 @@ export function variantCandidates(grid, variant) {
   xsumBounds(xsums, grid, out);
   hiddenBounds(hiddens, grid, out);
   roomBounds(rooms, grid, out);
+  circleBounds(circles, grid, out);
+  rankBounds(ranks, grid, out);
+  indexingBounds(indexings, grid, out);
   return out;
 }
 
@@ -2349,7 +2636,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, ranks, indexings, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const says = sayCages(looksays);
   const sumGroups = equalsums.map(({ cells }) => piecesOf(cells));
@@ -2443,6 +2730,9 @@ function search(grid, variant, found) {
     if (xsums.length && !xsumBounds(xsums, g, free)) return null;
     if (hiddens.length && !hiddenBounds(hiddens, g, free)) return null;
     if (rooms.length && !roomBounds(rooms, g, free)) return null;
+    if (circles.length && !circleBounds(circles, g, free)) return null;
+    if (ranks.length && !rankBounds(ranks, g, free)) return null;
+    if (indexings.length && !indexingBounds(indexings, g, free)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;

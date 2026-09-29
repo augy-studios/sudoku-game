@@ -21,9 +21,10 @@
 // lockout lines, QEN for entropic lines, QMO for modular
 // lines, QSL for sum lines, QRS for region sum lines, QVX for value
 // indexing lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
-// for quads, B for Sandwich clues, L for Little Killer clues, Y for
-// Skyscraper clues, U for X-Sum clues, QHS for Hidden Skyscraper clues, QNR
-// for Numbered Room clues and J for a Jigsaw's regions, which the seed then
+// for quads, QCC for Counting Circles, B for Sandwich clues, L for Little
+// Killer clues, Y for Skyscraper clues, U for X-Sum clues, QHS for Hidden
+// Skyscraper clues, QNR for Numbered Room clues, QFR for Full Rank clues,
+// QRX for Row/Column Indexing marks and J for a Jigsaw's regions, which the seed then
 // carries too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF
 // for the switch rules (variant.js). Once the single
 // letters ran out, a new one became Q and two more: Q is read with the two
@@ -76,6 +77,11 @@ import {
   xsumProblem,
   hiddenProblem,
   roomProblem,
+  circleProblem,
+  CIRCLES_MOST,
+  rankProblem,
+  RANK_MOST,
+  indexingProblem,
   regionProblem,
   sortRegions,
   VIEWS,
@@ -223,12 +229,16 @@ function decodeGrid(body) {
    shorter: how many, and for each its side and which of the two marks it
    is; or for every side, its mark or none; and Greater Than signs the same
    way. Then quads: how many, and for each its corner, how many digits and
-   each digit. Then Sandwich clues, for each
+   each digit. Then Counting Circles, as whichever is shorter: how many,
+   and each one's cell; or for every cell, whether it has one. Then
+   Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
    many, and for each its first cell, which way it runs and its sum. Then
    Skyscraper clues, then X-Sum clues, then Hidden Skyscraper clues, then
-   Numbered Room clues, each as whichever is shorter: how many, and for each
-   its view and its value; or for every view, its value or none. Then a Jigsaw's regions: for each pair of neighbours, whether
+   Numbered Room clues, then Full Rank clues, each as whichever is shorter:
+   how many, and for each its view and its value; or for every view, its
+   value or none. Then Row/Column Indexing marks: for each row and then
+   each column, whether it has one. Then a Jigsaw's regions: for each pair of neighbours, whether
    they share a region, which gives back the regions as the shared edges
    give back cages. Each part is there only when the seed's letters say
    so, so a seed from before a part came reads as it did. */
@@ -491,6 +501,37 @@ function readQuads(take) {
 // By corner, each one's digits in order.
 const sortQuads = (quads) => quads.map((q) => ({ cell: q.cell, digits: q.digits.slice().sort((a, b) => a - b) })).sort((a, b) => a.cell - b.cell);
 
+// Counting Circles: a flag, then either how many and each one's cell, or
+// every cell's flag, 1 for a circle; whichever is shorter.
+function writeCircles(digits, circles) {
+  if (Math.log2(CIRCLES_MOST) + circles.length * Math.log2(81) <= 81) {
+    digits.push([0, 2], [circles.length - 1, CIRCLES_MOST]);
+    for (const c of circles) digits.push([c, 81]);
+  } else {
+    digits.push([1, 2]);
+    for (let c = 0; c < 81; c++) digits.push([circles.includes(c) ? 1 : 0, 2]);
+  }
+}
+
+// The other way. A cell listed twice reads as written, so that checking it
+// refuses the seed.
+function readCircles(take) {
+  if (take(2)) return [...Array(81).keys()].filter(() => take(2));
+  const count = take(CIRCLES_MOST) + 1;
+  return Array.from({ length: count }, () => take(81));
+}
+
+const sortCircles = (circles) => circles.slice().sort((a, b) => a - b);
+
+// Row/Column Indexing marks: for each of the 18 lines, 1 for a mark.
+function writeIndexings(digits, indexings) {
+  const marked = new Set(indexings.map((i) => i.line));
+  for (let line = 0; line < 18; line++) digits.push([marked.has(line) ? 1 : 0, 2]);
+}
+
+const readIndexings = (take) => [...Array(18).keys()].filter(() => take(2)).map((line) => ({ line }));
+const sortIndexings = (indexings) => indexings.map((i) => ({ line: i.line })).sort((a, b) => a.line - b.line);
+
 // Sandwich clues: for each of the 18 lines, 0 for none or its sum and 1.
 function writeSandwiches(digits, sandwiches) {
   const sums = new Map(sandwiches.map((s) => [s.line, s.sum]));
@@ -745,12 +786,15 @@ const PARTS = [
   edges("xvs", "V", "XV", xvProblem, XV_MARKS),
   edges("signs", "QGT", "Greater Than", signProblem, SIGN_MARKS),
   { list: "quads", letter: "QQD", name: "Quad", problem: quadProblem, write: writeQuads, read: readQuads, sort: sortQuads },
+  { list: "circles", letter: "QCC", name: "Counting Circles", problem: circleProblem, write: writeCircles, read: readCircles, sort: sortCircles },
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
   { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
   views("skyscrapers", "Y", "Skyscrapers", skyscraperProblem, "count", 9),
   views("xsums", "U", "X-Sums", xsumProblem, "sum", 45),
   views("hiddens", "QHS", "Hidden Skyscraper", hiddenProblem, "height", 8),
   views("rooms", "QNR", "Numbered Room", roomProblem, "digit", 9),
+  views("ranks", "QFR", "Full Rank", rankProblem, "rank", RANK_MOST),
+  { list: "indexings", letter: "QRX", name: "Row/Column Indexing", problem: indexingProblem, write: writeIndexings, read: readIndexings, sort: sortIndexings },
   { list: "regions", letter: "J", name: "Jigsaw", problem: regionProblem, write: writeRegions, read: readRegions, sort: sortRegions },
 ];
 
@@ -782,8 +826,8 @@ function prefixFor(parts, rules) {
 
 // The seed of a made puzzle. variant: { cages, relliks, lunchboxes,
 // looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
-// sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens,
-// rooms, regions, rules } for a variant puzzle (variant.js), or nothing for
+// sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, littles, skyscrapers, xsums, hiddens,
+// rooms, ranks, indexings, regions, rules } for a variant puzzle (variant.js), or nothing for
 // a classic one.
 // `level` is
 // the maker's rating; it names the level on screen and nothing else. The

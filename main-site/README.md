@@ -38,7 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper and Numbered Room clues, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Counting Circles, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered Room and Full Rank clues, Row/Column Indexing marks, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -124,8 +124,8 @@ in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings, and the Daily's with Killer picked (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected (Connected Values), Count Distinct, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
-Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Sandwich, Little Killer, Skyscrapers,
-X-Sums, Hidden Skyscraper, Numbered Room, Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
+Whispers), Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Sandwich, Little Killer, Skyscrapers,
+X-Sums, Hidden Skyscraper, Numbered Room, Full Rank, Row/Col Indexing (Row/Column Indexing), Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
 same place in each 3x3 box hold 1 to 9), Anti-consecutive (cells sharing a
@@ -152,20 +152,20 @@ every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
-P, V, QGT, QQD, B, L, Y, U, QHS, QNR, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
+P, V, QGT, QQD, QCC, B, L, Y, U, QHS, QNR, QFR, QRX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT and QDF, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages of each kind, thermometers,
 arrows, double arrows, pill arrows, whisper lines, renban lines, palindrome lines, zipper lines,
-between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Sandwich sums, Little Killer
+between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Counting Circles, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
-clues or regions (a line as its length, its first cell and each step's
+clues, Full Rank clues, indexing marks or regions (a line as its length, its first cell and each step's
 direction, a sum line with its sum first, and sum and region sum lines'
 lengths, up to 27, and value indexing lines', up to 11, in a wider digit; a pill arrow as its pill's size, first cell and way, then its
-arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Sandwich
-sums as every row's and column's sum or none; Little Killer sums as each
+arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Counting Circles as a list of cells or a flag for every cell, whichever is shorter; Sandwich
+sums as every row's and column's sum or none; indexing marks as a flag for every row and column; Little Killer sums as each
 one's first cell, way and sum; regions, and each kind of cage, as which
 neighbours share one, a cage's clue after). The
 others' carry the clues only.
@@ -346,6 +346,23 @@ cells, keeps those cells to them; a quad shows as a clash once the digits
 it still needs outnumber its empty cells. A quad is drawn as a circle on
 the corner, its digits two to a row, on the board and in a saved image.
 
+**Counting Circles.** From the Interactive Sudoku Solver. A digit in a
+circle says how many circles hold that digit, so a 3 is in exactly three
+of them, and the circles hold 1 to 45 cells (`CIRCLES_MOST`): every digit
+d in d circles at most. All the circles on a puzzle count together, as
+nearly every puzzle has them; the other solver's sets of circles counted
+apart are left out. With Counting Circles on, a tap in the middle of a cell
+in the Marks tool puts a circle in or takes it out, and taps near a side or
+a corner still mark those; from the keyboard, picking a cell twice does.
+The solver tries each set of digits adding up to the number of circles:
+one holding every digit placed, none placed more than itself or with too
+few circles left for the rest, and one every empty circle can take a digit
+of. Each empty circle keeps the digits of those sets; a digit in all of
+them that needs every circle able to take it goes in them, and one with its
+count placed leaves the rest. A digit in more circles than itself, or with
+too few circles left empty to make up its count, shows as a clash. A circle
+is a ring round the cell's digit, on the board and in a saved image.
+
 **Sandwich and Little Killer.** Their clues sit outside the grid, so with
 either rule on, or a puzzle that has them, the board leaves a margin a cell
 wide round the grid (the grid takes the middle 9 of 11), and so does a
@@ -389,6 +406,35 @@ solver keeps the first cell to digits whose place could hold the clue's,
 and a place none points to never holds it. The wrong height hidden first,
 or the height seen, and a first digit pointing at some other digit, or the
 clue's digit somewhere it does not point, show as clashes.
+
+**Full Rank and Row/Column Indexing.** From the Interactive Sudoku Solver,
+on the same Outside tool. Every row and column read from either side is a
+nine-digit number, 36 of them, and a Full Rank clue beside one, after a #,
+is where it comes among all 36, smallest first. The edge rows and columns
+each hold every digit once, so four numbers start with each digit: a rank
+of 1 to 4 starts its view with 1, 5 to 8 with 2, and so on (`rankStart`),
+and says how many of the other three are smaller (`rankBelow`). As the
+other solver has it by default, a clued number ties with none; its option
+for other ways with ties is left out. The solver fixes each clue's first
+digit, then for every other view that could start with it tells whether its
+number is sure to be smaller, sure to be larger, or not yet known, by the
+first place their digits could differ. It needs as many smaller as the rank
+says could be, and no more sure: when only just enough could be, those
+start with the digit and are ordered below it at the first place not yet
+matching, and when enough are sure, the rest cannot be. The wrong first
+digit, too many smaller or larger once both are filled up to where they
+differ, or a tie, shows as a clash. A Row/Column Indexing mark, a small
+pointer left of a row or above a column, makes each cell of it say where its
+line's number sits: in a marked column, a cell's digit is the column its row
+keeps that column's number in, so a 5 in column 1 puts that row's 1 in
+column 5; in a marked row, the row its column keeps that row's number in.
+It takes no number: pick the spot, Turn to Indexing if another clue can go
+there, and Add. Marking columns 1, 5 and 9 makes the 1-5-9 puzzles; the
+other solver's marking of single cells is left out. The solver keeps each
+marked cell to the places its line's number could be, and takes the number
+out of places no digit left points to (`INDEXERS`). A digit pointing at
+some other digit, or the number somewhere the cell does not point, shows as
+a clash. Marked rows and columns are shaded, darker where two cross.
 
 **Jigsaw.** Nine regions of nine cells take the boxes' place: each holds 1
 to 9, and the boxes are no houses. In variant.js a Jigsaw's regions are
@@ -659,7 +705,11 @@ taken for a generated seed (eight) or a made one (twelve or more). The
 seed each code stands for. Create asks for a made puzzle's code as soon as
 it checks out, and a game of a long made seed shows its code on the seed
 chip and the result; Copy seed copies the code, or the whole seed while
-there is no connection. The seed box on the new-game screen, Create's Open
+there is no connection. Offline, the whole seed is shown and copied even
+for a code this browser knows, since whoever it goes to may need a
+connection to open the code; the seed line, the chip and the result swap
+back to the code, fetching it if need be, once the connection returns
+(`shareCode` in api.js). The seed box on the new-game screen, Create's Open
 a seed and Paste, and the made-puzzles search all take a code and look it
 up. Everything underneath keeps the whole seed: start tickets, boards,
 saved games and replay links. A browser keeps the last 100 codes it has

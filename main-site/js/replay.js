@@ -73,7 +73,7 @@ export class Replay {
   // looksays?, equalities?, equalsums?, samevalues?, connecteds?,
   // distincts?, thermos?, arrows?,
   // doubles?, pills?, whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
-  // entropics?, modulars?, sumlines?, regionsums?, indexes?, dots?, xvs?, signs?, quads?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, regions?,
+  // entropics?, modulars?, sumlines?, regionsums?, indexes?, dots?, xvs?, signs?, quads?, circles?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, ranks?, indexings?, regions?,
   // rules? }.
   // view: { highlightSame }.
   // Starts at the end, or from the start and playing when `autoplay` is set.
@@ -158,8 +158,11 @@ export class Replay {
       xsums: this.game.xsums ?? null,
       hiddens: this.game.hiddens ?? null,
       rooms: this.game.rooms ?? null,
+      circles: this.game.circles ?? null,
+      ranks: this.game.ranks ?? null,
+      indexings: this.game.indexings ?? null,
       regions: this.game.regions ?? null,
-      margin: Boolean(this.game.sandwiches || this.game.littles || this.game.skyscrapers || this.game.xsums || this.game.hiddens || this.game.rooms),
+      margin: Boolean(this.game.sandwiches || this.game.littles || this.game.skyscrapers || this.game.xsums || this.game.hiddens || this.game.rooms || this.game.ranks || this.game.indexings),
     });
     $("rpScrub").value = String(i);
     const total = this.frames.length - 1;

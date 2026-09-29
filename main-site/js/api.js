@@ -115,15 +115,24 @@ export function knownCode(text) {
   return Object.entries(knownCodes()).find(([, seed]) => seed === text)?.[0] ?? null;
 }
 
-// What to show and copy for a seed: its short code once known, or else
-// the seed itself.
-export const seedLabel = (seed) => knownCode(seed.text) ?? seed.text;
+// Whether the browser says it has a connection; one that cannot tell counts
+// as online.
+export const online = () => globalThis.navigator?.onLine !== false;
+
+// The short code to share a seed's text by: its known code while online.
+// Offline, null, so the seed itself is shared: a code needs a connection to
+// open anywhere it has not been opened before.
+export const shareCode = (text) => (online() ? knownCode(text) : null);
+
+// What to show and copy for a seed: its short code once known and while
+// online, or else the seed itself.
+export const seedLabel = (seed) => shareCode(seed.text) ?? seed.text;
 
 // Asks for a long made seed's short code, if it has not got one here yet.
 // Resolves with the code as written, or null: a seed short enough as it
 // is, or no connection, which leaves the seed itself to share.
 export async function fetchCode(seed) {
-  if (!seed?.made || !needsCode(seed.text)) return null;
+  if (!seed?.made || !needsCode(seed.text) || !online()) return null;
   const known = knownCode(seed.text);
   if (known) return known;
   try {

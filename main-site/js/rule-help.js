@@ -189,6 +189,12 @@ export const RULE_HELP = {
     rule: "The digits in a circle where four cells meet all go in those four cells. A digit shown twice goes in twice.",
     draw: "Tap Marks, then tap near a corner where four cells meet, and type its digits, up to four. Erase takes the last one off.",
   },
+  counting: {
+    name: "Counting Circles",
+    list: "circles",
+    rule: "A digit in a circle says how many circles hold that digit: a 3 in a circle means exactly three circles hold a 3. Digits outside circles are free.",
+    draw: "Tap Marks, then tap the middle of a cell to put a circle in it, or take it out. With dots or signs on too, tap a cell and then one beside it to mark the side between.",
+  },
   sandwich: {
     name: "Sandwich",
     list: "sandwiches",
@@ -224,6 +230,18 @@ export const RULE_HELP = {
     list: "rooms",
     rule: "The first digit from a diamond's side, X, counts X cells in from that side, first cell included: the digit in the diamond goes there.",
     draw: "Tap Outside, then a spot beside a row or column, type the digit, and tap Add. Turn switches between the clues that can go there.",
+  },
+  fullrank: {
+    name: "Full Rank",
+    list: "ranks",
+    rule: "Every row and column, read from either side, is a nine-digit number: 36 of them. A number after # beside one says where it comes among all 36, smallest first. Ranks 1 to 4 start with 1, 5 to 8 with 2, and so on, and a clued one never ties.",
+    draw: "Tap Outside, then a spot beside a row or column, type its rank, 1 to 36, and tap Add. Turn switches between the clues that can go there.",
+  },
+  rowcolindex: {
+    name: "Row/Column Indexing",
+    list: "indexings",
+    rule: "In a shaded column with a mark above it, each digit says which column of its row holds that column's number: a 5 in column 1 puts that row's 1 in column 5. In a shaded row with a mark on its left, each digit likewise says which row of its column holds that row's number.",
+    draw: "Tap Outside, then a spot above a column or left of a row, and tap Add. Turn switches between the clues that can go there.",
   },
   diagonal: {
     name: "Diagonal",

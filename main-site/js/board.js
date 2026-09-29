@@ -29,11 +29,14 @@
 // Kropki dots sit on the side two cells share, white or black, XV marks
 // there as a letter, and Greater Than signs as a chevron pointing at the
 // smaller digit. A quad is a circle on the corner where four cells meet,
-// with its digits in it. Sandwich and Little Killer clues sit
+// with its digits in it, and a Counting Circle a ring round a cell's digit.
+// Sandwich and Little Killer clues sit
 // outside the grid, in a margin a cell wide the board then leaves round it,
 // a Little Killer's with a small arrow along its diagonal; so do Skyscraper
 // counts, in a small square, X-Sums, in a small circle, Hidden Skyscraper
-// clues, in a dashed square, and Numbered Room clues, in a diamond. A Jigsaw's
+// clues, in a dashed square, Numbered Room clues, in a diamond, and Full Rank
+// clues, after a #. A Row/Column Indexing mark is a small pointer into its
+// row or column, whose cells are shaded. A Jigsaw's
 // regions take the boxes' place: the boxes lose their edges and tint, and
 // each region gets a heavy line round it instead. Anti-knight, anti-king,
 // Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV, Global
@@ -41,7 +44,7 @@
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
-import { layout, touching, cagesOf, RULES } from "./variant.js";
+import { layout, touching, cagesOf, INDEXERS, RULES } from "./variant.js";
 
 const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
 const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
@@ -153,8 +156,8 @@ export class BoardView {
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, relliks, lunchboxes, looksays,
   // equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
-  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, hiddens, rooms, littles,
-  // skyscrapers, xsums and regions are a variant puzzle's, and
+  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, sandwiches, hiddens, rooms, littles,
+  // skyscrapers, xsums, ranks, indexings and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, as pathKind says:
   // "thermo", "arrow", "doublearrow", "pillarrow" (its first pathPill cells
@@ -198,6 +201,9 @@ export class BoardView {
     this.xsums = view.xsums ?? [];
     this.hiddens = view.hiddens ?? [];
     this.rooms = view.rooms ?? [];
+    this.circles = view.circles ?? [];
+    this.ranks = view.ranks ?? [];
+    this.indexings = view.indexings ?? [];
     this.regions = view.regions ?? null;
     this.root.classList.toggle("jigsaw", Boolean(this.regions));
     // Its box for the peer highlight: a Jigsaw's region, or the 3x3 box.
@@ -211,6 +217,9 @@ export class BoardView {
     const windows = new Set(
       this.rules & WINDOKU ? layout(WINDOKU).houses.filter((h) => h.kind === "window").flatMap((h) => h.cells) : []
     );
+    // How many indexing rows and columns each cell is in.
+    const indexed = new Array(81).fill(0);
+    for (const { line } of this.indexings) for (const { cell } of INDEXERS[line]) indexed[cell]++;
     // Each cage's first cell, or a Count Distinct cage's # cell, carries its
     // clue, as a sum line's first cell does, so its notes make room.
     const heads = new Set([...this.cages.map((cage) => cage.head), ...this.sumlines.map((t) => t.cells[0])]);
@@ -235,6 +244,7 @@ export class BoardView {
         view.picked?.has(c) ? "picked" : "",
         heads.has(c) ? "cage-head" : "",
         windows.has(c) ? "window" : "",
+        indexed[c] ? (indexed[c] > 1 ? "indexing-twice" : "indexing") : "",
       ]
         .filter(Boolean)
         .join(" ");
@@ -260,6 +270,7 @@ export class BoardView {
       let label = `${cellName(c).replace("r", "Row ").replace("c", ", column ")}, `;
       const cage = this.cages.find((k) => k.cells.includes(c));
       if (cage) label += `${cage.words}, `;
+      if (this.circles.includes(c)) label += "in a counting circle, ";
       if (v) label += `${v}${wrong ? ", wrong" : given ? ", given" : ""}`;
       else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => notes[c] & (1 << d)).join(" ")}`;
       else label += "empty";
@@ -291,17 +302,18 @@ export class BoardView {
     const indexes = this.indexes ?? [];
     const edges = [...(this.dots ?? []), ...(this.xvs ?? []), ...(this.signs ?? [])];
     const quads = this.quads ?? [];
-    const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.hiddens ?? [], this.rooms ?? [], this.spots ?? [], this.spot];
+    const circles = this.circles ?? [];
+    const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.hiddens ?? [], this.rooms ?? [], this.ranks ?? [], this.indexings ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
     const lines = [thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes];
-    const key = JSON.stringify([cages, diagonal, lines, edges, quads, outside, margin, regions, path, this.pathKind, this.pathPill]);
+    const key = JSON.stringify([cages, diagonal, lines, edges, quads, circles, outside, margin, regions, path, this.pathKind, this.pathPill]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, ...lines, edges, quads, path, ...outside.slice(0, -1)].some((list) => list.length);
+    const drawn = [cages, ...lines, edges, quads, circles, path, ...outside.slice(0, -1)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -626,7 +638,20 @@ export class BoardView {
       ...framed(this.hiddens ?? [], "height", "dashed"),
       ...framed(this.rooms ?? [], "digit", "diamond"),
     ];
-    const outsides = [...open, picked, ...sandwichSums, ...littleSums, ...viewClues].join("");
+    // Full Rank clues after a #, a little smaller to fit two digits.
+    const rankClues = (this.ranks ?? []).map(({ view, rank }) => {
+      const { x, y, w } = spotAt(viewSpot(view));
+      return `<text class="outside-sum" x="${f(x)}" y="${f(y)}" font-size="${f(w * 0.3)}">#${rank}</text>`;
+    });
+    // Row/Column Indexing marks: a small solid pointer into the row or
+    // column, left of a row or above a column.
+    const indexMarks = (this.indexings ?? []).map(({ line }) => {
+      const { x, y, w } = spotAt(line < 9 ? [line, -1] : [-1, line - 9]);
+      const [dx, dy] = line < 9 ? [1, 0] : [0, 1];
+      const h = w * 0.16;
+      return `<path class="index-mark" d="M${f(x + dx * h)} ${f(y + dy * h)}L${f(x - dx * h - dy * h)} ${f(y - dy * h - dx * h)}L${f(x - dx * h + dy * h)} ${f(y - dy * h + dx * h)}Z"/>`;
+    });
+    const outsides = [...open, picked, ...sandwichSums, ...littleSums, ...viewClues, ...rankClues, ...indexMarks].join("");
     // A Jigsaw's regions: a heavy line along each side between two regions.
     let walls = "";
     if (regions) {
@@ -651,6 +676,13 @@ export class BoardView {
         return `<circle class="quad-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.27)}"/>${text}`;
       })
       .join("");
-    layer.innerHTML = `${walls}${marks}${diagonals}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${lineSums}${onSides}${onCorners}${outsides}`;
+    // Counting Circles: a ring round the cell's digit.
+    const onCells = circles
+      .map((c) => {
+        const { x, y, w } = centre(c);
+        return `<circle class="counting-circle" cx="${f(x)}" cy="${f(y)}" r="${f(w * 0.42)}"/>`;
+      })
+      .join("");
+    layer.innerHTML = `${walls}${marks}${diagonals}${onCells}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${lineSums}${onSides}${onCorners}${outsides}`;
   }
 }
