@@ -33,7 +33,7 @@
 // 4. Nothing under /api/ is ever cached. A cached leaderboard or start
 //    ticket is a wrong answer, not a stale one.
 
-const VERSION = "uwusudoku-v38";
+const VERSION = "uwusudoku-v39";
 
 const SHELL = `uwusudoku-shell-${VERSION}`;
 
