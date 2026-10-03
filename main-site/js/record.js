@@ -6,33 +6,47 @@
 //   k  "p" place digit d in cell c
 //      "e" erase cell c: its digit, or its notes if it has no digit
 //      "n" toggle note d in cell c
-//      "h" hint: cell c gets its answer
+//      "h" hint: cell c gets its answer, under Yin-Yang its shade too
 //      "u" undo the player's last action that still stands
 //      "s" solve: every cell gets its answer, and the game is not ranked
+//      "y" Yin-Yang: cell c's shade becomes d
 //   c  cell, 0 to 80 in reading order (0 for u and s)
-//   d  digit 1 to 9 for p and n, otherwise 0
+//   d  digit 1 to 9 for p and n, or 10 for Doppelgänger's 0 in a puzzle
+//      whose answer has one; for y, 1 shaded, 2 unshaded, 0 neither;
+//      otherwise 0
 //   t  milliseconds since the game started
 //   b  player, 0 or 1. Only a co-op game has a player 1.
 //
 // Undo is unlimited and is itself an action, so the log keeps everything that
 // happened: a mistake that was undone still happened, and the replay and the
 // score both see it.
+//
+// A Yin-Yang puzzle has a shading to find as well as digits: puzzle.shades
+// gives the circles' shades, and solution.shading the answer (seed.js), and
+// a board is complete once its shaded cells are the answer's too, a cell
+// left unmarked counting as unshaded. Shading never scores, and is never a
+// mistake.
 
 import { PEERS } from "./sudoku.js";
 
-export const KINDS = ["p", "e", "n", "h", "u", "s"];
+export const KINDS = ["p", "e", "n", "h", "u", "s", "y"];
 export const MAX_ACTIONS = 2000;
 
-// peers: the cells a placed digit clears that note from.
-function apply(values, notes, a, solution, peers) {
+// peers: the cells a placed digit clears that note from. shading: under
+// Yin-Yang, each cell's shade, or null.
+function apply(values, notes, a, solution, peers, shading) {
   const { k, c } = a;
-  if (k === "p" || k === "h") {
+  // A hint on a cell whose digit is right already only shades it.
+  if (k === "p" || (k === "h" && values[c] !== solution[c])) {
     const d = k === "h" ? solution[c] : a.d;
     values[c] = d;
     notes[c] = 0;
     const bit = 1 << d;
     for (const o of peers[c]) notes[o] &= ~bit;
-  } else if (k === "e") {
+  }
+  if (k === "h" && shading) shading[c] = solution.shading[c];
+  if (k === "y") shading[c] = a.d;
+  if (k === "e") {
     if (values[c]) values[c] = 0;
     else notes[c] = 0;
   } else if (k === "n") {
@@ -41,24 +55,40 @@ function apply(values, notes, a, solution, peers) {
     for (let i = 0; i < 81; i++) {
       values[i] = solution[i];
       notes[i] = 0;
+      // Shaded as the answer is; marks of unshaded, a circle's or the
+      // player's, stay, and nothing more is marked.
+      if (shading && solution.shading[i] === 1) shading[i] = 1;
+      else if (shading?.[i] === 1) shading[i] = 0;
     }
   }
 }
 
-// Why an action cannot be played in this state, or null if it can.
-function problem(a, puzzle, solution, values, notes) {
+// Whether a Yin-Yang cell's shade is wrong: shaded where the answer is not,
+// or the other way round.
+const shadeWrong = (shading, solution, c) => Boolean(shading) && (shading[c] === 1) !== (solution.shading[c] === 1);
+
+// Why an action cannot be played in this state, or null if it can. A cell
+// with its digit given can still be shaded, and hinted for its shade.
+function problem(a, puzzle, solution, values, notes, shading, top) {
   const { k, c, d } = a;
   if (k === "u" || k === "s") return null;
   if (!Number.isInteger(c) || c < 0 || c > 80) return "bad_cell";
-  if (puzzle[c]) return "given";
-  if (k === "p") return Number.isInteger(d) && d >= 1 && d <= 9 && values[c] !== d ? null : "bad_digit";
-  if (k === "n") return Number.isInteger(d) && d >= 1 && d <= 9 && !values[c] ? null : "bad_note";
+  if (k === "y") {
+    if (!shading) return "bad_kind";
+    if (puzzle.shades?.[c]) return "given";
+    return Number.isInteger(d) && d >= 0 && d <= 2 && shading[c] !== d ? null : "bad_shade";
+  }
+  if (puzzle[c]) return k === "h" && shadeWrong(shading, solution, c) ? null : "given";
+  if (k === "p") return Number.isInteger(d) && d >= 1 && d <= top && values[c] !== d ? null : "bad_digit";
+  if (k === "n") return Number.isInteger(d) && d >= 1 && d <= top && !values[c] ? null : "bad_note";
   if (k === "e") return values[c] || notes[c] ? null : "empty";
-  if (k === "h") return values[c] !== solution[c] ? null : "no_hint";
+  if (k === "h") return values[c] !== solution[c] || shadeWrong(shading, solution, c) ? null : "no_hint";
   return "bad_kind";
 }
 
-const isComplete = (values, solution) => values.every((v, i) => v === solution[i]);
+const topDigit = (solution) => (solution.includes(10) ? 10 : 9);
+
+const isComplete = (values, solution, shading) => values.every((v, i) => v === solution[i] && !shadeWrong(shading, solution, i));
 
 // Replays `log` over the puzzle. Stops at the first action that cannot be
 // played and says where. With `frames`, also returns the grid after every
@@ -69,14 +99,20 @@ const isComplete = (values, solution) => values.every((v, i) => v === solution[i
 //
 // steps[i] says what action i did: ok (a placed digit was right), credit (it
 // filled that cell correctly for the first time), and undid (the index of
-// the action an undo took back).
+// the action an undo took back). Under Yin-Yang, shading is each cell's
+// shade, starting from the circles', and every frame has it too.
 export function play(puzzle, solution, log, { frames = false, peers = PEERS } = {}) {
   let values = puzzle.slice();
   let notes = new Array(81).fill(0);
+  const startShading = () => (solution.shading ? Array.from(puzzle.shades ?? new Array(81).fill(0)) : null);
+  let shading = startShading();
+  // The highest digit: 9, or Doppelgänger's 0, 10, if the answer has it.
+  const top = topDigit(solution);
+  const shot = () => ({ values: values.slice(), notes: notes.slice(), ...(shading ? { shading: shading.slice() } : {}) });
   const credited = new Array(81).fill(false);
   const standing = []; // indexes into log of the actions still in effect
   const steps = [];
-  const shots = frames ? [{ values: values.slice(), notes: notes.slice() }] : null;
+  const shots = frames ? [shot()] : null;
   let error = null;
   let complete = false;
   let solved = false;
@@ -91,7 +127,7 @@ export function play(puzzle, solution, log, { frames = false, peers = PEERS } = 
       error = { at: i, reason: "after_end" };
       break;
     }
-    const why = problem(a, puzzle, solution, values, notes);
+    const why = problem(a, puzzle, solution, values, notes, shading, top);
     if (why) {
       error = { at: i, reason: why };
       break;
@@ -116,7 +152,8 @@ export function play(puzzle, solution, log, { frames = false, peers = PEERS } = 
       // cleared, such as notes a placed digit took out of its row.
       values = puzzle.slice();
       notes = new Array(81).fill(0);
-      for (const j of standing) apply(values, notes, log[j], solution, peers);
+      shading = startShading();
+      for (const j of standing) apply(values, notes, log[j], solution, peers, shading);
     } else {
       if (a.k === "p") step.ok = a.d === solution[a.c];
       if ((a.k === "p" && step.ok) || a.k === "h") {
@@ -124,15 +161,15 @@ export function play(puzzle, solution, log, { frames = false, peers = PEERS } = 
         credited[a.c] = true;
       }
       standing.push(i);
-      apply(values, notes, a, solution, peers);
+      apply(values, notes, a, solution, peers, shading);
       if (a.k === "s") solved = true;
     }
     steps.push(step);
-    complete = isComplete(values, solution);
-    if (shots) shots.push({ values: values.slice(), notes: notes.slice() });
+    complete = isComplete(values, solution, shading);
+    if (shots) shots.push(shot());
   }
 
-  return { values, notes, steps, error, complete: complete && !solved, solved, frames: shots };
+  return { values, notes, shading, steps, error, complete: complete && !solved, solved, frames: shots };
 }
 
 /* ---- checking a log from elsewhere ----
@@ -154,7 +191,7 @@ export function fromWire(value, players = 1) {
     const [k, c, d, t, b = 0] = e;
     if (!KINDS.includes(k)) return null;
     if (!Number.isInteger(c) || c < 0 || c > 80) return null;
-    if (!Number.isInteger(d) || d < 0 || d > 9) return null;
+    if (!Number.isInteger(d) || d < 0 || d > 10) return null;
     if (!Number.isInteger(t) || t < last || t > 86400000) return null;
     if (b !== 0 && !(b === 1 && players > 1)) return null;
     last = t;
@@ -212,7 +249,7 @@ export function unpackLog(packed, puzzle, solution) {
     const k = KINDS[v >> 12];
     const c = (v >> 4) & 127;
     const d = v & 15;
-    if (!k || c > 80 || d > 9) return null;
+    if (!k || c > 80 || d > 10) return null;
     log.push({ k, c, d, t: i * 500, b: (v >> 11) & 1 });
   }
   return play(puzzle, solution, log).error ? null : log;
@@ -228,27 +265,39 @@ export function unpackLog(packed, puzzle, solution) {
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-// Kind 0, the commonest by far, is a right digit placed.
-const SHORT = [
+// Kind 0, the commonest by far, is a right digit placed. A digit is one of
+// `top`: 9, or 10 in a Doppelgänger game's link, so the links before it
+// read as they did.
+const shortKindsOf = (top) => [
   { radix: 81, is: (a, sol) => a.k === "p" && a.d === sol[a.c], pack: (a) => a.c, unpack: (v, sol) => ({ k: "p", c: v, d: sol[v] }) },
-  { radix: 729, is: (a) => a.k === "p", pack: (a) => a.c * 9 + a.d - 1, unpack: (v) => ({ k: "p", c: Math.floor(v / 9), d: (v % 9) + 1 }) },
-  { radix: 729, is: (a) => a.k === "n", pack: (a) => a.c * 9 + a.d - 1, unpack: (v) => ({ k: "n", c: Math.floor(v / 9), d: (v % 9) + 1 }) },
+  { radix: 81 * top, is: (a) => a.k === "p", pack: (a) => a.c * top + a.d - 1, unpack: (v) => ({ k: "p", c: Math.floor(v / top), d: (v % top) + 1 }) },
+  { radix: 81 * top, is: (a) => a.k === "n", pack: (a) => a.c * top + a.d - 1, unpack: (v) => ({ k: "n", c: Math.floor(v / top), d: (v % top) + 1 }) },
   { radix: 81, is: (a) => a.k === "e", pack: (a) => a.c, unpack: (v) => ({ k: "e", c: v, d: 0 }) },
   { radix: 81, is: (a) => a.k === "h", pack: (a) => a.c, unpack: (v) => ({ k: "h", c: v, d: 0 }) },
   { radix: 1, is: (a) => a.k === "u", pack: () => 0, unpack: () => ({ k: "u", c: 0, d: 0 }) },
   { radix: 1, is: (a) => a.k === "s", pack: () => 0, unpack: () => ({ k: "s", c: 0, d: 0 }) },
 ];
-const SHORT_KINDS = BigInt(SHORT.length);
+const SHORT = shortKindsOf(9);
+const SHORT_ZERO = shortKindsOf(10);
+// A Yin-Yang puzzle's shading too, a cell and a shade: only in links to
+// one, so the links before it read as they did.
+const SHADE_SHORT = { radix: 243, is: (a) => a.k === "y", pack: (a) => a.c * 3 + a.d, unpack: (v) => ({ k: "y", c: Math.floor(v / 3), d: v % 3 }) };
+const shortKinds = (solution) => {
+  const kinds = topDigit(solution) === 10 ? SHORT_ZERO : SHORT;
+  return solution.shading ? [...kinds, SHADE_SHORT] : kinds;
+};
 
 // players: 2 for a co-op game, whose actions each say whose they were.
 export function packReplay(log, solution, players = 1) {
+  const kinds = shortKinds(solution);
+  const count = BigInt(kinds.length);
   let n = 1n;
   for (let i = log.length - 1; i >= 0; i--) {
     const a = log[i];
-    const kind = SHORT.findIndex((s) => s.is(a, solution));
+    const kind = kinds.findIndex((s) => s.is(a, solution));
     if (players === 2) n = n * 2n + BigInt(a.b & 1);
-    n = n * BigInt(SHORT[kind].radix) + BigInt(SHORT[kind].pack(a));
-    n = n * SHORT_KINDS + BigInt(kind);
+    n = n * BigInt(kinds[kind].radix) + BigInt(kinds[kind].pack(a));
+    n = n * count + BigInt(kind);
   }
   let out = "";
   for (; n > 0n; n /= 64n) out = B64[Number(n % 64n)] + out;
@@ -266,11 +315,13 @@ export function unpackReplay(packed, puzzle, solution, players = 1) {
     if (v < 0) return null;
     n = n * 64n + BigInt(v);
   }
+  const kinds = shortKinds(solution);
+  const count = BigInt(kinds.length);
   const log = [];
   while (n > 1n) {
     if (log.length >= MAX_ACTIONS) return null;
-    const kind = SHORT[Number(n % SHORT_KINDS)];
-    n /= SHORT_KINDS;
+    const kind = kinds[Number(n % count)];
+    n /= count;
     const radix = BigInt(kind.radix);
     const a = kind.unpack(Number(n % radix), solution);
     n /= radix;

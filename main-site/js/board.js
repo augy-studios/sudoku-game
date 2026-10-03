@@ -41,7 +41,13 @@
 // clues, after a #. A Row/Column Indexing mark is a small pointer into its
 // row or column, whose cells are shaded. A Jigsaw's
 // regions take the boxes' place: the boxes lose their edges and tint, and
-// each region gets a heavy line round it instead. Anti-knight, anti-king,
+// each region gets a heavy line round it instead. Under Chaos Construction
+// the boxes go too, with no regions to show until the answer is known, when
+// `regions` brings them; a Chaos Arrow is small chevrons at its cell's edges,
+// pointing the ways it runs, and a Chaos Count a dashed square round its
+// digit. Yin-Yang's shaded cells are tinted, a circle given in a cell's
+// bottom right corner, filled for shaded and hollow for unshaded, and a
+// cell marked unshaded has a small faint ring there. Anti-knight, anti-king,
 // Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV, Global
 // Entropy, Global Mod, Anti-taxicab and Dutch Flatmates have nothing to draw.
 
@@ -51,6 +57,11 @@ import { layout, touching, cagesOf, indexers, circleSets, RULES } from "./varian
 
 const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
 const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
+const CHAOS = RULES.find((r) => r.key === "chaos").bit;
+const DOPPELGANGER = RULES.find((r) => r.key === "doppelganger").bit;
+// A digit as it shows: Doppelgänger's 0 is 10 in a grid.
+const shown = (d) => (d === 10 ? 0 : d);
+const WAY_NAMES = ["up", "right", "down", "left"];
 
 // Box b, place i within it, to the cell's index in reading order.
 const cellAt = (b, i) => (Math.floor(b / 3) * 3 + Math.floor(i / 3)) * 9 + (b % 3) * 3 + (i % 3);
@@ -159,7 +170,7 @@ export class BoardView {
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, relliks, lunchboxes, looksays,
   // equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
-  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, hiddens, rooms, littles,
+  // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, hiddens, rooms, littles,
   // skyscrapers, xsums, ranks, indexings, indexcells and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
   // gathered into a new cage, and path a line being drawn, closed in a loop
@@ -207,13 +218,22 @@ export class BoardView {
     this.rooms = view.rooms ?? [];
     this.circles = view.circles ?? [];
     this.circlesets = view.circlesets ?? [];
+    this.chaosarrows = view.chaosarrows ?? [];
+    this.chaoscounts = view.chaoscounts ?? [];
+    // Yin-Yang's circles, and each cell's shade as played, or the answer's.
+    this.shades = view.shades ?? [];
+    this.shading = view.shading ?? null;
     this.ranks = view.ranks ?? [];
     this.indexings = view.indexings ?? [];
     this.indexcells = view.indexcells ?? [];
     this.regions = view.regions ?? null;
-    this.root.classList.toggle("jigsaw", Boolean(this.regions));
-    // Its box for the peer highlight: a Jigsaw's region, or the 3x3 box.
-    const house = this.regions ?? BOX;
+    const chaos = Boolean(this.rules & CHAOS);
+    // Doppelgänger's ten digits, for the notes.
+    const ten = Boolean(this.rules & DOPPELGANGER);
+    this.root.classList.toggle("jigsaw", Boolean(this.regions) || chaos);
+    // Its box for the peer highlight: a Jigsaw's region, or the 3x3 box;
+    // under Chaos Construction, its region once known, or none.
+    const house = this.regions ?? (chaos ? null : BOX);
     this.spots = view.spots ?? [];
     this.spot = view.spot ?? null;
     this.root.parentElement.classList.toggle("margined", Boolean(view.margin));
@@ -241,7 +261,7 @@ export class BoardView {
       const v = values[c];
       const given = puzzle[c] !== 0;
       const wrong = view.wrong ? view.wrong.has(c) : !given && v !== 0 && v !== solution[c];
-      const peer = view.highlightPeers && sel != null && c !== sel && (ROW[c] === ROW[sel] || COL[c] === COL[sel] || house[c] === house[sel]);
+      const peer = view.highlightPeers && sel != null && c !== sel && (ROW[c] === ROW[sel] || COL[c] === COL[sel] || (house && house[c] === house[sel]));
       // Notes holding the digit light up on their own, below.
       const same = view.highlightSame && focusDigit && v === focusDigit;
       const cls = [
@@ -256,21 +276,22 @@ export class BoardView {
         heads.has(c) ? "cage-head" : "",
         windows.has(c) ? "window" : "",
         indexed[c] ? (indexed[c] > 1 ? "indexing-twice" : "indexing") : "",
+        this.shading?.[c] === 1 ? "shade-dark" : "",
       ]
         .filter(Boolean)
         .join(" ");
       if (cell.className !== cls) cell.className = cls;
 
-      const key = v ? `v${v}` : `n${notes[c]}|${focusDigit}`;
+      const key = v ? `v${v}` : `n${notes[c]}|${focusDigit}|${ten}`;
       if (this.keys[c] !== key) {
         this.keys[c] = key;
         if (v) {
-          cell.textContent = String(v);
+          cell.textContent = String(shown(v));
         } else if (notes[c]) {
-          let html = `<span class="notes">`;
-          for (let d = 1; d <= 9; d++) {
+          let html = `<span class="notes${ten ? " ten" : ""}">`;
+          for (let d = 1; d <= (ten ? 10 : 9); d++) {
             const on = notes[c] & (1 << d);
-            html += `<span class="${on && view.highlightSame && d === focusDigit ? "on" : ""}">${on ? d : ""}</span>`;
+            html += `<span class="${on && view.highlightSame && d === focusDigit ? "on" : ""}">${on ? shown(d) : ""}</span>`;
           }
           cell.innerHTML = `${html}</span>`;
         } else {
@@ -282,8 +303,15 @@ export class BoardView {
       const cage = this.cages.find((k) => k.cells.includes(c));
       if (cage) label += `${cage.words}, `;
       if (circled.has(c)) label += sets > 1 ? `in a counting circle of set ${circled.get(c) + 1}, ` : "in a counting circle, ";
-      if (v) label += `${v}${wrong ? ", wrong" : given ? ", given" : ""}`;
-      else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9].filter((d) => notes[c] & (1 << d)).join(" ")}`;
+      const pointer = this.chaosarrows.find((a) => a.cell === c);
+      if (pointer) label += `a chaos arrow pointing ${WAY_NAMES.filter((_, i) => pointer.ways & (1 << i)).join(" and ")}, `;
+      if (this.chaoscounts.includes(c)) label += "a chaos count, ";
+      const circle = this.shades.find((s) => s.cell === c)?.shade ?? 0;
+      const shade = circle || (this.shading?.[c] ?? 0);
+      if (circle) label += circle === 1 ? "a shaded circle, " : "an unshaded circle, ";
+      else if (shade) label += shade === 1 ? "shaded, " : "marked unshaded, ";
+      if (v) label += `${shown(v)}${wrong ? ", wrong" : given ? ", given" : ""}`;
+      else if (notes[c]) label += `notes ${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter((d) => notes[c] & (1 << d)).map(shown).join(" ")}`;
       else label += "empty";
       if (cell.getAttribute("aria-label") !== label) cell.setAttribute("aria-label", label);
       cell.tabIndex = interactive && c === (sel ?? 0) ? 0 : -1;
@@ -315,17 +343,23 @@ export class BoardView {
     const quads = this.quads ?? [];
     const circles = circleSets(this.circles ?? [], this.circlesets ?? []);
     const indexcells = this.indexcells ?? [];
+    const chaosarrows = this.chaosarrows ?? [];
+    const chaoscounts = this.chaoscounts ?? [];
+    const shades = this.shades ?? [];
+    // Cells marked unshaded, as played: their own circles show as given.
+    const given = new Set(shades.map((s) => s.cell));
+    const unshaded = this.shading ? [...Array(81).keys()].filter((c) => this.shading[c] === 2 && !given.has(c)) : [];
     const outside = [this.sandwiches ?? [], this.littles ?? [], this.skyscrapers ?? [], this.xsums ?? [], this.hiddens ?? [], this.rooms ?? [], this.ranks ?? [], this.indexings ?? [], this.spots ?? [], this.spot];
     const path = this.path ?? [];
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
     const lines = [thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes];
-    const key = JSON.stringify([cages, diagonal, lines, edges, quads, circles, indexcells, outside, margin, regions, path, this.pathLoop, this.pathKind, this.pathPill]);
+    const key = JSON.stringify([cages, diagonal, lines, edges, quads, circles, indexcells, chaosarrows, chaoscounts, shades, unshaded, outside, margin, regions, path, this.pathLoop, this.pathKind, this.pathPill]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
     const layer = this.cageLayer;
-    const drawn = [cages, ...lines, edges, quads, circles, indexcells, path, ...outside.slice(0, -1)].some((list) => list.length);
+    const drawn = [cages, ...lines, edges, quads, circles, indexcells, chaosarrows, chaoscounts, shades, unshaded, path, ...outside.slice(0, -1)].some((list) => list.length);
     if (!drawn && !diagonal && !this.spot && !regions) {
       layer.innerHTML = "";
       return;
@@ -713,6 +747,42 @@ export class BoardView {
           const [dx, dy] = column ? [0, 1] : [1, 0];
           const k = w * 0.1;
           return `<path class="index-mark" d="M${f(px + dx * k)} ${f(py + dy * k)}L${f(px - dy * k)} ${f(py - dx * k)}L${f(px + dy * k)} ${f(py + dx * k)}Z"/>`;
+        })
+        .join("") +
+      // Chaos Counts: a dashed square round the digit.
+      chaoscounts
+        .map((c) => {
+          const { x, y, w } = centre(c);
+          const r = w * 0.38;
+          return `<rect class="chaos-count" x="${f(x - r)}" y="${f(y - r)}" width="${f(2 * r)}" height="${f(2 * r)}" rx="${f(w * 0.06)}" stroke-dasharray="${f(w * 0.09)} ${f(w * 0.06)}"/>`;
+        })
+        .join("") +
+      // Chaos Arrows: a chevron just inside each edge it points through.
+      chaosarrows
+        .map(({ cell, ways }) => {
+          const { x, y, w } = centre(cell);
+          const marks = [[0, -1], [1, 0], [0, 1], [-1, 0]]
+            .filter((_, i) => ways & (1 << i))
+            .map(([dx, dy]) => {
+              const [tip, base, half] = [w * 0.42, w * 0.32, w * 0.09];
+              return `M${f(x + dx * base - dy * half)} ${f(y + dy * base - dx * half)}L${f(x + dx * tip)} ${f(y + dy * tip)}L${f(x + dx * base + dy * half)} ${f(y + dy * base + dx * half)}`;
+            })
+            .join("");
+          return `<path class="chaos-arrow" d="${marks}" stroke-width="${f(w * 0.05)}"/>`;
+        })
+        .join("") +
+      // Yin-Yang: a circle given in the bottom right corner, filled for
+      // shaded, hollow for unshaded; a cell marked unshaded, a faint ring.
+      shades
+        .map(({ cell, shade }) => {
+          const { x, y, w, h } = rect(cell);
+          return `<circle class="shade-given ${shade === 1 ? "shaded" : "unshaded"}" cx="${f(x + w * 0.8)}" cy="${f(y + h * 0.8)}" r="${f(w * 0.12)}" stroke-width="${f(w * 0.035)}"/>`;
+        })
+        .join("") +
+      unshaded
+        .map((cell) => {
+          const { x, y, w, h } = rect(cell);
+          return `<circle class="shade-mark" cx="${f(x + w * 0.8)}" cy="${f(y + h * 0.8)}" r="${f(w * 0.08)}" stroke-width="${f(w * 0.03)}"/>`;
         })
         .join("");
     layer.innerHTML = `${walls}${marks}${diagonals}${onCells}<path class="cage-line" d="${dashed}"/><path class="cage-line cage-solid" d="${solid}"/>${sums}${lineSums}${onSides}${onCorners}${outsides}`;

@@ -66,6 +66,15 @@ import {
   circleProblem,
   circleSetProblem,
   circleSets,
+  chaosArrowProblem,
+  chaosCountProblem,
+  chaosArms,
+  chaosAround,
+  waysFrom,
+  shadeProblem,
+  zeroClash,
+  ZERO,
+  VALUE,
   rankProblem,
   rankStart,
   rankBelow,
@@ -90,9 +99,11 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "chaosarrows", "chaoscounts", "shades", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
-const regionsOf = (v) => (v?.regions?.length ? v.regions : null);
+// Under Chaos Construction the regions are found, never given.
+const chaosOf = (v) => hasRule(v?.rules ?? 0, "chaos");
+const regionsOf = (v) => (v?.regions?.length && !chaosOf(v) ? v.regions : null);
 const isVariant = (v) => Boolean(v?.rules || regionsOf(v) || DRAWN.some((list) => v?.[list]?.length));
 // The cells each cell must differ from: its row, column and box, or under a
 // variant its region and the rules' too.
@@ -107,9 +118,10 @@ export function parseGrid(text) {
 }
 
 // The other way: a grid as 81 characters, . for a blank, which parseGrid
-// and most sudoku apps read.
+// and most sudoku apps read; Doppelgänger's 0 as 0, which they read as a
+// blank, so only its answer is ever written so.
 export function puzzleText(grid) {
-  return grid.map((d) => (d ? String(d) : ".")).join("");
+  return grid.map((d) => (d ? String(VALUE[d]) : ".")).join("");
 }
 
 export function bitCount(mask) {
@@ -181,7 +193,9 @@ export function bitCount(mask) {
 // height, or its height shows; a Numbered Room's first digit, with the
 // digit it points at when that is some other, or with the clue's digit when
 // that sits somewhere else; a digit in more circles of its set than itself,
-// or all of them once too few are left empty to make up the count; a Full
+// or all of them once too few are left empty to make up the count; a Chaos
+// Arrow or Count whose digit is more than it could count, or 1 where it
+// counts a cell beside it; a Full
 // Rank view's first digit when it is not its rank's, or with the views
 // starting with it once more of them are smaller, or larger, than the rank
 // allows, the places that decide it, or once one is the same number; under
@@ -193,12 +207,18 @@ export function bitCount(mask) {
 export function clashes(grid, variant = null) {
   const peers = peersOf(variant);
   const out = new Set();
+  // Each cell's value, Doppelgänger's 0 being 0; and the least an empty
+  // cell can add to a sum.
+  // Never with Chaos Construction, whose houses are rows and columns alone.
+  const zero = hasRule(variant?.rules ?? 0, "doppelganger") && !chaosOf(variant);
+  const val = grid.map((d) => VALUE[d] ?? d);
+  const least = zero ? 0 : 1;
   for (let c = 0; c < 81; c++) {
     if (grid[c] && peers[c].some((o) => grid[o] === grid[c])) out.add(c);
   }
   for (const { sum, cells } of variant?.cages ?? []) {
     const filled = cells.filter((c) => grid[c]);
-    const total = filled.reduce((t, c) => t + grid[c], 0);
+    const total = filled.reduce((t, c) => t + val[c], 0);
     const repeats = filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c]));
     if (total > sum || (filled.length === cells.length && total !== sum)) filled.forEach((c) => out.add(c));
     repeats.forEach((c) => out.add(c));
@@ -208,14 +228,14 @@ export function clashes(grid, variant = null) {
     const filled = cells.filter((c) => grid[c]);
     for (let set = 1; set < 1 << filled.length; set++) {
       const taken = filled.filter((_, i) => set & (1 << i));
-      if (taken.reduce((t, c) => t + grid[c], 0) === sum) taken.forEach((c) => out.add(c));
+      if (taken.reduce((t, c) => t + val[c], 0) === sum) taken.forEach((c) => out.add(c));
     }
   }
   for (const { sum, cells } of variant?.lunchboxes ?? []) {
     const filled = cells.filter((c) => grid[c]);
     filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
     if (filled.length < cells.length) continue;
-    const digits = cells.map((c) => grid[c]);
+    const digits = cells.map((c) => val[c]);
     const [i, j] = [digits.indexOf(Math.min(...digits)), digits.indexOf(Math.max(...digits))].sort((p, q) => p - q);
     if (digits.slice(i + 1, j).reduce((t, d) => t + d, 0) !== sum) cells.forEach((c) => out.add(c));
   }
@@ -234,7 +254,7 @@ export function clashes(grid, variant = null) {
   }
   for (const { cells } of variant?.equalities ?? []) {
     const filled = cells.filter((c) => grid[c]);
-    filled.filter((c) => grid[c] === 5 || filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
+    filled.filter((c) => grid[c] === 5 || grid[c] === ZERO || filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
     for (const half of [[1, 2, 3, 4], [6, 7, 8, 9], [1, 3, 7, 9], [2, 4, 6, 8]]) {
       const some = filled.filter((c) => half.includes(grid[c]));
       if (some.length > cells.length / 2) some.forEach((c) => out.add(c));
@@ -243,7 +263,7 @@ export function clashes(grid, variant = null) {
   for (const { cells } of variant?.equalsums ?? []) {
     const pieces = piecesOf(cells).map((piece) => {
       const filled = piece.filter((c) => grid[c]);
-      return { filled, empty: piece.length - filled.length, total: filled.reduce((t, c) => t + grid[c], 0) };
+      return { filled, empty: piece.length - filled.length, total: filled.reduce((t, c) => t + val[c], 0) };
     });
     const totals = new Set(pieces.filter((p) => !p.empty).map((p) => p.total));
     if (totals.size > 1) pieces.filter((p) => !p.empty).forEach((p) => p.filled.forEach((c) => out.add(c)));
@@ -273,8 +293,8 @@ export function clashes(grid, variant = null) {
     if (!holds.length && cells.every((c) => grid[c])) cells.forEach((c) => out.add(c));
   }
   for (const { control, cells } of variant?.distincts ?? []) {
-    const k = grid[control];
-    if (!k) continue;
+    if (!grid[control]) continue;
+    const k = val[control];
     const counted = cells.filter((c) => c !== control);
     const filled = counted.filter((c) => grid[c]);
     const seen = new Set(filled.map((c) => grid[c])).size;
@@ -283,7 +303,7 @@ export function clashes(grid, variant = null) {
   for (const t of variant?.thermos ?? []) {
     for (let i = 0; i < t.length; i++) {
       for (let j = i + 1; j < t.length; j++) {
-        if (grid[t[i]] && grid[t[j]] && grid[t[j]] - grid[t[i]] < j - i) {
+        if (grid[t[i]] && grid[t[j]] && val[t[j]] - val[t[i]] < j - i) {
           out.add(t[i]);
           out.add(t[j]);
         }
@@ -292,8 +312,8 @@ export function clashes(grid, variant = null) {
   }
   for (const [circle, ...cells] of variant?.arrows ?? []) {
     const filled = cells.filter((c) => grid[c]);
-    const total = filled.reduce((t, c) => t + grid[c], 0);
-    const target = grid[circle] || 9;
+    const total = filled.reduce((t, c) => t + val[c], 0);
+    const target = grid[circle] ? val[circle] : 9;
     if (total > target || (grid[circle] && filled.length === cells.length && total !== target)) {
       filled.forEach((c) => out.add(c));
       if (grid[circle]) out.add(circle);
@@ -309,9 +329,9 @@ export function clashes(grid, variant = null) {
     cells.forEach((c, i) => {
       const w = weights[i];
       if (w > 0) {
-        lo += w * (grid[c] || 1);
-        hi += w * (grid[c] || 9);
-      } else if (grid[c]) total -= w * grid[c];
+        lo += w * (grid[c] ? val[c] : least);
+        hi += w * (grid[c] ? val[c] : 9);
+      } else if (grid[c]) total -= w * val[c];
       else full = false;
     });
     if (total > hi || (full && total < lo)) cells.filter((c) => grid[c]).forEach((c) => out.add(c));
@@ -320,7 +340,7 @@ export function clashes(grid, variant = null) {
   for (const t of variant?.whispers ?? []) {
     for (let i = 1; i < t.length; i++) {
       const [a, b] = [t[i - 1], t[i]];
-      if (grid[a] && grid[b] && Math.abs(grid[a] - grid[b]) < gap) {
+      if (grid[a] && grid[b] && Math.abs(val[a] - val[b]) < gap) {
         out.add(a);
         out.add(b);
       }
@@ -328,7 +348,7 @@ export function clashes(grid, variant = null) {
   }
   for (const t of variant?.renbans ?? []) {
     const filled = t.filter((c) => grid[c]);
-    const digits = filled.map((c) => grid[c]);
+    const digits = filled.map((c) => val[c]);
     if (Math.max(...digits) - Math.min(...digits) >= t.length) filled.forEach((c) => out.add(c));
     filled.filter((c) => filled.some((o) => o !== c && grid[o] === grid[c])).forEach((c) => out.add(c));
   }
@@ -345,14 +365,15 @@ export function clashes(grid, variant = null) {
     const mid = n % 2 ? t[(n - 1) / 2] : -1;
     const pairs = [];
     for (let i = 0, j = n - 1; i < j; i++, j--) if (grid[t[i]] && grid[t[j]]) pairs.push([t[i], t[j]]);
-    const total = ([a, b]) => grid[a] + grid[b];
-    const target = mid >= 0 ? grid[mid] : 0;
+    const total = ([a, b]) => val[a] + val[b];
+    const known = mid >= 0 && grid[mid];
+    const target = known ? val[mid] : 0;
     let off;
-    if (target) off = pairs.filter((p) => total(p) !== target);
+    if (known) off = pairs.filter((p) => total(p) !== target);
     else if (pairs.some((p) => total(p) !== total(pairs[0]))) off = pairs;
     else off = mid >= 0 ? pairs.filter((p) => total(p) > 9) : [];
     off.flat().forEach((c) => out.add(c));
-    if (off.length && target) out.add(mid);
+    if (off.length && known) out.add(mid);
   }
   for (const [list, inside] of [
     ["betweens", betweenInside],
@@ -362,7 +383,7 @@ export function clashes(grid, variant = null) {
       const [a, b] = [t[0], t.at(-1)];
       const filled = t.slice(1, -1).filter((c) => grid[c]);
       if (grid[a] && grid[b]) {
-        const m = inside(grid[a], grid[b]);
+        const m = inside(val[a], val[b]);
         const off = m < 0 ? [] : filled.filter((c) => !(m & (1 << grid[c])));
         if (m < 0 || (!m && t.length > 2) || off.length) [a, b, ...off].forEach((c) => out.add(c));
       }
@@ -401,7 +422,7 @@ export function clashes(grid, variant = null) {
       let i = 0;
       for (; i < t.length && grid[t[i]]; i++) {
         run.push(t[i]);
-        total += grid[t[i]];
+        total += val[t[i]];
         if (total > sum) break;
         if (total === sum) {
           run = [];
@@ -412,9 +433,10 @@ export function clashes(grid, variant = null) {
       if (total > sum || (i === t.length && total)) run.forEach((c) => out.add(c));
     }
   }
-  for (const runs of regionRuns(variant?.regionsums, regionsOf(variant))) {
+  // Under Chaos Construction the regions are not known until solved.
+  for (const runs of chaosOf(variant) ? [] : regionRuns(variant?.regionsums, regionsOf(variant))) {
     const full = runs.filter((run) => run.every((c) => grid[c]));
-    const totals = full.map((run) => run.reduce((t, c) => t + grid[c], 0));
+    const totals = full.map((run) => run.reduce((t, c) => t + val[c], 0));
     if (new Set(totals).size > 1) {
       full.flat().forEach((c) => out.add(c));
       continue;
@@ -423,13 +445,13 @@ export function clashes(grid, variant = null) {
     // Each empty cell of a run adds 1 at least.
     for (const run of runs) {
       const filled = run.filter((c) => grid[c]);
-      if (filled.reduce((t, c) => t + grid[c], 0) + run.length - filled.length > totals[0]) filled.forEach((c) => out.add(c));
+      if (filled.reduce((t, c) => t + val[c], 0) + least * (run.length - filled.length) > totals[0]) filled.forEach((c) => out.add(c));
     }
   }
   for (const t of variant?.indexes ?? []) {
     const [v, k] = t;
     if (!grid[k]) continue;
-    if (grid[k] > t.length - 2) out.add(k);
+    if (grid[k] === ZERO || grid[k] > t.length - 2) out.add(k);
     else if (grid[v] && grid[t[grid[k] + 1]] && grid[t[grid[k] + 1]] !== grid[v]) [v, k, t[grid[k] + 1]].forEach((c) => out.add(c));
   }
   for (const { cell, digits } of variant?.quads ?? []) {
@@ -466,7 +488,8 @@ export function clashes(grid, variant = null) {
   }
   if (hasRule(variant?.rules, "antitaxicab")) {
     for (let c = 0; c < 81; c++) {
-      if (grid[c] && TAXICAB[c][grid[c]].some((o) => grid[o] === grid[c])) out.add(c);
+      // Never under Doppelgänger, whose 0 has no steps: none.
+      if (grid[c] && (TAXICAB[c][grid[c]] ?? []).some((o) => grid[o] === grid[c])) out.add(c);
     }
   }
   if (hasRule(variant?.rules, "dutchflatmates")) {
@@ -485,12 +508,12 @@ export function clashes(grid, variant = null) {
     if (i < 0 || j < 0) continue;
     const inside = cells.slice(Math.min(i, j) + 1, Math.max(i, j));
     const filled = inside.filter((c) => grid[c]);
-    const total = filled.reduce((t, c) => t + grid[c], 0);
+    const total = filled.reduce((t, c) => t + val[c], 0);
     if (total > sum || (filled.length === inside.length && total !== sum)) [cells[i], cells[j], ...filled].forEach((c) => out.add(c));
   }
   for (const { cells, sum } of variant?.littles ?? []) {
     const filled = cells.filter((c) => grid[c]);
-    const total = filled.reduce((t, c) => t + grid[c], 0);
+    const total = filled.reduce((t, c) => t + val[c], 0);
     if (total > sum || (filled.length === cells.length && total !== sum)) filled.forEach((c) => out.add(c));
   }
   for (const { view, count } of variant?.skyscrapers ?? []) {
@@ -498,23 +521,24 @@ export function clashes(grid, variant = null) {
     // The digits from the clue on, up to the first gap.
     const gap = cells.findIndex((c) => !grid[c]);
     const run = gap < 0 ? cells : cells.slice(0, gap);
-    const digits = run.map((c) => grid[c]);
+    const digits = run.map((c) => val[c]);
     const shown = seen(digits);
-    if (shown > count || (digits.includes(9) && shown !== count)) run.forEach((c) => out.add(c));
+    // A full line has its tallest, 9, or under Doppelgänger maybe an 8.
+    if (shown > count || ((digits.includes(9) || digits.length === 9) && shown !== count)) run.forEach((c) => out.add(c));
   }
   for (const { view, sum } of variant?.xsums ?? []) {
     const cells = VIEWS[view];
-    const x = grid[cells[0]];
-    if (!x) continue;
+    if (!grid[cells[0]]) continue;
+    const x = val[cells[0]];
     const filled = cells.slice(0, x).filter((c) => grid[c]);
-    const total = filled.reduce((t, c) => t + grid[c], 0);
+    const total = filled.reduce((t, c) => t + val[c], 0);
     if (total > sum || (filled.length === x && total !== sum)) filled.forEach((c) => out.add(c));
   }
   for (const { view, height } of variant?.hiddens ?? []) {
     const cells = VIEWS[view];
     let top = 0;
     for (let k = 0; k < 9 && grid[cells[k]]; k++) {
-      const d = grid[cells[k]];
+      const d = val[cells[k]];
       const hidden = d < top;
       if (hidden ? d !== height : d === height) cells.slice(0, k + 1).forEach((c) => out.add(c));
       if (hidden) break;
@@ -525,12 +549,31 @@ export function clashes(grid, variant = null) {
     const cells = VIEWS[view];
     const x = grid[cells[0]];
     if (!x) continue;
+    // Doppelgänger's 0 counts no cell in.
+    if (x === ZERO) {
+      out.add(cells[0]);
+      continue;
+    }
     const pointed = cells[x - 1];
     if (grid[pointed] && grid[pointed] !== digit) [cells[0], pointed].forEach((c) => out.add(c));
     const at = cells.findIndex((c) => grid[c] === digit);
     if (at >= 0 && at !== x - 1) [cells[0], cells[at]].forEach((c) => out.add(c));
   }
+  // Chaos Arrows and Counts, with the regions not yet known: a digit past
+  // what the cells they could count could make, or a 1 that every way it
+  // could run would make 2 at least, as a region joins up with a cell
+  // beside it.
+  for (const { cell, ways } of variant?.chaosarrows ?? []) {
+    const d = grid[cell];
+    if (d && (d > 1 + chaosArms(cell, ways).reduce((t, arm) => t + arm.length, 0) || (d === 1 && ways === waysFrom(cell)))) out.add(cell);
+  }
+  for (const cell of variant?.chaoscounts ?? []) {
+    const d = grid[cell];
+    if (d && (d === 1 || d > 1 + chaosAround(cell).length)) out.add(cell);
+  }
   for (const circles of circleSets(variant?.circles, variant?.circlesets)) {
+    // A 0 would be in no circles, its own one among them.
+    circles.filter((c) => grid[c] === ZERO).forEach((c) => out.add(c));
     const open = circles.filter((c) => !grid[c]).length;
     for (let d = 1; d <= 9; d++) {
       const have = circles.filter((c) => grid[c] === d);
@@ -573,6 +616,7 @@ export function clashes(grid, variant = null) {
   if (hasRule(variant?.rules, "norankties")) {
     for (const [a, b] of TIE_PAIRS) if (a.every((c, j) => grid[c] && grid[c] === grid[b[j]])) [...a, ...b].forEach((c) => out.add(c));
   }
+  if (zero) for (const c of doppelClashes(grid, variant)) out.add(c);
   for (const { cell, targets, digit } of indexers(variant?.indexings, variant?.indexcells)) {
     const x = grid[cell];
     if (!x) continue;
@@ -580,6 +624,32 @@ export function clashes(grid, variant = null) {
     if (grid[pointed] && grid[pointed] !== digit) [cell, pointed].forEach((c) => out.add(c));
     const at = targets.findIndex((c) => grid[c] === digit);
     if (at >= 0 && at !== x - 1) [cell, targets[at]].forEach((c) => out.add(c));
+  }
+  return out;
+}
+
+// Under Doppelgänger, a row, column or box with no room left for its 0;
+// two full rows missing the same digit, or two columns or two boxes, all
+// their cells; and a 0 whose full row, column and box miss a digit twice
+// between them, with those houses' cells.
+function doppelClashes(grid, variant) {
+  const out = new Set();
+  const { houses } = layout(variant.rules, regionsOf(variant));
+  const missing = houses.slice(0, 27).map(({ cells }) => {
+    if (!cells.some((c) => !grid[c] || grid[c] === ZERO)) cells.forEach((c) => out.add(c));
+    if (!cells.every((c) => grid[c])) return 0;
+    return [1, 2, 3, 4, 5, 6, 7, 8, 9].find((d) => !cells.some((c) => grid[c] === d)) ?? 0;
+  });
+  for (let from = 0; from < 27; from += 9) {
+    for (let h = from; h < from + 9; h++) {
+      for (let o = h + 1; o < from + 9; o++) if (missing[h] && missing[h] === missing[o]) [...houses[h].cells, ...houses[o].cells].forEach((c) => out.add(c));
+    }
+  }
+  for (let c = 0; c < 81; c++) {
+    if (grid[c] !== ZERO) continue;
+    const mine = [0, 9, 18].map((from) => houses.slice(from, from + 9).findIndex((h) => h.cells.includes(c)) + from);
+    const known = mine.filter((h) => missing[h]);
+    if (new Set(known.map((h) => missing[h])).size < known.length) [c, ...known.flatMap((h) => houses[h].cells)].forEach((o) => out.add(o));
   }
   return out;
 }
@@ -607,10 +677,12 @@ export function candidates(grid, variant = null) {
 function* steps(grid, variant) {
   const cand = candidates(grid, variant);
   for (let c = 0; c < 81; c++) {
-    if (!grid[c] && bitCount(cand[c]) === 1) yield { c, d: DIGITS.find((d) => cand[c] === 1 << d), kind: "single" };
+    if (!grid[c] && bitCount(cand[c]) === 1) yield { c, d: 31 - Math.clz32(cand[c]), kind: "single" };
   }
-  for (const unit of layout(variant?.rules ?? 0, regionsOf(variant)).houses) {
-    for (const d of DIGITS) {
+  const zero = hasRule(variant?.rules ?? 0, "doppelganger") && !chaosOf(variant);
+  const units = layout(variant?.rules ?? 0, regionsOf(variant)).houses;
+  for (const unit of zero ? units.slice(0, 27) : units) {
+    for (const d of zero ? [ZERO] : DIGITS) {
       const bit = 1 << d;
       let spot = -1;
       let n = 0;
@@ -655,11 +727,17 @@ export const MIN_CLUES = 17;
 // "signs", "quads",
 // "circles" (also for a cell in two sets), "circlesets", "sandwiches",
 // "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks",
-// "indexings", "indexcells" or "regions" (and
-// problem, from cageProblem, thermoProblem and so on),
+// "indexings", "indexcells", "chaosarrows", "chaoscounts", "shades" or
+// "regions"
+// (and problem, from cageProblem, thermoProblem and so on), "chaosrule"
+// (Chaos Arrows or Counts without Chaos Construction), "zero" (and rule,
+// the name of one that cannot go with Doppelgänger),
 // "few" (and n, the clues there
 // are), "none", "hard" (the checker gave up), or "many" (and c, a cell two
-// of the answers disagree on, and the two digits they put there). A
+// of the answers disagree on, and the two digits they put there), or under
+// Chaos Construction "cuts" (and c, a cell two answers with the same
+// digits put in regions cut differently), or under Yin-Yang "shading"
+// (and c, a cell two answers with the same digits shade differently). A
 // variant's rules do some of the clues' work, so it has no least number of
 // clues, and one with anything drawn, cages or lines or clues outside, can
 // have none at all.
@@ -670,10 +748,13 @@ export function checkClues(clues, variant = null) {
   // about the puzzle means much.
   const regionsWrong = regionsOf(variant) && regionProblem(variant.regions);
   if (regionsWrong) return { ok: false, why: "regions", problem: regionsWrong };
+  // Doppelgänger's 0 means nothing to some rules.
+  const clash = zeroClash(variant);
+  if (clash) return { ok: false, why: "zero", rule: clash };
   if (!n && !DRAWN.some((list) => variant?.[list]?.length)) return { ok: false, why: "empty" };
   if (clashes(clues, variant).size) return { ok: false, why: "clash" };
   if (killer) {
-    const problem = cageProblem(variant.cages);
+    const problem = cageProblem(variant.cages, variant.rules);
     if (problem) return { ok: false, why: "cages", problem };
   } else if (!isVariant(variant) && n < MIN_CLUES) return { ok: false, why: "few", n };
   for (const [list, partProblem] of [
@@ -686,7 +767,7 @@ export function checkClues(clues, variant = null) {
     ["connecteds", connectedProblem],
     ["distincts", distinctProblem],
   ]) {
-    const problem = variant?.[list]?.length && partProblem(variant[list]);
+    const problem = variant?.[list]?.length && partProblem(variant[list], variant.rules);
     if (problem) return { ok: false, why: list, problem };
   }
   // One cell, one cage, whatever the kinds.
@@ -752,7 +833,7 @@ export function checkClues(clues, variant = null) {
     if (problem) return { ok: false, why: "sandwiches", problem };
   }
   if (variant?.littles?.length) {
-    const problem = littleProblem(variant.littles);
+    const problem = littleProblem(variant.littles, variant.rules);
     if (problem) return { ok: false, why: "littles", problem };
   }
   if (variant?.skyscrapers?.length) {
@@ -771,10 +852,15 @@ export function checkClues(clues, variant = null) {
     ["ranks", rankProblem],
     ["indexings", indexingProblem],
     ["indexcells", indexCellProblem],
+    ["chaosarrows", chaosArrowProblem],
+    ["chaoscounts", chaosCountProblem],
+    ["shades", shadeProblem],
   ]) {
     const problem = variant?.[list]?.length && clueProblem(variant[list]);
     if (problem) return { ok: false, why: list, problem };
   }
+  // Chaos Arrows and Counts are about regions found while solving.
+  if ((variant?.chaosarrows?.length || variant?.chaoscounts?.length) && !chaosOf(variant)) return { ok: false, why: "chaosrule" };
   // One circle to a cell, whatever its set.
   const circled = circleSets(variant?.circles, variant?.circlesets).flat();
   if (new Set(circled).size < circled.length) return { ok: false, why: "circles", problem: { why: "twice" } };
@@ -784,6 +870,11 @@ export function checkClues(clues, variant = null) {
   const [a, b] = found;
   if (!b) return { ok: true, solution: a };
   const c = a.findIndex((d, i) => d !== b[i]);
+  // Under Chaos Construction, the same digits cut two ways; under
+  // Yin-Yang, shaded two ways.
+  const apart = (list) => a[list]?.findIndex((x, i) => x !== b[list][i]) ?? -1;
+  if (c < 0 && apart("regions") >= 0) return { ok: false, why: "cuts", c: apart("regions") };
+  if (c < 0) return { ok: false, why: "shading", c: apart("shading") };
   return { ok: false, why: "many", c, digits: [a[c], b[c]].sort((x, y) => x - y) };
 }
 
@@ -797,7 +888,7 @@ export function rateLevel(clues, variant = null) {
   // A puzzle with cages of any kind, or with clues outside the grid, usually
   // has few clues or none, so blanks say little: what counts is how far
   // singles get with the cages and the sums.
-  if ([...CAGE_LISTS.map((k) => k.list), "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
+  if ([...CAGE_LISTS.map((k) => k.list), "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "chaosarrows", "chaoscounts"].some((list) => variant?.[list]?.length)) return grid.every(Boolean) ? (blanks <= 60 ? "M" : "H") : "X";
   if (!grid.every(Boolean)) return blanks <= 50 ? "H" : "X";
   return blanks <= 44 ? "E" : blanks <= 50 ? "M" : blanks <= 56 ? "H" : "X";
 }

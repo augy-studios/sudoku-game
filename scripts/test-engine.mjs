@@ -99,6 +99,17 @@ import {
   touching,
   layout,
   RULES,
+  chaosArrowProblem,
+  chaosCountProblem,
+  chaosArms,
+  chaosAround,
+  notePeers,
+  shadeProblem,
+  shadings,
+  shadingKeeps,
+  SHADED,
+  UNSHADED,
+  ZERO,
 } from "../main-site/js/variant.js";
 
 const killerSolutions = (grid, cages, limit) => variantSolutions(grid, { cages }, limit);
@@ -2837,6 +2848,378 @@ test("Jigsaw regions are checked, solved and carried in seeds", () => {
   for (const list of Object.keys(all)) assert.deepEqual(mixed[list], all[list], list);
 });
 
+// Chaos Construction: regions found while solving. One puzzle with Chaos
+// Arrows alone and no givens, "Chaos construction" from the Interactive
+// Sudoku Solver's examples; and one on a Jigsaw's grid, its regions to be
+// found from arrows, counts and givens.
+const CHAOS_ARROWS = [
+  [0, 4], [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [8, 4],
+  [39, 5], [9, 2], [10, 10], [13, 10], [18, 2], [36, 2], [67, 10], [70, 10], [72, 2], [77, 10],
+  [14, 15], [20, 15], [48, 15], [51, 15], [68, 15],
+]
+  .map(([cell, ways]) => ({ cell, ways }))
+  .sort((a, b) => a.cell - b.cell);
+const CHAOS_ANSWER = "624135789139726854245879361961384572357418296872641935713592648486957123598263417";
+const CHAOS_JIGSAW = {
+  regions: "000000021453303021453333221453322221455566121445666111445566667488887777888887777",
+  solution: "364891527189374265542168739625719843213987456937456182876523914498235671751642398",
+  puzzle: "004001000180300065002160709620700800003007000900000182800000910000030001001642308",
+  chaosarrows: [[1, 2], [28, 14], [31, 9], [35, 4], [37, 12], [38, 11], [46, 13], [49, 15], [51, 12], [54, 7], [59, 6], [61, 7], [66, 5], [78, 9]].map(([cell, ways]) => ({ cell, ways })),
+  chaoscounts: [35, 48, 70, 73, 75, 76],
+};
+const digitsOf = (text) => [...text].map(Number);
+
+// Whether a grid and its regions keep every rule of Chaos Construction:
+// nine regions of nine joined cells, each holding 1 to 9, in sortRegions'
+// order, and each arrow and count saying its digit.
+function keepsChaos(grid, regions, { chaosarrows = [], chaoscounts = [] }) {
+  if (regionProblem(regions) || sortRegions(regions).join() !== regions.join()) return false;
+  for (let r = 0; r < 9; r++) if (new Set(grid.filter((_, c) => regions[c] === r)).size !== 9) return false;
+  for (const { cell, ways } of chaosarrows) {
+    let run = 1;
+    for (const arm of chaosArms(cell, ways)) for (let i = 0; i < arm.length && regions[arm[i]] === regions[cell]; i++) run++;
+    if (run !== grid[cell]) return false;
+  }
+  return chaoscounts.every((cell) => 1 + chaosAround(cell).filter((o) => regions[o] === regions[cell]).length === grid[cell]);
+}
+
+test("Chaos Construction cuts its regions while solving, checked and carried in seeds", () => {
+  const CHAOS = rule("chaos");
+  // No boxes: rows and columns alone, whatever regions come with it.
+  const { houses } = layout(CHAOS);
+  assert.deepEqual([...new Set(houses.map((h) => h.kind))], ["row", "column"]);
+  assert.equal(layout(CHAOS, sortRegions(digitsOf(CHAOS_JIGSAW.regions))).houses.length, 18);
+  assert.deepEqual(notePeers(CHAOS, digitsOf(CHAOS_JIGSAW.regions)), layout(CHAOS).peers);
+  assert.equal(notePeers(0), undefined);
+  assert.deepEqual(notePeers(0, digitsOf(CHAOS_JIGSAW.regions)), layout(0, digitsOf(CHAOS_JIGSAW.regions)).peers);
+
+  assert.equal(chaosArrowProblem(CHAOS_ARROWS), null);
+  assert.equal(chaosArrowProblem([{ cell: 0, ways: 1 }]).why, "ways", "nothing above the top row");
+  assert.equal(chaosArrowProblem([{ cell: 40, ways: 0 }]).why, "ways");
+  assert.equal(chaosArrowProblem([{ cell: 40, ways: 3 }, { cell: 40, ways: 4 }]).why, "twice");
+  assert.equal(chaosArrowProblem([{ cell: 81, ways: 1 }]).why, "cell");
+  assert.equal(chaosCountProblem([]).why, "cell");
+  assert.equal(chaosCountProblem([3, 3]).why, "twice");
+  assert.equal(chaosCountProblem([0, 80]), null);
+
+  // Rows and columns always cut a full grid into regions, so with nothing
+  // to say which way, its regions have more than one answer.
+  const full = digitsOf(CHAOS_ANSWER);
+  const loose = checkClues(full, { rules: CHAOS });
+  assert.equal(loose.why, "cuts");
+  assert.ok(loose.c >= 0 && loose.c < 81);
+
+  // Arrows alone, and no givens.
+  const arrowed = { rules: CHAOS, chaosarrows: CHAOS_ARROWS };
+  const check = checkClues(new Array(81).fill(0), arrowed);
+  assert.equal(check.ok, true, check.why);
+  // The digits; the regions come with them, as solution.regions.
+  assert.deepEqual([...check.solution], full);
+  assert.ok(keepsChaos(check.solution, check.solution.regions, arrowed), "the regions found keep every rule");
+  assert.equal(clashes(full, arrowed).size, 0);
+  const seed = madeSeed(rateLevel(new Array(81).fill(0), arrowed), new Array(81).fill(0), arrowed);
+  assert.match(seed.text, /^QCAQCH-[EMHX]-/);
+  assert.equal(seedVariantName(seed.text), "Chaos Arrow, Chaos Construction");
+  const back = parseSeed(seed.text.toLowerCase());
+  assert.equal(back.text, seed.text);
+  assert.deepEqual(back.chaosarrows, CHAOS_ARROWS);
+  assert.deepEqual([...puzzleFor(back).solution], full);
+  assert.deepEqual(puzzleFor(back).solution.regions, check.solution.regions);
+
+  // A Jigsaw's grid, its regions found from arrows, counts and givens.
+  const regions = sortRegions(digitsOf(CHAOS_JIGSAW.regions));
+  const solution = digitsOf(CHAOS_JIGSAW.solution);
+  const puzzle = digitsOf(CHAOS_JIGSAW.puzzle);
+  const counted = { rules: CHAOS, chaosarrows: CHAOS_JIGSAW.chaosarrows, chaoscounts: CHAOS_JIGSAW.chaoscounts };
+  assert.ok(keepsChaos(solution, regions, counted), "the clues are the Jigsaw's");
+  const found = checkClues(puzzle, counted);
+  assert.equal(found.ok, true, found.why);
+  assert.deepEqual([...found.solution], solution);
+  assert.deepEqual(found.solution.regions, regions);
+  const cand = candidates(puzzle, counted);
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `candidates at ${c}`);
+  stepsAgree(puzzle, solution, counted);
+  const counts = madeSeed("H", puzzle, counted);
+  assert.match(counts.text, /^QCAQCOQCH-H-/);
+  const read = parseSeed(counts.text);
+  assert.deepEqual(read.chaoscounts, CHAOS_JIGSAW.chaoscounts);
+  assert.deepEqual(puzzleFor(read).solution.regions, regions);
+  assert.equal(variantName(counted), "Chaos Arrow, Chaos Count, Chaos Construction");
+
+  // A count's digit is never 1, nor more than it has cells to count; an
+  // arrow's never more than its arms and itself.
+  const one = new Array(81).fill(0);
+  one[35] = 1;
+  assert.deepEqual([...clashes(one, counted)], [35]);
+  const far = new Array(81).fill(0);
+  far[1] = 9;
+  assert.deepEqual([...clashes(far, counted)], [1], "an arrow from row 1, column 2 pointing right counts 8 at most");
+  // Arrows and counts need Chaos Construction, and it never comes with
+  // drawn regions.
+  assert.equal(checkClues(new Array(81).fill(0), { chaosarrows: CHAOS_ARROWS }).why, "chaosrule");
+  assert.equal(parseSeed(madeSeed("H", full, { chaosarrows: CHAOS_ARROWS }).text), null);
+  assert.equal(parseSeed(madeSeed("H", solution, { regions, rules: CHAOS }).text), null);
+});
+
+// Yin-Yang: a shading over a classic puzzle, and the circles that leave it
+// one way to go.
+const YY_SHADING = [..."111111111121221212121121212122121212112121212122222212111121112122121212112222222"].map(Number);
+const YY_CIRCLES = "8:1 11:1 14:1 16:1 23:1 25:1 30:1 32:1 37:1 42:2 48:2 50:2 58:2 67:2 69:2 73:1 74:2"
+  .split(" ")
+  .map((pair) => pair.split(":").map(Number))
+  .map(([cell, shade]) => ({ cell, shade }));
+
+test("Yin-Yang shadings are found, checked, played and carried in seeds", () => {
+  assert.equal(shadeProblem(YY_CIRCLES), null);
+  assert.equal(shadeProblem([]).why, "cell");
+  assert.equal(shadeProblem([{ cell: 3, shade: 3 }]).why, "shade");
+  assert.equal(shadeProblem([{ cell: 3, shade: SHADED }, { cell: 3, shade: UNSHADED }]).why, "twice");
+  assert.ok(shadingKeeps(YY_SHADING, YY_CIRCLES));
+  // Each rule broken once: a 2x2 all one shade, two shades crossing at a
+  // square's corners, and a shade cut in two.
+  const block = YY_SHADING.slice();
+  block[0] = block[1] = block[9] = block[10] = SHADED;
+  assert.equal(shadingKeeps(block), false);
+  const crossing = YY_SHADING.slice();
+  [crossing[10], crossing[11], crossing[19], crossing[20]] = [SHADED, UNSHADED, UNSHADED, SHADED];
+  assert.equal(shadingKeeps(crossing), false);
+  assert.equal(shadingKeeps(YY_SHADING.map((s, c) => (c === 80 ? SHADED : s))), false, "a shaded cell cut off");
+  assert.equal(shadingKeeps(YY_SHADING, [{ cell: 0, shade: UNSHADED }]), false, "a circle the shading does not keep");
+
+  // The circles leave one shading; one fewer leaves more.
+  assert.deepEqual(shadings(YY_CIRCLES, 2), [YY_SHADING]);
+  assert.equal(shadings(YY_CIRCLES.slice(1), 2).length, 2);
+  assert.equal(shadings([], 2).length, 2, "with no circles, shades swap at least");
+
+  // On a classic puzzle: its digits, and the shading with them.
+  const { puzzle, solution } = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const variant = { shades: YY_CIRCLES };
+  const check = checkClues(puzzle, variant);
+  assert.equal(check.ok, true, check.why);
+  assert.deepEqual([...check.solution], solution);
+  assert.deepEqual(check.solution.shading, YY_SHADING);
+  const loose = checkClues(puzzle, { shades: YY_CIRCLES.slice(1) });
+  assert.equal(loose.why, "shading");
+  assert.ok(loose.c >= 0);
+  assert.equal(variantName(variant), "Yin-Yang");
+  stepsAgree(puzzle, solution, variant);
+
+  const seed = madeSeed(rateLevel(puzzle, variant), puzzle, variant);
+  assert.match(seed.text, /^QYY-[EMHX]-/);
+  const back = parseSeed(seed.text);
+  assert.deepEqual(back.shades, YY_CIRCLES);
+  const made = puzzleFor(back);
+  assert.deepEqual(made.solution.shading, YY_SHADING);
+  assert.deepEqual(made.puzzle.shades, YY_SHADING.map((_, c) => YY_CIRCLES.find((x) => x.cell === c)?.shade ?? 0));
+  // Every cell's shade as a list, when that is shorter.
+  const many = YY_SHADING.map((shade, cell) => ({ cell, shade }));
+  assert.deepEqual(parseSeed(madeSeed("H", puzzle, { shades: many }).text).shades, many);
+
+  // Played: digits alone do not finish it; the shaded cells must be right,
+  // unshaded marks or none. A circle given stays as it is.
+  let t = 0;
+  const fill = [];
+  for (let c = 0; c < 81; c++) if (!made.puzzle[c]) fill.push({ k: "p", c, d: made.solution[c], t: (t += 900), b: 0 });
+  let result = play(made.puzzle, made.solution, fill);
+  assert.equal(result.error, null);
+  assert.equal(result.complete, false, "the shading is still to do");
+  const shade = [];
+  for (let c = 0; c < 81; c++) if (YY_SHADING[c] === SHADED && !made.puzzle.shades[c]) shade.push({ k: "y", c, d: SHADED, t: (t += 300), b: 0 });
+  // One cell marked unshaded, which changes nothing.
+  const open = YY_SHADING.findIndex((s, c) => s === UNSHADED && !made.puzzle.shades[c]);
+  const log = [...fill, { k: "y", c: open, d: UNSHADED, t: 0, b: 0 }, ...shade];
+  log.forEach((a, i) => (a.t = (i + 1) * 700));
+  result = play(made.puzzle, made.solution, log);
+  assert.equal(result.error, null);
+  assert.equal(result.complete, true);
+  assert.equal(result.shading[open], UNSHADED);
+  assert.equal(play(made.puzzle, made.solution, [{ k: "y", c: YY_CIRCLES[0].cell, d: UNSHADED, t: 1, b: 0 }]).error.reason, "given");
+  assert.equal(play(made.puzzle, made.solution, [{ k: "y", c: open, d: 0, t: 1, b: 0 }]).error.reason, "bad_shade", "no change");
+  assert.equal(play(puzzle, solution, [{ k: "y", c: 0, d: SHADED, t: 1, b: 0 }]).error.reason, "bad_kind", "no shading to do");
+  // Undo takes a shade back; a hint shades a cell, its digit given or not.
+  const one = shade[0];
+  assert.equal(play(made.puzzle, made.solution, [one, { k: "u", c: 0, d: 0, t: 2, b: 0 }]).shading[one.c], 0);
+  const givenDigit = YY_SHADING.findIndex((s, c) => s === SHADED && made.puzzle[c] && !made.puzzle.shades[c]);
+  const hinted = play(made.puzzle, made.solution, [{ k: "h", c: givenDigit, d: 0, t: 1, b: 0 }]);
+  assert.equal(hinted.error, null);
+  assert.equal(hinted.shading[givenDigit], SHADED);
+  assert.equal(play(made.puzzle, made.solution, [{ k: "h", c: givenDigit, d: 0, t: 1, b: 0 }, { k: "h", c: givenDigit, d: 0, t: 2, b: 0 }]).error.reason, "given");
+  // Solve shades the answer's shaded cells, and marks no more: the
+  // unshaded circles stay as given.
+  const solved = play(made.puzzle, made.solution, [shade[0], { k: "s", c: 0, d: 0, t: 2, b: 0 }]);
+  assert.deepEqual(solved.shading, YY_SHADING.map((s, c) => (s === SHADED ? SHADED : made.puzzle.shades[c])));
+  assert.equal(solved.solved, true);
+  // Wire logs, both replay links and frames carry the shading.
+  assert.deepEqual(fromWire(toWire(log)), log);
+  const packed = packReplay(log, made.solution);
+  assert.deepEqual(unpackReplay(packed, made.puzzle, made.solution).map(({ k, c, d }) => [k, c, d]), log.map(({ k, c, d }) => [k, c, d]));
+  assert.deepEqual(unpackLog(packLog(log), made.puzzle, made.solution).map(({ k, c, d }) => [k, c, d]), log.map(({ k, c, d }) => [k, c, d]));
+  const frames = play(made.puzzle, made.solution, log, { frames: true }).frames;
+  assert.deepEqual(frames.at(-1).shading, result.shading);
+  assert.deepEqual(frames[0].shading, made.puzzle.shades);
+});
+
+// Doppelgänger: digits 0 to 9, the 0 written 10 in a grid, as ZERO.
+const DP_ANSWER = [..."123456780456370129790128345261983504589012637307645918648239071932704856075861492"].map((d) => Number(d) || ZERO);
+const DP_PUZZLE = [0, 0, 0, 0, 0, 0, 7, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 9, 0, 0, 0, 1, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 7, 0, 0, 7, 6, 4, 5, 9, 1, 8, 0, 4, 0, 2, 0, 9, 10, 0, 1, 9, 3, 0, 7, 0, 0, 0, 5, 0, 0, 0, 5, 0, 6, 0, 4, 0, 2];
+
+// Whether a full grid keeps Doppelgänger's rules, worked out apart from the
+// engine: each row, column and box nine different digits with a 0 among
+// them, no two of a kind missing the same digit, and at each 0 its three
+// missing digits all different.
+function keepsDoppel(grid, rules = 0) {
+  const { houses } = layout(rules);
+  const missing = houses.slice(0, 27).map(({ cells }) => [1, 2, 3, 4, 5, 6, 7, 8, 9].find((d) => !cells.some((c) => grid[c] === d)));
+  for (const { cells } of houses.slice(0, 27)) if (new Set(cells.map((c) => grid[c])).size !== 9 || !cells.some((c) => grid[c] === ZERO)) return false;
+  for (const from of [0, 9, 18]) if (new Set(missing.slice(from, from + 9)).size !== 9) return false;
+  for (let c = 0; c < 81; c++) {
+    if (grid[c] !== ZERO) continue;
+    const mine = [0, 9, 18].map((from) => missing[houses.slice(from, from + 9).findIndex((h) => h.cells.includes(c)) + from]);
+    if (new Set(mine).size !== 3) return false;
+  }
+  return houses.slice(27).every(({ cells }) => new Set(cells.map((c) => grid[c])).size === cells.length);
+}
+
+test("Doppelgänger's 0 is solved, checked, played and carried in seeds", () => {
+  const DP = rule("doppelganger");
+  const variant = { rules: DP };
+  assert.ok(keepsDoppel(DP_ANSWER));
+  assert.ok(keepsDoppel(variantSolve(new Array(81).fill(0), variant)), "a grid from nothing");
+  const check = checkClues(DP_PUZZLE, variant);
+  assert.equal(check.ok, true, check.why);
+  assert.deepEqual(check.solution, DP_ANSWER);
+  const cand = candidates(DP_PUZZLE, variant);
+  for (let c = 0; c < 81; c++) if (!DP_PUZZLE[c]) assert.ok(cand[c] & (1 << DP_ANSWER[c]), `candidates at ${c}`);
+  stepsAgree(DP_PUZZLE, DP_ANSWER, variant);
+  assert.equal(puzzleText(DP_ANSWER).slice(0, 9), "123456780");
+  assert.equal(variantName(variant), "Doppelgänger");
+
+  // Two 0s in a row clash; so do two full rows missing the same digit, and
+  // a 0 whose row and column miss the same.
+  assert.deepEqual(sorted(clashes(placed({ 0: ZERO, 5: ZERO }), variant)), [0, 5]);
+  const twice = DP_ANSWER.slice();
+  // Rows 1 and 2 miss 9 and 8: row 2's 9 made an 8 has it miss 9 too.
+  twice[17] = 8;
+  assert.ok(clashes(twice, variant).has(0), "row 1 and row 2 both miss 9");
+  assert.equal(clashes(DP_ANSWER, variant).size, 0);
+
+  // Seeds: QDP, the givens in base 10.
+  const seed = madeSeed(rateLevel(DP_PUZZLE, variant), DP_PUZZLE, variant);
+  assert.match(seed.text, /^QDP-[EMHX]-/);
+  const back = parseSeed(seed.text);
+  assert.deepEqual(back.grid, DP_PUZZLE);
+  assert.deepEqual([...puzzleFor(back).solution], DP_ANSWER);
+  // Rules a 0 means nothing to are refused, and so are their seeds.
+  for (const [extra, name] of [
+    [{ rules: DP | rule("chaos") }, "Chaos Construction"],
+    [{ rules: DP | rule("antitaxicab") }, "Anti-taxicab"],
+    [{ rules: DP, entropics: [[0, 1, 2]] }, "Entropic"],
+    [{ rules: DP, ranks: [{ view: 0, rank: 1 }] }, "Full Rank"],
+    [{ rules: DP, indexings: [{ line: 0 }] }, "Row/Column Indexing"],
+  ]) {
+    const refused = checkClues(DP_PUZZLE, extra);
+    assert.equal(refused.why, "zero");
+    assert.equal(refused.rule, name);
+    assert.equal(parseSeed(madeSeed("H", DP_PUZZLE, extra).text), null, name);
+  }
+
+  // Played: a 0 is digit 10, in a log, a wire log and both replay links;
+  // a classic game has no digit 10.
+  const { puzzle, solution } = puzzleFor(back);
+  const log = [];
+  for (let c = 0; c < 81; c++) if (!puzzle[c]) log.push({ k: "p", c, d: solution[c], t: (log.length + 1) * 900, b: 0 });
+  log.splice(2, 0, { k: "n", c: log[3].c, d: ZERO, t: log[1].t + 1, b: 0 });
+  const result = play(puzzle, solution, log);
+  assert.equal(result.error, null);
+  assert.equal(result.complete, true);
+  assert.deepEqual(fromWire(toWire(log)), log);
+  const digits = (l) => l.map(({ k, c, d }) => [k, c, d]);
+  assert.deepEqual(digits(unpackReplay(packReplay(log, solution), puzzle, solution)), digits(log));
+  assert.deepEqual(digits(unpackLog(packLog(log), puzzle, solution)), digits(log));
+  const classic = puzzleFor(parseSeed("H-BXK4-M9TR"));
+  const first = classic.puzzle.indexOf(0);
+  assert.equal(play(classic.puzzle, classic.solution, [{ k: "p", c: first, d: ZERO, t: 1, b: 0 }]).error.reason, "bad_digit");
+});
+
+// Every rule that can take a 0, laid through a Doppelgänger grid read as
+// values, 0 being 0: the puzzle they make has that grid for its answer.
+test("Doppelgänger's 0 goes with every rule that can take it", () => {
+  const DP = rule("doppelganger");
+  for (const extra of [0, rule("diagonal"), rule("antiking"), rule("anticonsecutive")]) {
+    const rules = DP | extra;
+    // A first row to start from, or under Anti-consecutive none, which
+    // finds a grid sooner.
+    const top = extra === rule("anticonsecutive") ? [] : [1, 2, 3, 4, 5, 6, 7, 8, ZERO];
+    const solution = extra ? variantSolve([...top, ...new Array(81 - top.length).fill(0)], { rules }) : DP_ANSWER;
+    assert.ok(solution && keepsDoppel(solution, rules), `a grid under ${rules}`);
+    const values = solution.map((d) => d % 10);
+    const rand = seeded(19);
+    const has0 = (cells) => cells.some((c) => values[c] === 0);
+    const cages = layCages(values, rand, 5);
+    const used = new Set();
+    const lines = { count: 2, max: 5, used };
+    const thermos = layLines(values, rand, (line, o, sol) => sol[o] > sol[line.at(-1)], lines);
+    const arrows = layLines(values, rand, (line, o, sol) => line.slice(1).reduce((t, c) => t + sol[c], sol[o]) <= sol[line[0]], lines).filter(
+      ([circle, ...cells]) => cells.reduce((t, c) => t + values[c], 0) === values[circle]
+    );
+    const whispers = layLines(values, rand, fitsWhisper, lines);
+    const renbans = layLines(values, rand, fitsRenban, lines);
+    const palindromes = layLines(values, seeded(23), fitsPalindrome(3), { ...lines, max: 3 });
+    const zippers = layLines(values, seeded(29), fitsZipper(3), { ...lines, max: 3 });
+    const betweens = layLines(values, seeded(31), fitsBetween(3), { ...lines, max: 3 });
+    const lockouts = layLines(values, seeded(37), fitsLockout(3), { ...lines, max: 3 });
+    const crossing = { count: 2, max: 3, used: new Set() };
+    // Modular lines go by each digit's bit, 0's with 3, 6 and 9.
+    const modulars = layLines(solution, seeded(47), fitsKinds(MODULAR_KINDS)(), crossing);
+    const doubles = layLines(values, seeded(79), fitsDouble(3), { ...crossing, min: 3 });
+    const pills = layPills(values, seeded(83), { count: 2, used: crossing.used });
+    const sumlines = laySumLines(values, seeded(173), 10, { count: 2, min: 2, max: 5, used: crossing.used });
+    const regionsums = layRegionSums(values, seeded(179), { count: 2, max: 6, used: crossing.used });
+    const indexes = layIndexes(values, seeded(181), { count: 2, used: crossing.used }).filter((t) => values[t[1]]);
+    const sides = new Set();
+    const dots = layEdges(values, rand, ["white", "black"], 0.15, sides);
+    const xvs = layEdges(values, rand, ["x", "v"], 0.3, sides);
+    const signs = layEdges(values, seeded(53), ["gt", "lt"], 0.1, sides);
+    const quads = layQuads(values, seeded(59), 4).filter(({ digits }) => !digits.includes(0));
+    // Clues outside: a sandwich only where its line has a 1 and a 9, an
+    // X-Sum or a Numbered Room never led by a 0.
+    const sandwiches = laySandwiches(values, rand, 0.3).filter(({ line }) => [1, 9].every((d) => SANDWICH_LINES[line].some((c) => values[c] === d)));
+    const taken = new Set(sandwiches.map((w) => viewSpot(w.line)));
+    const skyscrapers = layViews(values, rand, skyscraperOf, 0.25, [...VIEWS.keys()].slice(18), taken);
+    const xsums = layViews(values, rand, xsumOf, 0.4, [...VIEWS.keys()].slice(18), taken).filter(({ view }) => values[VIEWS[view][0]]);
+    const littles = layLittles(values, rand, 0.1, taken);
+    const hiddens = layViews(values, seeded(71), hiddenOf, 0.3, [...VIEWS.keys()], taken).filter((clue) => clue.height);
+    const rooms = layViews(values, seeded(73), (sol, view) => (sol[VIEWS[view][0]] ? roomOf(sol, view) : { view, digit: 0 }), 0.3, [...VIEWS.keys()], taken).filter(({ digit }) => digit);
+    const caged = { count: 2, used: new Set(cages.flatMap((k) => k.cells)) };
+    const relliks = layGroups(values, seeded(151), rellikOf, caged);
+    const lunchboxes = layGroups(values, seeded(157), lunchboxOf, { ...caged, sizes: [3, 4], straight: true });
+    const looksays = layGroups(values, seeded(163), lookSayOf, caged).filter(({ clue }) => !/^(\d\d)*\d0/.test(clue));
+    const equalities = layGroups(values, seeded(167), equalityOf, { ...caged, sizes: [2, 4] }).filter(({ cells }) => !has0(cells));
+    const distincts = layGroups(values, seeded(229), distinctOf, { ...caged, sizes: [2, 3] });
+    const connecteds = layGroups(values, seeded(227), connectedOf, { ...caged, sizes: [2, 3] }).filter(({ clue }) => !clue.includes("0"));
+    const equalsums = layPieces(values, seeded(211), fitsEqualSum, caged);
+    const samevalues = layPieces(values, seeded(223), fitsSameValues, { ...caged, same: true });
+    const variant = { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, rules };
+    const name = `Doppelgänger with ${RULES.filter((r) => extra & r.bit).map((r) => r.name).join("") || "nothing else"}`;
+    // Each kind laid somewhere, a 0 in some; with a rule more, as many as
+    // its grid had room for.
+    if (!extra) for (const [list, laid] of Object.entries(variant)) if (list !== "rules") assert.ok(laid.length, `${name}: some ${list}`);
+    assert.ok([cages, thermos, arrows, sumlines, dots].some((laid) => laid.some((x) => has0(x.cells ?? x))), `${name}: a 0 in some`);
+    assert.deepEqual([...clashes(solution, variant)], [], `${name}: the answer keeps every rule`);
+
+    const puzzle = thinOut(solution, variant, rand);
+    const check = checkClues(puzzle, variant);
+    assert.equal(check.ok, true, `${name}: ${check.why}`);
+    assert.deepEqual([...check.solution], solution);
+    const cand = variantCandidates(puzzle, variant);
+    for (let c = 0; c < 81; c++) if (!puzzle[c]) assert.ok(cand[c] & (1 << solution[c]), `${name}: candidates at ${c}`);
+    stepsAgree(puzzle, solution, variant);
+    const back = parseSeed(madeSeed("H", puzzle, variant).text);
+    assert.ok(back, `${name}: the seed reads back`);
+    assert.deepEqual(back.grid, puzzle);
+  }
+});
+
 // Cages laid through a solved grid: `count` of them, two to four cells
 // joined edge to edge with no digit twice, none sharing a cell.
 function layCages(solution, rand, count) {
@@ -2979,7 +3362,8 @@ test("the rules about 2x2 squares clash, narrow and read back from seeds", () =>
   // Global Mod sorts by 1 4 7, 2 5 8 and 3 6 9 instead.
   assert.deepEqual(sorted(clashes(placed({ 0: 1, 1: 4, 9: 7 }), mod)), [0, 1, 9]);
   assert.equal(clashes(placed({ 0: 1, 1: 2, 9: 3 }), mod).size, 0);
-  assert.equal(variantCandidates(placed({ 0: 1, 1: 2, 9: 4 }), mod)[10], MODULAR_KINDS[2]);
+  // Its kind's digits 1 to 9: Doppelgänger's 0 is of that kind too.
+  assert.equal(variantCandidates(placed({ 0: 1, 1: 2, 9: 4 }), mod)[10], MODULAR_KINDS[2] & 0b1111111110);
 
   // Both at once have a grid: each digit is one of each rule's kinds.
   const both = entropy.rules | mod.rules;
@@ -3056,12 +3440,14 @@ function kindLinesTest(key, letter, kinds, made, { threes, twoAt, apart }) {
   linesRoundTrip(key, letter, made);
 
   // Row 1's first cells: after `threes`' first two, the third takes the
-  // kind they leave; and the fourth, the first's kind.
+  // kind they leave; and the fourth, the first's kind. Their digits 1 to
+  // 9, as a kind may hold Doppelgänger's 0 too.
   const t = [0, 1, 2, 3];
   const [a, b] = threes;
   const cand = variantCandidates(placed({ 0: a, 1: b }), { [key]: [t] });
-  assert.equal(cand[2], kinds.find((m) => !(m & ((1 << a) | (1 << b)))));
-  assert.equal(cand[3], kinds[kind(a)] & ~(1 << a) & ~(1 << b));
+  const nines = 0b1111111110;
+  assert.equal(cand[2], kinds.find((m) => !(m & ((1 << a) | (1 << b)))) & nines);
+  assert.equal(cand[3], kinds[kind(a)] & ~(1 << a) & ~(1 << b) & nines);
   // A line of two cells is none.
   assert.equal((key === "entropics" ? entropicProblem : modularProblem)([[0, 1]]).why, "length");
 
@@ -3223,7 +3609,7 @@ test("every variant rule has its explanation", () => {
   // every switch alone too.
   const all = RULES.reduce((m, r) => m | r.bit, 0);
   const every = { rules: all & ~rule("dutchwhispers") };
-  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"]) every[list] = [1];
+  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "chaosarrows", "chaoscounts", "shades", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"]) every[list] = [1];
   const named = [...new Set([...variantName(every).split(", "), ...variantName({ rules: all }).split(", ")])].sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);

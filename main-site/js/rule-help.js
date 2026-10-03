@@ -78,6 +78,11 @@ export const RULE_HELP = {
     rule: "Nine odd-shaped regions, outlined in heavy lines, take the place of the 3×3 boxes. Each holds 1 to 9 once.",
     draw: "Tap Regions, tap a cell to pick its region, then tap cells to move them into it, until every region has nine cells joined edge to edge.",
   },
+  chaos: {
+    name: "Chaos Construction",
+    rule: "There are no boxes. Instead the grid is cut into nine regions of nine cells, each joined edge to edge and holding 1 to 9 once, and finding where the cuts go is part of solving. Rows and columns are always ways to cut it, so Chaos Arrows and Chaos Counts say which way it is cut.",
+    draw: "Nothing to draw for the rule itself: put Chaos Arrows or Chaos Counts down with the Marks tool, and the regions follow from them. Not with Jigsaw, whose regions are drawn.",
+  },
   thermo: {
     name: "Thermo",
     list: "thermos",
@@ -205,6 +210,24 @@ export const RULE_HELP = {
     rule: "A digit in a circle says how many circles hold that digit: a 3 in a circle means exactly three circles hold a 3. With circles of more than one colour, each colour counts on its own. Digits outside circles are free.",
     draw: "Tap Marks, then tap the middle of a cell to put a circle in it, or take it out. For another set of circles, counted on its own, tap the Middle button until it says New set. With dots or signs on too, tap a cell and then one beside it to mark the side between.",
   },
+  chaosarrow: {
+    name: "Chaos Arrow",
+    list: "chaosarrows",
+    rule: "Under Chaos Construction, a digit with small arrows at its edges counts itself and the cells of its own region in a straight line from it each way an arrow points, up to the first cell that is not: a 4 pointing left and right, with its region running two cells left and one right.",
+    draw: "Turn on Chaos Construction too. Tap Marks, tap the Middle button until it says Chaos arrow, then tap the middle of a cell for an arrow pointing every way, and tap near one of its sides to turn that way off or back on. Tap its middle again to take it off.",
+  },
+  chaoscount: {
+    name: "Chaos Count",
+    list: "chaoscounts",
+    rule: "Under Chaos Construction, a digit in a dashed square counts itself and the cells round it, touching it along a side or at a corner, that are in its own region: a 3 has two of the eight round it in its region.",
+    draw: "Turn on Chaos Construction too. Tap Marks, tap the Middle button until it says Chaos count, then tap the middle of a cell to put one in it, or take it out.",
+  },
+  yinyang: {
+    name: "Yin-Yang",
+    list: "shades",
+    rule: "Besides the digits, every cell is shaded or unshaded. The shaded cells all join up edge to edge, and so do the unshaded ones, and no 2×2 square is all one shade. A filled circle in a cell's corner says it is shaded, a hollow one that it is not. In a game, tap Shade, then a cell: once to shade it, again to mark it unshaded, again to clear it. The puzzle is done when the digits and the shaded cells are all right.",
+    draw: "Tap Marks, tap the Middle button until it says Yin-Yang if it is not already, then tap the middle of a cell: once for a shaded circle, again for an unshaded one, again for none. Give enough circles that the shading can go only one way.",
+  },
   sandwich: {
     name: "Sandwich",
     list: "sandwiches",
@@ -323,6 +346,11 @@ export const RULE_HELP = {
     name: "Dutch Flatmates",
     rule: "Every 5 has a 1 in the cell right above it, or a 9 in the cell right below it, or both.",
     draw: "Nothing to draw: turning it on is all.",
+  },
+  doppelganger: {
+    name: "Doppelgänger",
+    rule: "There is a 0 as well as 1 to 9. Every row, column and box holds a 0 and eight of 1 to 9, so each misses one digit. No two rows miss the same digit, nor two columns, nor two boxes. Where a 0 is, its row, column and box miss three different digits. A 0 counts as nothing in sums, and as the lowest digit.",
+    draw: "Nothing to draw: turning it on adds a 0 key. It does not go with Chaos Construction, Entropic lines, Global Entropy, Global Mod, Anti-taxicab, Dutch Flatmates, Full Rank or Row/Column Indexing.",
   },
 };
 

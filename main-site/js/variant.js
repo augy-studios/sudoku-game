@@ -5,8 +5,9 @@
 // samevalues, connecteds, distincts, thermos, arrows, doubles, pills,
 // whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
 // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads,
-// circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens,
-// rooms, ranks, indexings, indexcells, regions, rules }:
+// circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches,
+// littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings,
+// indexcells, regions, rules }:
 //
 //   cages    killer cages, [{ sum, cells }] with cells in reading order. A
 //            cage's digits add up to its sum and never repeat within it. A
@@ -117,6 +118,20 @@
 //            CIRCLE_SETS_MOST lists like `circles`, each counted on its own:
 //            a 3 in a set's circle is in three of that set's circles. No cell
 //            is in two sets, `circles` counting as one.
+//   chaosarrows  Chaos Arrows, [{ cell, ways }], ways one to four of up,
+//            right, down and left as bits 1, 2, 4 and 8: the cell's digit
+//            counts it and the cells of its region running on from it each
+//            way it points, up to the first not in it. Only under Chaos
+//            Construction.
+//   chaoscounts  Chaos Counts, a list of cells in reading order: a cell's
+//            digit counts it and the cells round it, touching it along a
+//            side or at a corner, in its region. Only under Chaos
+//            Construction.
+//   shades   Yin-Yang's circles, [{ cell, shade }] in reading order, shade
+//            SHADED or UNSHADED: a shading over the grid, apart from the
+//            digits, every cell shaded or unshaded, each shade joined up
+//            edge to edge, no 2x2 square all one shade, and these cells
+//            the shades given (shadings below).
 //   sandwiches  Sandwich clues outside the grid, [{ line, sum }]: line 0 to
 //            8 a row, its clue on the left, and 9 to 17 a column, its clue
 //            above. The digits between the line's 1 and its 9 add up to the
@@ -169,6 +184,9 @@
 //            2 5 8 and 3 6 9; Anti-taxicab, a digit X never has another X
 //            exactly X steps away along rows and columns; Dutch Flatmates,
 //            every 5 has a 1 in the cell above it or a 9 in the cell below;
+//            Chaos Construction, nine regions of nine cells, each joined
+//            edge to edge and holding 1 to 9, take the boxes' place, cut
+//            while solving and never given, so never with `regions`;
 //            and options on drawn parts: Dutch Whispers, No Rank Ties and
 //            Clued Rank Ties, as whispers and ranks above say.
 //
@@ -187,13 +205,31 @@
 // narrowing (TAXICAB and flatmateBounds below). Counting Circles, Full Rank
 // and Row/Column Indexing narrow as the other clues do (circleBounds,
 // rankBounds and indexingBounds below), and No Rank Ties the views that
-// could read the same (tieBounds below).
+// could read the same (tieBounds below). Under Chaos Construction the
+// search decides the sides between cells too, joined or walled, as it
+// does digits, with its arrows and counts read off them (chaosBounds
+// below).
 
 import { ROW, COL, BOX } from "./sudoku.js";
 
 const ALL = 0b1111111110;
-const POP = new Uint8Array(1024);
-for (let m = 1; m < 1024; m++) POP[m] = POP[m >> 1] + (m & 1);
+// Doppelgänger's 0, as a digit in a grid: 10, so that 0 still means an
+// empty cell, and bit 10 in a mask. VALUE[d] is digit d's value, 0 for
+// ZERO; CODE[v] the digit with value v. A mask of digits 1 to 9 never has
+// ZBIT, so whatever reads digits as numbers below gives the same as it
+// would without ZERO for every puzzle but a Doppelgänger.
+export const ZERO = 10;
+const ZBIT = 1 << ZERO;
+const ALL_ZERO = ALL | ZBIT;
+export const VALUE = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+const CODE = [ZERO, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+const POP = new Uint8Array(2048);
+for (let m = 1; m < 2048; m++) POP[m] = POP[m >> 1] + (m & 1);
+// Whether the search, or the candidates, are working under Doppelgänger,
+// with its 0 among the digits: set as each starts, both running to the end
+// before anything else can.
+let zeroOn = false;
+const allDigits = () => (zeroOn ? ALL_ZERO : ALL);
 
 // In the order their letters go in a seed. Once the single letters ran out,
 // a rule's letter became Q and two more (seed.js).
@@ -215,6 +251,10 @@ export const RULES = [
   { key: "dutchwhispers", bit: 4096, letter: "QDW", name: "Dutch Whispers", replaces: "German Whispers" },
   { key: "norankties", bit: 8192, letter: "QNT", name: "No Rank Ties" },
   { key: "cluedrankties", bit: 16384, letter: "QCT", name: "Clued Rank Ties" },
+  // Regions worked out while solving, in the boxes' place (chaosBounds).
+  { key: "chaos", bit: 32768, letter: "QCH", name: "Chaos Construction" },
+  // A 0 in every row, column and box, each missing a digit (doppelBounds).
+  { key: "doppelganger", bit: 65536, letter: "QDP", name: "Doppelgänger" },
 ];
 export const ALL_RULES = RULES.reduce((m, r) => m | r.bit, 0);
 // Whether the rule `key` is among the bits in `rules`.
@@ -233,7 +273,7 @@ export function renamed(names, rules = 0) {
 }
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (indexings?.length || indexcells?.length) names.unshift("Row/Column Indexing");
@@ -244,6 +284,9 @@ export function variantName({ cages, relliks, lunchboxes, looksays, equalities, 
   if (skyscrapers?.length) names.unshift("Skyscrapers");
   if (littles?.length) names.unshift("Little Killer");
   if (sandwiches?.length) names.unshift("Sandwich");
+  if (shades?.length) names.unshift("Yin-Yang");
+  if (chaoscounts?.length) names.unshift("Chaos Count");
+  if (chaosarrows?.length) names.unshift("Chaos Arrow");
   if (circles?.length || circlesets?.length) names.unshift("Counting Circles");
   if (quads?.length) names.unshift("Quad");
   if (signs?.length) names.unshift("Greater Than");
@@ -290,14 +333,20 @@ const WINDOW_CORNERS = [
 // in, pairs: per cell, the cells that must differ from it outside its
 // houses, peers: per cell, every cell that must differ from it }. Rows,
 // columns and boxes come first, in that order, as the classic solver has
-// them; with a Jigsaw's `regions`, regions in the boxes' place.
+// them; with a Jigsaw's `regions`, regions in the boxes' place. Under Chaos
+// Construction the regions are not known, so there are rows and columns
+// alone, and `regions` is ignored.
 const layouts = new Map();
 
 export function layout(rules = 0, regions = null) {
+  const chaos = has(rules, "chaos");
+  if (chaos) regions = null;
   const key = `${rules}|${regions ? regions.join("") : ""}`;
   if (layouts.has(key)) return layouts.get(key);
   const houses = [];
-  for (const [kind, of] of [["row", ROW], ["column", COL], regions ? ["region", regions] : ["box", BOX]]) {
+  const kinds = [["row", ROW], ["column", COL]];
+  if (!chaos) kinds.push(regions ? ["region", regions] : ["box", BOX]);
+  for (const [kind, of] of kinds) {
     for (let index = 0; index < 9; index++) houses.push({ kind, index, cells: [...Array(81).keys()].filter((c) => of[c] === index) });
   }
   if (has(rules, "diagonal")) {
@@ -347,6 +396,15 @@ export function layout(rules = 0, regions = null) {
   return out;
 }
 
+// The cells a digit placed in a game clears its note from, for play() in
+// record.js: a Jigsaw's regions in the boxes' place, and under Chaos
+// Construction, whose regions are not known while playing, its row and
+// column alone; undefined for the classic row, column and box.
+export function notePeers(rules = 0, regions = null) {
+  if (has(rules, "chaos")) return layout(RULES.find((r) => r.key === "chaos").bit).peers;
+  return regions?.length ? layout(0, regions).peers : undefined;
+}
+
 /* ---- a Jigsaw's regions ---- */
 
 // Whether regions are well formed: a region 0 to 8 for each cell, each
@@ -372,21 +430,26 @@ export function sortRegions(regions) {
 
 /* ---- cages ---- */
 
-// COMBOS[k][s]: every set of k different digits adding up to s, as masks.
+// COMBOS[k][s]: every set of k different digits adding up to s, as masks;
+// ZERO_COMBOS the same with Doppelgänger's 0 among the digits, and combos()
+// whichever the puzzle has.
 const COMBOS = Array.from({ length: 10 }, () => Array.from({ length: 46 }, () => []));
-for (let m = 2; m < 1024; m += 2) {
+const ZERO_COMBOS = Array.from({ length: 11 }, () => Array.from({ length: 46 }, () => []));
+for (let m = 2; m < 2048; m += 2) {
   let sum = 0;
-  for (let d = 1; d <= 9; d++) if (m & (1 << d)) sum += d;
-  COMBOS[POP[m]][sum].push(m);
+  for (let d = 1; d <= ZERO; d++) if (m & (1 << d)) sum += VALUE[d];
+  if (!(m & ZBIT)) COMBOS[POP[m]][sum].push(m);
+  ZERO_COMBOS[POP[m]][sum].push(m);
 }
+const combos = () => (zeroOn ? ZERO_COMBOS : COMBOS);
 
 // Digits the rest of a cage can still use: those in some set of `left`
 // unused digits adding up to `rest`.
 export function cageAllows(left, rest, used) {
-  if (left < 0 || left > 9 || rest < 0 || rest > 45) return 0;
-  if (left === 0) return rest === 0 ? ALL : 0;
+  if (left < 0 || left > 10 || rest < 0 || rest > 45) return 0;
+  if (left === 0) return rest === 0 ? allDigits() : 0;
   let out = 0;
-  for (const m of COMBOS[left][rest]) if (!(m & used)) out |= m;
+  for (const m of combos()[left]?.[rest] ?? []) if (!(m & used)) out |= m;
   return out;
 }
 
@@ -418,13 +481,16 @@ function groupProblem(cages, { least = 1, most = 9, even = false, straight = fal
 }
 
 // Whether killer cages are well formed: one to nine cells, and a sum nine
-// different digits could make.
-export const cageProblem = (cages) => groupProblem(cages, { fits: ({ sum, cells }) => Number.isInteger(sum) && COMBOS[cells.length][sum]?.length > 0 });
+// different digits could make, Doppelgänger's 0 among them under its
+// rules.
+export const cageProblem = (cages, rules = 0) =>
+  groupProblem(cages, { fits: ({ sum, cells }) => Number.isInteger(sum) && (has(rules, "doppelganger") ? ZERO_COMBOS : COMBOS)[cells.length][sum]?.length > 0 });
 // Rellik cages: a sum some digit could reach.
 export const rellikProblem = (relliks) => groupProblem(relliks, { fits: ({ sum }) => Number.isInteger(sum) && sum >= 1 && sum <= 45 });
 // Lunchboxes: two cells at least, in a line, and a sum the cells between
 // its smallest and largest digit could make.
-export const lunchboxProblem = (lunchboxes) => groupProblem(lunchboxes, { least: 2, straight: true, fits: ({ sum, cells }) => lunchboxFits(cells.length, sum) });
+export const lunchboxProblem = (lunchboxes, rules = 0) =>
+  groupProblem(lunchboxes, { least: 2, straight: true, fits: ({ sum, cells }) => lunchboxFits(cells.length, sum, has(rules, "doppelganger")) });
 // Look and Say cages: a clue of digit pairs sayCounts can read, its counts
 // no more than the cells.
 export const lookSayProblem = (looksays) =>
@@ -468,10 +534,12 @@ export const LUNCHBOX_MAX = 35;
 
 // Whether some number of cells between a lunchbox's ends, none up to all
 // but those two, could add up to `sum` with different digits 2 to 8.
-function lunchboxFits(size, sum) {
+// Under Doppelgänger the smallest may be its 0, and a 1 between.
+function lunchboxFits(size, sum, zero = false) {
   if (!Number.isInteger(sum) || sum < 0 || sum > LUNCHBOX_MAX) return false;
   if (sum === 0) return true;
-  for (let k = 1; k <= size - 2; k++) if (COMBOS[k][sum].some((m) => !(m & ~INNER))) return true;
+  const inner = zero ? INNER | (1 << 1) : INNER;
+  for (let k = 1; k <= size - 2; k++) if (COMBOS[k][sum].some((m) => !(m & ~inner))) return true;
   return false;
 }
 
@@ -747,20 +815,31 @@ export function scales(doubles = [], pills = []) {
   return out;
 }
 
-// ABOVE[k]: the digits over k, for k 0 to 9. BELOW[k]: those under it, for
-// k 1 to 10. LOW and HIGH: a mask's least and greatest digit.
+// above(k): the digits whose values are over k, for k -1 to 9; below(k):
+// those under it, for k 0 to 10, ZERO among them. LOW and HIGH: a mask's
+// lowest and highest bit; MIN and MAX: the least and greatest value of the
+// digits in it, the same but for ZERO.
 const ABOVE = [];
 const BELOW = [];
-for (let k = 0; k <= 10; k++) {
-  ABOVE[k] = ALL & ~((2 << k) - 1);
-  BELOW[k] = ALL & ((1 << k) - 1);
+for (let k = -1; k <= 10; k++) {
+  ABOVE[k + 1] = k < 0 ? ALL_ZERO : ALL & ~((2 << k) - 1);
+  BELOW[k + 1] = k < 1 ? 0 : (ALL & ((1 << k) - 1)) | ZBIT;
 }
-const LOW = new Uint8Array(1024);
-const HIGH = new Uint8Array(1024);
-for (let m = 1; m < 1024; m++) {
+const above = (k) => ABOVE[k + 1];
+const below = (k) => BELOW[k + 1];
+const LOW = new Int8Array(2048);
+const HIGH = new Int8Array(2048);
+const MIN = new Int8Array(2048);
+const MAX = new Int8Array(2048);
+for (let m = 1; m < 2048; m++) {
   LOW[m] = 31 - Math.clz32(m & -m);
   HIGH[m] = 31 - Math.clz32(m);
+  MIN[m] = m & ZBIT ? 0 : LOW[m];
+  MAX[m] = m & ALL ? HIGH[m & ALL] : 0;
 }
+// A mask of digits as a mask of values, bit v for value v, and back.
+const valuesOf = (m) => (m & ALL) | (m & ZBIT ? 1 : 0);
+const digitsOf = (v) => (v & ALL) | (v & 1 ? ZBIT : 0);
 
 // Squeezes candidates along each thermometer: every cell above the least
 // the cell before it can be, and below the most the one after it can be.
@@ -769,30 +848,32 @@ for (let m = 1; m < 1024; m++) {
 // digits do not rise.
 function thermoBounds(thermos, g, free) {
   for (const t of thermos) {
-    let lo = 0;
+    let lo = -1;
     for (const c of t) {
-      const m = (g[c] ? 1 << g[c] : free[c]) & ABOVE[lo];
+      const m = (g[c] ? 1 << g[c] : free[c]) & above(lo);
       if (!m) return false;
       if (!g[c]) free[c] = m;
-      lo = LOW[m];
+      lo = MIN[m];
     }
     let hi = 10;
     for (let i = t.length - 1; i >= 0; i--) {
       const c = t[i];
-      const m = (g[c] ? 1 << g[c] : free[c]) & BELOW[hi];
+      const m = (g[c] ? 1 << g[c] : free[c]) & below(hi);
       if (!m) return false;
       if (!g[c]) free[c] = m;
-      hi = HIGH[m];
+      hi = MAX[m];
     }
   }
   return true;
 }
 
-// The digits from lo to hi, as a mask; lo and hi may be off the 1 to 9 range.
+// The digits whose values are from lo to hi, as a mask, ZERO if 0 is
+// among them; lo and hi may be off the 0 to 9 range.
 function between(lo, hi) {
+  const zero = lo <= 0 && hi >= 0 ? ZBIT : 0;
   lo = Math.max(lo, 1);
   hi = Math.min(hi, 9);
-  return lo > hi ? 0 : ALL & ((2 << hi) - 1) & ~((1 << lo) - 1);
+  return (lo > hi ? 0 : ALL & ((2 << hi) - 1) & ~((1 << lo) - 1)) | zero;
 }
 
 // Squeezes candidates along each arrow: the circle between the least and
@@ -807,8 +888,8 @@ function arrowBounds(arrows, g, free) {
     for (let i = 1; i < a.length; i++) {
       const m = g[a[i]] ? 1 << g[a[i]] : free[a[i]];
       if (!m) return false;
-      lo += LOW[m];
-      hi += HIGH[m];
+      lo += MIN[m];
+      hi += MAX[m];
     }
     const circle = a[0];
     const cm = (g[circle] ? 1 << g[circle] : free[circle]) & between(lo, hi);
@@ -817,7 +898,7 @@ function arrowBounds(arrows, g, free) {
     for (let i = 1; i < a.length; i++) {
       const c = a[i];
       if (g[c]) continue;
-      const m = free[c] & between(LOW[cm] - (hi - HIGH[free[c]]), HIGH[cm] - (lo - LOW[free[c]]));
+      const m = free[c] & between(MIN[cm] - (hi - MAX[free[c]]), MAX[cm] - (lo - MIN[free[c]]));
       if (!m) return false;
       free[c] = m;
     }
@@ -839,8 +920,8 @@ function scaleBounds(list, g, free) {
       const m = g[cells[i]] ? 1 << g[cells[i]] : free[cells[i]];
       if (!m) return false;
       const w = weights[i];
-      lo += w * (w > 0 ? LOW[m] : HIGH[m]);
-      hi += w * (w > 0 ? HIGH[m] : LOW[m]);
+      lo += w * (w > 0 ? MIN[m] : MAX[m]);
+      hi += w * (w > 0 ? MAX[m] : MIN[m]);
     }
     if (lo > 0 || hi < 0) return false;
     for (let i = 0; i < cells.length; i++) {
@@ -850,8 +931,8 @@ function scaleBounds(list, g, free) {
       const m = free[c];
       // What this cell's weighted digit may be: the others' total, taken
       // from 0, at their most and at their least.
-      const least = w * (w > 0 ? HIGH[m] : LOW[m]) - hi;
-      const most = w * (w > 0 ? LOW[m] : HIGH[m]) - lo;
+      const least = w * (w > 0 ? MAX[m] : MIN[m]) - hi;
+      const most = w * (w > 0 ? MIN[m] : MAX[m]) - lo;
       const [from, to] = w > 0 ? [Math.ceil(least / w), Math.floor(most / w)] : [Math.ceil(most / w), Math.floor(least / w)];
       const n = m & between(from, to);
       if (!n) return false;
@@ -866,11 +947,12 @@ function scaleBounds(list, g, free) {
 export const whisperGap = (rules = 0) => (has(rules, "dutchwhispers") ? 4 : 5);
 
 // FAR[gap][m]: the digits at least `gap` away from some digit in m, for a
-// gap of 4 or 5. A 5 has nothing 5 away, and only 1 and 9 4 away.
+// gap of 4 or 5, by value. A 5 has nothing 5 away, and only 1 and 9 4 away;
+// Doppelgänger's 0 is 5 or 4 away from 5 and over.
 const FAR = [4, 5].reduce((far, gap) => {
-  far[gap] = new Int32Array(1024);
-  for (let m = 2; m < 1024; m += 2) {
-    for (let d = 1; d <= 9; d++) if (m & (1 << d)) far[gap][m] |= between(1, d - gap) | between(d + gap, 9);
+  far[gap] = new Int32Array(2048);
+  for (let m = 2; m < 2048; m += 2) {
+    for (let d = 1; d <= ZERO; d++) if (m & (1 << d)) far[gap][m] |= between(0, VALUE[d] - gap) | between(VALUE[d] + gap, 9);
   }
   return far;
 }, []);
@@ -915,7 +997,7 @@ function renbanBounds(renbans, g, free) {
     }
     let fits = false;
     let allow = 0;
-    for (let lo = 1; lo + t.length - 1 <= 9; lo++) {
+    for (let lo = zeroOn ? 0 : 1; lo + t.length - 1 <= 9; lo++) {
       const run = between(lo, lo + t.length - 1);
       if (placed & ~run) continue;
       const need = run & ~placed;
@@ -959,17 +1041,19 @@ function palindromeBounds(palindromes, g, free) {
 }
 
 // The totals a digit of ma and a digit of mb can make, as a mask with bit s
-// for a total of s, 2 to 18.
+// for a total of s, 2 to 18, or from 0 with Doppelgänger's 0.
 function pairTotals(ma, mb) {
   let out = 0;
-  for (let d = 1; d <= 9; d++) if (ma & (1 << d)) out |= mb << d;
+  const vb = valuesOf(mb);
+  for (let d = 1; d <= ZERO; d++) if (ma & (1 << d)) out |= vb << VALUE[d];
   return out;
 }
 
 // The digits of ma that make one of `totals` with some digit of mb.
 function totalPartners(ma, mb, totals) {
   let out = 0;
-  for (let d = 1; d <= 9; d++) if (ma & (1 << d) && (mb << d) & totals) out |= 1 << d;
+  const vb = valuesOf(mb);
+  for (let d = 1; d <= ZERO; d++) if (ma & (1 << d) && (vb << VALUE[d]) & totals) out |= 1 << d;
   return out;
 }
 
@@ -983,7 +1067,7 @@ function zipperBounds(zippers, g, free) {
   for (const t of zippers) {
     const n = t.length;
     const mid = n % 2 ? t[(n - 1) / 2] : -1;
-    let totals = mid >= 0 ? (g[mid] ? 1 << g[mid] : free[mid]) : -1;
+    let totals = mid >= 0 ? valuesOf(g[mid] ? 1 << g[mid] : free[mid]) : -1;
     for (let i = 0, j = n - 1; i < j; i++, j--) {
       totals &= pairTotals(g[t[i]] ? 1 << g[t[i]] : free[t[i]], g[t[j]] ? 1 << g[t[j]] : free[t[j]]);
     }
@@ -995,7 +1079,7 @@ function zipperBounds(zippers, g, free) {
       if (!g[a]) free[a] = totalPartners(ma, mb, totals);
       if (!g[b]) free[b] = totalPartners(mb, ma, totals);
     }
-    if (mid >= 0 && !g[mid]) free[mid] = totals;
+    if (mid >= 0 && !g[mid]) free[mid] = digitsOf(totals);
   }
   return true;
 }
@@ -1007,7 +1091,7 @@ function zipperBounds(zippers, g, free) {
 // cell the digits those ways allow it. Placed digits count as masks of one,
 // and `free` is narrowed in place, as in thermoBounds; false if no way is
 // left.
-const endAllow = new Int32Array(9);
+const endAllow = new Int32Array(LONG_LINE_MOST);
 function endBounds(lines, g, free, inside) {
   for (const t of lines) {
     const n = t.length;
@@ -1017,11 +1101,11 @@ function endBounds(lines, g, free, inside) {
     let na = 0;
     let nb = 0;
     endAllow.fill(0);
-    for (let x = 1; x <= 9; x++) {
+    for (let x = 1; x <= ZERO; x++) {
       if (!(ma & (1 << x))) continue;
-      for (let y = 1; y <= 9; y++) {
+      for (let y = 1; y <= ZERO; y++) {
         if (!(mb & (1 << y))) continue;
-        const m = inside(x, y);
+        const m = inside(VALUE[x], VALUE[y]);
         if (m < 0) continue;
         let k = 1;
         while (k < n - 1 && (g[t[k]] ? 1 << g[t[k]] : free[t[k]]) & m) k++;
@@ -1045,7 +1129,7 @@ function endBounds(lines, g, free, inside) {
 export const betweenInside = (x, y) => between(Math.min(x, y) + 1, Math.max(x, y) - 1);
 // The same for a lockout line: the digits outside x and y, and neither of
 // them, or -1 when x and y are too close to be its ends.
-export const lockoutOutside = (x, y) => (Math.abs(x - y) >= LOCKOUT_GAP ? ALL & ~between(Math.min(x, y), Math.max(x, y)) : -1);
+export const lockoutOutside = (x, y) => (Math.abs(x - y) >= LOCKOUT_GAP ? ALL_ZERO & ~between(Math.min(x, y), Math.max(x, y)) : -1);
 
 const betweenBounds = (betweens, g, free) => endBounds(betweens, g, free, betweenInside);
 const lockoutBounds = (lockouts, g, free) => endBounds(lockouts, g, free, lockoutOutside);
@@ -1053,7 +1137,7 @@ const lockoutBounds = (lockouts, g, free) => endBounds(lockouts, g, free, lockou
 // The three kinds of digit an entropic line and a modular line sort digits
 // into, as masks: low, middle and high; and 1 4 7, 2 5 8 and 3 6 9.
 export const ENTROPIC_KINDS = [between(1, 3), between(4, 6), between(7, 9)];
-export const MODULAR_KINDS = [0, 1, 2].map((k) => [1, 2, 3].reduce((m, i) => m | (1 << (k + 1 + 3 * (i - 1))), 0));
+export const MODULAR_KINDS = [0, 1, 2].map((k) => [1, 2, 3].reduce((m, i) => m | (1 << (k + 1 + 3 * (i - 1))), k === 2 ? ZBIT : 0));
 // The six ways to give three places a kind each, all different.
 const ORDERS = [
   [0, 1, 2],
@@ -1121,7 +1205,7 @@ function sumCuts(sum, cells, from, g, free) {
   ahead[0] = 1;
   for (let i = 0; i < n; i++) {
     const m = g[at(i)] ? 1 << g[at(i)] : free[at(i)];
-    let next = 0;
+    let next = m & ZBIT ? ahead[i] : 0;
     for (let d = 1; d <= 9 && d <= sum; d++) {
       if (!(m & (1 << d))) continue;
       next |= (ahead[i] << d) & under;
@@ -1135,8 +1219,8 @@ function sumCuts(sum, cells, from, g, free) {
   behind[n] = 1;
   for (let i = n - 1; i >= 0; i--) {
     const m = g[at(i)] ? 1 << g[at(i)] : free[at(i)];
-    let back = 0;
-    let keep = 0;
+    let back = m & ZBIT ? behind[i + 1] : 0;
+    let keep = m & ZBIT && ahead[i] & behind[i + 1] ? ZBIT : 0;
     for (let d = 1; d <= 9 && d <= sum; d++) {
       if (!(m & (1 << d))) continue;
       const ends = behind[i + 1] & 1 ? 1 << (sum - d) : 0;
@@ -1201,7 +1285,7 @@ function runSets(run, g, free, fits) {
   let room = 0;
   for (const c of run) room |= g[c] ? 1 << g[c] : free[c];
   for (let total = 0; total <= 45; total++) {
-    for (const set of COMBOS[run.length][total]) {
+    for (const set of combos()[run.length][total]) {
       if (set & ~room || run.some((c) => !((g[c] ? 1 << g[c] : free[c]) & set))) continue;
       fits(total, set);
     }
@@ -1338,7 +1422,7 @@ function taxicabBounds(g, free) {
   for (let c = 0; c < 81; c++) {
     const d = g[c];
     if (!d) continue;
-    for (const o of TAXICAB[c][d]) {
+    for (const o of TAXICAB[c][d] ?? []) {
       if (g[o] === d) return false;
       if (!g[o]) free[o] &= ~(1 << d);
     }
@@ -1383,7 +1467,7 @@ const KEEPS = {
   gt: (a, b) => a > b,
   lt: (a, b) => a < b,
 };
-export const markKeeps = (mark, a, b) => KEEPS[mark](a, b);
+export const markKeeps = (mark, a, b) => KEEPS[mark](VALUE[a], VALUE[b]);
 
 // ACROSS[mark][m]: the digits that may be the second of a mark's two cells
 // when the first is some digit in m. A sign's cells are not alike, so the
@@ -1391,11 +1475,11 @@ export const markKeeps = (mark, a, b) => KEEPS[mark](a, b);
 const ACROSS = {};
 const REVERSED = { gt: "lt", lt: "gt" };
 for (const [mark, keeps] of Object.entries(KEEPS)) {
-  ACROSS[mark] = new Int32Array(1024);
-  for (let m = 2; m < 1024; m += 2) {
-    for (let d = 1; d <= 9; d++) {
+  ACROSS[mark] = new Int32Array(2048);
+  for (let m = 2; m < 2048; m += 2) {
+    for (let d = 1; d <= ZERO; d++) {
       if (!(m & (1 << d))) continue;
-      for (let e = 1; e <= 9; e++) if (keeps(d, e)) ACROSS[mark][m] |= 1 << e;
+      for (let e = 1; e <= ZERO; e++) if (keeps(VALUE[d], VALUE[e])) ACROSS[mark][m] |= 1 << e;
     }
   }
 }
@@ -1524,8 +1608,8 @@ const DIGIT_SETS = Array.from({ length: CIRCLES_MOST + 1 }, (_, n) => COMBOS.fla
 
 // Scratch for circleBounds: for each digit, the circles holding it, and the
 // empty ones that could.
-const circleHave = new Int32Array(10);
-const circleCan = new Int32Array(10);
+const circleHave = new Int32Array(11);
+const circleCan = new Int32Array(11);
 
 // Narrows the circles to the sets of digits they could still hold (DIGIT_SETS
 // above): each set holding every digit placed, no digit placed more than
@@ -1618,11 +1702,11 @@ export function barredSides(rules = 0, dots = [], xvs = []) {
       if (!marks.size) continue;
       const key = [...marks].join();
       if (!APART.has(key)) {
-        const across = new Int32Array(1024);
-        for (let m = 2; m < 1024; m += 2) {
-          for (let d = 1; d <= 9; d++) {
+        const across = new Int32Array(2048);
+        for (let m = 2; m < 2048; m += 2) {
+          for (let d = 1; d <= ZERO; d++) {
             if (!(m & (1 << d))) continue;
-            for (let e = 1; e <= 9; e++) if (![...marks].some((mark) => KEEPS[mark](d, e))) across[m] |= 1 << e;
+            for (let e = 1; e <= ZERO; e++) if (![...marks].some((mark) => KEEPS[mark](VALUE[d], VALUE[e]))) across[m] |= 1 << e;
           }
         }
         APART.set(key, across);
@@ -1676,7 +1760,9 @@ export function diagonalFrom(r, c, dr, dc) {
 // cells or more, from an edge of the board to the far one, a sum its cells
 // could make, and no two from the same cell the same way. null if so, or
 // what is wrong: { why, at }.
-export function littleProblem(littles) {
+export function littleProblem(littles, rules = 0) {
+  // Under Doppelgänger a cell may add nothing.
+  const least = has(rules, "doppelganger") ? 0 : 1;
   const seen = new Set();
   for (let i = 0; i < littles.length; i++) {
     const { cells, sum } = littles[i] ?? {};
@@ -1686,7 +1772,7 @@ export function littleProblem(littles) {
     const whole = diagonalFrom(ROW[cells[0]], COL[cells[0]], dr, dc);
     const fromEdge = !diagonalFrom(ROW[cells[0]] - dr, COL[cells[0]] - dc, dr, dc).length;
     if (Math.abs(dr) !== 1 || Math.abs(dc) !== 1 || !fromEdge || whole.join() !== cells.join()) return { why: "diagonal", at: i };
-    if (!Number.isInteger(sum) || sum < cells.length || sum > 9 * cells.length) return { why: "sum", at: i };
+    if (!Number.isInteger(sum) || sum < least * cells.length || sum > 9 * cells.length) return { why: "sum", at: i };
     const key = `${cells[0]},${cells[1]}`;
     if (seen.has(key)) return { why: "twice", at: i };
     seen.add(key);
@@ -1734,9 +1820,10 @@ export function firstHidden(digits) {
 
 // How many digits of a line, read from its first, are taller than every
 // one before them: as many as a Skyscraper clue there would count.
+// The first is always seen, even Doppelgänger's 0, given by value.
 export function seen(digits) {
   let count = 0;
-  let top = 0;
+  let top = -1;
   for (const d of digits) {
     if (d > top) {
       count++;
@@ -1745,6 +1832,10 @@ export function seen(digits) {
   }
   return count;
 }
+
+// The digits a line's tallest can be: 9, or under Doppelgänger, whose
+// lines each lack a digit, an 8 too.
+const tallest = () => (zeroOn ? (1 << 8) | (1 << 9) : 1 << 9);
 
 // Narrows each Skyscraper clue's view. The cell k places from the clue is
 // no taller than 10 - count + k, or too few could be seen past it; a count
@@ -1757,23 +1848,27 @@ function skyscraperBounds(skyscrapers, g, free) {
   for (const { view, count } of skyscrapers) {
     const cells = VIEWS[view];
     for (let k = 0; k < 9; k++) {
-      const m = BELOW[Math.min(10, 11 - count + k)] & (count === 1 && k === 0 ? 1 << 9 : ALL);
+      const m = below(Math.min(10, 11 - count + k)) & (count === 1 && k === 0 ? tallest() : allDigits());
       const c = cells[k];
       if (g[c]) {
         if (!(m & (1 << g[c]))) return false;
       } else if (!(free[c] &= m)) return false;
     }
+    // Heights by value: Doppelgänger's 0, first, is seen too.
     let shown = 0;
-    let top = 0;
+    let top = -1;
     let k = 0;
     for (; k < 9 && g[cells[k]]; k++) {
-      if (g[cells[k]] > top) {
-        top = g[cells[k]];
+      if (VALUE[g[cells[k]]] > top) {
+        top = VALUE[g[cells[k]]];
         shown++;
       }
     }
-    if (top === 9 ? shown !== count : shown >= count || shown + 9 - top < count) return false;
-    if (k < 9 && shown === count - 1 && !(free[cells[k]] &= BELOW[top + 1] | (1 << 9))) return false;
+    // Once the tallest there can be is seen, no more are; short of it, the
+    // tallest is still to come. Under Doppelgänger an 8 may be the
+    // tallest, so a full line counts as it stands.
+    if (top === 9 || k === 9 ? shown !== count : top === 8 && zeroOn ? shown > count || shown + 1 < count : shown >= count || shown + 9 - top < count) return false;
+    if (k < 9 && shown === count - 1 && !(free[cells[k]] &= below(top + 1) | tallest())) return false;
   }
   return true;
 }
@@ -1805,18 +1900,18 @@ function xsumBounds(xsums, g, free) {
         } else if (placed & (1 << d)) ok = false;
         else {
           placed |= 1 << d;
-          rest -= d;
+          rest -= VALUE[d];
         }
       }
       if (!ok || rest < 0) continue;
       let inner = 0;
-      for (const set of COMBOS[left][rest] ?? []) if (!(set & placed) && !(set & ~room)) inner |= set;
+      for (const set of combos()[left]?.[rest] ?? []) if (!(set & placed) && !(set & ~room)) inner |= set;
       if (left ? !inner : rest) continue;
       fits = true;
       allow[0] |= 1 << x;
       // placed holds X too, to keep it out of the sets; the cells after it
       // hold the rest.
-      for (let k = 1; k < 9; k++) allow[k] |= k < x ? inner | (placed & ~(1 << x)) : ALL;
+      for (let k = 1; k < 9; k++) allow[k] |= k < x ? inner | (placed & ~(1 << x)) : ALL_ZERO;
     }
     if (!fits) return false;
     for (let k = 0; k < 9; k++) {
@@ -1847,24 +1942,24 @@ function hiddenBounds(hiddens, g, free) {
       if (!((g[c] ? 1 << g[c] : free[c]) & (1 << height))) continue;
       // The cells before it: rising, the height itself not among them.
       let ok = true;
-      let lo = 0;
+      let lo = -1;
       for (let i = 0; i < k && ok; i++) {
         const x = cells[i];
-        m[i] = (g[x] ? 1 << g[x] : free[x]) & ABOVE[lo] & ~(1 << height) & (i === k - 1 ? ABOVE[height] : ALL);
+        m[i] = (g[x] ? 1 << g[x] : free[x]) & above(lo) & ~(1 << height) & (i === k - 1 ? above(height) : ALL_ZERO);
         if (!m[i]) ok = false;
-        else lo = LOW[m[i]];
+        else lo = MIN[m[i]];
       }
       let hi = 10;
       for (let i = k - 1; i >= 0 && ok; i--) {
-        m[i] &= BELOW[hi];
+        m[i] &= below(hi);
         if (!m[i]) ok = false;
-        else hi = HIGH[m[i]];
+        else hi = MAX[m[i]];
       }
       if (!ok) continue;
       fits = true;
       for (let i = 0; i < k; i++) allow[i] |= m[i];
       allow[k] |= 1 << height;
-      for (let i = k + 1; i < 9; i++) allow[i] = ALL;
+      for (let i = k + 1; i < 9; i++) allow[i] = ALL_ZERO;
     }
     if (!fits) return false;
     for (let k = 0; k < 9; k++) {
@@ -1966,9 +2061,9 @@ function rankUnder(lo, hi, g, free) {
     let a = g[x] ? 1 << g[x] : free[x];
     let b = g[y] ? 1 << g[y] : free[y];
     if (a === b && POP[a] === 1) continue;
-    a &= BELOW[HIGH[b] + 1];
+    a &= below(HIGH[b] + 1);
     if (!a) return false;
-    b &= ABOVE[LOW[a] - 1];
+    b &= above(LOW[a] - 1);
     if (!b) return false;
     if (!g[x]) free[x] = a;
     if (!g[y]) free[y] = b;
@@ -2175,6 +2270,8 @@ function indexingBounds(cells, g, free) {
 // every set of k of them adding up to s.
 const INNER = ALL & ~(1 << 1) & ~(1 << 9);
 const MIDDLE = COMBOS.map((row) => row.map((sets) => sets.filter((m) => !(m & ~INNER))));
+// The same, with Doppelgänger's 0 among them.
+const ZERO_MIDDLE = ZERO_COMBOS.map((row) => row.map((sets) => sets.filter((m) => !(m & ~(INNER | ZBIT)))));
 
 // Narrows each Sandwich clue's line to the ways it could still go: for each
 // place its 1 and its 9 could take, whether the cells between could add up
@@ -2199,25 +2296,26 @@ function sandwichBounds(sandwiches, g, free) {
         let left = 0;
         let room = 0;
         let ok = true;
+        const middle = zeroOn ? INNER | ZBIT : INNER;
         for (let k = lo + 1; k < hi && ok; k++) {
           const d = g[cells[k]];
           if (!d) {
             left++;
             room |= m[k];
-          } else if (INNER & ~placed & (1 << d)) {
+          } else if (middle & ~placed & (1 << d)) {
             placed |= 1 << d;
-            rest -= d;
+            rest -= VALUE[d];
           } else ok = false;
         }
         if (!ok || rest < 0) continue;
         let inner = 0;
-        for (const set of MIDDLE[left][rest] ?? []) if (!(set & placed) && !(set & ~room)) inner |= set;
+        for (const set of (zeroOn ? ZERO_MIDDLE : MIDDLE)[left]?.[rest] ?? []) if (!(set & placed) && !(set & ~room)) inner |= set;
         if (left ? !inner : rest) continue;
         fits = true;
         for (let k = 0; k < 9; k++) {
           if (k === i) allow[k] |= 1 << 1;
           else if (k === j) allow[k] |= 1 << 9;
-          else allow[k] |= k > lo && k < hi ? inner | placed : INNER;
+          else allow[k] |= k > lo && k < hi ? inner | placed : middle;
         }
       }
     }
@@ -2244,13 +2342,13 @@ function littleBounds(littles, g, free) {
     for (const c of cells) {
       const m = g[c] ? 1 << g[c] : free[c];
       if (!m) return false;
-      lo += LOW[m];
-      hi += HIGH[m];
+      lo += MIN[m];
+      hi += MAX[m];
     }
     if (sum < lo || sum > hi) return false;
     for (const c of cells) {
       if (g[c]) continue;
-      const m = free[c] & between(sum - (hi - HIGH[free[c]]), sum - (lo - LOW[free[c]]));
+      const m = free[c] & between(sum - (hi - MAX[free[c]]), sum - (lo - MIN[free[c]]));
       if (!m) return false;
       free[c] = m;
     }
@@ -2287,8 +2385,8 @@ function rellikBounds(relliks, g, free) {
     REACH.fill(0, 0, sum + 1);
     REACH[0] = 1;
     for (const c of cells) {
-      const d = g[c];
-      if (!d) continue;
+      if (!g[c]) continue;
+      const d = VALUE[g[c]];
       for (let t = sum; t >= d; t--) if (REACH[t - d]) REACH[t] = 1;
       if (REACH[sum]) return false;
     }
@@ -2329,8 +2427,8 @@ function lunchboxBounds(lunchboxes, g, free) {
         if (i === j) continue;
         const a = Math.min(i, j);
         const b = Math.max(i, j);
-        for (let lo = 1; lo + n - 1 <= 9; lo++) {
-          if (!(m[i] & (1 << lo))) continue;
+        for (let lo = zeroOn ? 0 : 1; lo + n - 1 <= 9; lo++) {
+          if (!(m[i] & (1 << CODE[lo]))) continue;
           for (let hi = lo + n - 1; hi <= 9; hi++) {
             if (!(m[j] & (1 << hi))) continue;
             const range = between(lo + 1, hi - 1);
@@ -2348,7 +2446,7 @@ function lunchboxBounds(lunchboxes, g, free) {
               const d = g[cells[x]];
               if (d) {
                 if (!(range & (1 << d))) ok = false;
-                else if (inside) rest -= d;
+                else if (inside) rest -= VALUE[d];
               } else if (!(m[x] & range)) ok = false;
               else if (inside) {
                 left++;
@@ -2367,7 +2465,7 @@ function lunchboxBounds(lunchboxes, g, free) {
               if (!inner) continue;
             }
             fits = true;
-            allow[i] |= 1 << lo;
+            allow[i] |= 1 << CODE[lo];
             allow[j] |= 1 << hi;
             for (let x = 0; x < n; x++) if (x !== i && x !== j) allow[x] |= x > a && x < b ? inner | (placed & range) : range;
           }
@@ -2438,8 +2536,8 @@ function equalityBounds(equalities, g, free) {
     if (!distinctBounds(cells, g, free)) return false;
     const half = cells.length / 2;
     for (const c of cells) {
-      if (g[c] === 5) return false;
-      if (!g[c] && !(free[c] &= ~(1 << 5))) return false;
+      if (g[c] === 5 || g[c] === ZERO) return false;
+      if (!g[c] && !(free[c] &= ~(1 << 5) & ~ZBIT)) return false;
     }
     for (const digits of EQUAL_HALVES) {
       let have = 0;
@@ -2483,7 +2581,7 @@ function piecesAhead(piece, g, free) {
     to.fill(0);
     for (let t = 0; t <= 9 * i; t++) {
       if (!from[t]) continue;
-      for (let d = 1; d <= 9; d++) if (m & (1 << d)) to[t + d] = 1;
+      for (let d = 1; d <= ZERO; d++) if (m & (1 << d)) to[t + VALUE[d]] = 1;
     }
   }
 }
@@ -2514,10 +2612,11 @@ function equalSumBounds(groups, g, free) {
         const back = sumBehind[i];
         back.fill(0);
         let keep = 0;
-        for (let d = 1; d <= 9; d++) {
+        for (let d = 1; d <= ZERO; d++) {
           if (!(m & (1 << d))) continue;
-          for (let t = 0; t + d <= PIECE_TOP; t++) {
-            if (!after[t + d]) continue;
+          const v = VALUE[d];
+          for (let t = 0; t + v <= PIECE_TOP; t++) {
+            if (!after[t + v]) continue;
             back[t] = 1;
             if (before[t]) keep |= 1 << d;
           }
@@ -2544,7 +2643,7 @@ const sameCan = new Int32Array(81);
 // place, as in thermoBounds; false if the pieces cannot match.
 function sameValueBounds(groups, g, free) {
   for (const pieces of groups) {
-    let common = ALL;
+    let common = ALL_ZERO;
     for (const piece of pieces) {
       let room = 0;
       for (const c of piece) room |= g[c] ? 1 << g[c] : free[c];
@@ -2555,7 +2654,7 @@ function sameValueBounds(groups, g, free) {
         if (g[c] ? !(common & (1 << g[c])) : !(free[c] &= common)) return false;
       }
     }
-    for (let d = 1; d <= 9; d++) {
+    for (let d = 1; d <= ZERO; d++) {
       const bit = 1 << d;
       let most = 0;
       let least = 9;
@@ -2644,7 +2743,7 @@ function connectedBounds(links, g, free) {
 // Scratch for countDistinctBounds: the counted cells' masks, which cell
 // each digit is matched to, and the digits tried on this search.
 const distinctMasks = new Int32Array(81);
-const distinctOwner = new Int32Array(10);
+const distinctOwner = new Int32Array(11);
 let distinctTried = 0;
 
 // Whether counted cell i can be matched to a digit of its own, moving those
@@ -2695,6 +2794,835 @@ function countDistinctBounds(distincts, g, free) {
   return true;
 }
 
+/* ---- Doppelgänger ---- */
+
+// Under Doppelgänger each row, column and box, or a Jigsaw's region, holds
+// a 0 (ZERO) and eight of 1 to 9, missing the ninth. No two rows miss the
+// same digit, nor two columns, nor two boxes, so each digit is missing from
+// one of each; and at each 0, its row, column and box miss three different
+// digits. Rules that ask what a 0 cannot mean go with it nowhere: those
+// about kinds of digits, low, middle and high, digits steps apart or in
+// fives, ranking or indexing whole lines, and regions cut while solving.
+export const ZERO_CLASHES = ["chaos", "globalentropy", "globalmod", "antitaxicab", "dutchflatmates", "norankties", "cluedrankties"];
+export const ZERO_CLASH_PARTS = ["entropics", "ranks", "indexings", "indexcells", "chaosarrows", "chaoscounts"];
+
+// The first rule a variant under Doppelgänger has that cannot go with it,
+// by its name, or null.
+export function zeroClash(variant) {
+  const rules = variant?.rules ?? 0;
+  if (!has(rules, "doppelganger")) return null;
+  const rule = RULES.find((r) => ZERO_CLASHES.includes(r.key) && rules & r.bit);
+  if (rule) return rule.name;
+  const list = ZERO_CLASH_PARTS.find((part) => variant[part]?.length);
+  return list ? variantName({ [list]: [1] }) : null;
+}
+
+// Scratch for doppelBounds: for each row, column and box, the digits it
+// could be missing; and for matching them up, which house each digit is
+// missing from, and the digits tried.
+const missOf = new Int32Array(27);
+const boxAt = new Int8Array(81);
+const missOwner = new Int32Array(10);
+let missTried = 0;
+
+// Whether house h, of the nine from `from`, can be matched to a digit it
+// could miss, moving those matched before along if need be.
+function missMatch(h, from) {
+  for (let m = missOf[from + h]; m; m &= m - 1) {
+    const bit = m & -m;
+    if (missTried & bit) continue;
+    missTried |= bit;
+    const d = LOW[bit];
+    if (missOwner[d] < 0 || missMatch(missOwner[d], from)) {
+      missOwner[d] = h;
+      return true;
+    }
+  }
+  return false;
+}
+
+// Narrows the digits under Doppelgänger, from the first 27 houses, rows,
+// columns and then boxes or regions, as layout() has them. Each holds one
+// 0, and could be missing any digit 1 to 9 it has none of; one it has no
+// cell left for is the one it misses. A digit only one house of a kind
+// could be missing is missing there, one a house is sure to miss is in the
+// others of its kind, and the nine of a kind must miss nine different
+// digits between them. At a 0, two of its houses cannot miss the same.
+// A house sure of what it misses has no cell left for it. Each house's
+// digits it must hold, a 0 and every digit it cannot be missing, go in
+// `needs`, for hidden singles. Placed digits count as masks of one, and
+// `free` is narrowed in place, as in thermoBounds; false if a house cannot
+// miss one digit, or the houses of a kind cannot miss different ones.
+function doppelBounds(houses, g, free, needs) {
+  missOf.fill(ALL);
+  for (let h = 18; h < 27; h++) for (const c of houses[h].cells) boxAt[c] = h;
+  for (let round = 0; round < 27; round++) {
+    let changed = false;
+    for (let h = 0; h < 27; h++) {
+      let placed = 0;
+      let can = 0;
+      for (const c of houses[h].cells) {
+        if (g[c]) placed |= 1 << g[c];
+        else can |= free[c];
+      }
+      if (!((placed | can) & ZBIT)) return false;
+      let miss = missOf[h] & ~placed;
+      const none = miss & ~can;
+      if (POP[none] > 1) return false;
+      if (none) miss = none;
+      if (!miss) return false;
+      if (miss !== missOf[h]) {
+        missOf[h] = miss;
+        changed = true;
+      }
+    }
+    for (let from = 0; from < 27; from += 9) {
+      for (let h = from; h < from + 9; h++) {
+        if (POP[missOf[h]] !== 1) continue;
+        for (let o = from; o < from + 9; o++) {
+          if (o === h || !(missOf[o] & missOf[h])) continue;
+          if (!(missOf[o] &= ~missOf[h])) return false;
+          changed = true;
+        }
+      }
+      for (let m = ALL; m; m &= m - 1) {
+        const bit = m & -m;
+        let only = -1;
+        let count = 0;
+        for (let h = from; h < from + 9 && count < 2; h++) {
+          if (!(missOf[h] & bit)) continue;
+          only = h;
+          count++;
+        }
+        if (!count) return false;
+        if (count === 1 && missOf[only] !== bit) {
+          missOf[only] = bit;
+          changed = true;
+        }
+      }
+      missOwner.fill(-1);
+      for (let h = 0; h < 9; h++) {
+        missTried = 0;
+        if (!missMatch(h, from)) return false;
+      }
+    }
+    // At a 0, or a cell that could be one.
+    for (let c = 0; c < 81; c++) {
+      if (g[c] ? g[c] !== ZERO : !(free[c] & ZBIT)) continue;
+      const [a, b, x] = [ROW[c], 9 + COL[c], boxAt[c]];
+      const sure = [a, b, x].filter((h) => POP[missOf[h]] === 1);
+      const clash = sure.some((h, i) => sure.some((o, j) => j > i && missOf[o] === missOf[h]));
+      if (clash) {
+        if (g[c]) return false;
+        free[c] &= ~ZBIT;
+        if (!free[c]) return false;
+        changed = true;
+      } else if (g[c]) {
+        for (const h of sure) {
+          for (const o of [a, b, x]) {
+            if (o === h || !(missOf[o] & missOf[h])) continue;
+            if (!(missOf[o] &= ~missOf[h])) return false;
+            changed = true;
+          }
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  for (let h = 0; h < 27; h++) {
+    const miss = missOf[h];
+    needs[h] = ZBIT | (ALL & ~miss);
+    if (POP[miss] !== 1) continue;
+    for (const c of houses[h].cells) if (!g[c] && !(free[c] &= ~miss)) return false;
+  }
+  return true;
+}
+
+/* ---- Yin-Yang ---- */
+
+// Yin-Yang lays a shading over the grid, apart from the digits: every cell
+// is shaded or unshaded, the shaded cells all join up edge to edge, and so
+// do the unshaded ones, and no 2x2 square is all one shade. Circles in some
+// cells give their shade: [{ cell, shade }] in reading order, shade SHADED
+// or UNSHADED. A shading is a list of 81 shades, 0 for one not yet known.
+export const SHADED = 1;
+export const UNSHADED = 2;
+const OTHER_SHADE = [0, UNSHADED, SHADED];
+
+// Whether Yin-Yang's circles are well formed: one cell or more, each on the
+// board once, each shaded or unshaded. null if so, or what is wrong:
+// { why, at }, why "cell", "shade" or "twice".
+export function shadeProblem(shades) {
+  if (!Array.isArray(shades) || !shades.length || shades.length > 81) return { why: "cell", at: 0 };
+  const got = new Set();
+  for (let i = 0; i < shades.length; i++) {
+    const { cell, shade } = shades[i] ?? {};
+    if (!Number.isInteger(cell) || cell < 0 || cell > 80) return { why: "cell", at: i };
+    if (shade !== SHADED && shade !== UNSHADED) return { why: "shade", at: i };
+    if (got.has(cell)) return { why: "twice", at: i };
+    got.add(cell);
+  }
+  return null;
+}
+
+// The grid's edge, round from the top left: the shades along it change at
+// most twice, as each shade joins up, so neither can cut the other in two.
+const RIM = [
+  ...[...Array(9).keys()],
+  ...[...Array(8).keys()].map((i) => cellAt(i + 1, 8)),
+  ...[...Array(8).keys()].map((i) => cellAt(8, 7 - i)),
+  ...[...Array(7).keys()].map((i) => cellAt(7 - i, 0)),
+];
+const SIDE_CELLS = [...Array(81).keys()].map((c) => [c - 9, c + 9, COL[c] > 0 ? c - 1 : -1, COL[c] < 8 ? c + 1 : -1].filter((o) => o >= 0 && o < 81));
+const shadeTodo = new Int32Array(81);
+const shadeSeen = new Uint8Array(81);
+
+// Narrows a shading in place, from the rules: a 2x2 square with three cells
+// of one shade has the other in its fourth, and one with two cells of a
+// shade at opposite corners and the other shade at a third has the first
+// at its fourth, as two shades crossing at a square's corners would cut each
+// other off. Cells a shade cannot reach from its own, through cells of it
+// or not yet known, are the other shade. false if the shading cannot be:
+// a square all one shade or crossing, a shade cut in two, or the grid's
+// edge changing shade more than twice.
+function shadeBounds(st) {
+  for (let round = 0; round < 81; round++) {
+    let changed = false;
+    for (const square of SQUARES) {
+      for (const shade of [SHADED, UNSHADED]) {
+        let same = 0;
+        let open = -1;
+        for (const c of square) {
+          if (st[c] === shade) same++;
+          else if (!st[c]) open = c;
+        }
+        if (same === 4) return false;
+        if (same === 3 && open >= 0) {
+          st[open] = OTHER_SHADE[shade];
+          changed = true;
+        }
+      }
+      // Corners crossing: [0, 3] and [1, 2] are its two diagonals.
+      for (const [[p, q], [r, s]] of [
+        [
+          [0, 3],
+          [1, 2],
+        ],
+        [
+          [1, 2],
+          [0, 3],
+        ],
+      ]) {
+        const x = st[square[p]];
+        if (!x || st[square[q]] !== x) continue;
+        const [a, b] = [st[square[r]], st[square[s]]];
+        if (a && b && a !== x && b !== x) return false;
+        if (a && a !== x && !b) {
+          st[square[s]] = x;
+          changed = true;
+        } else if (b && b !== x && !a) {
+          st[square[r]] = x;
+          changed = true;
+        }
+      }
+    }
+    for (const shade of [SHADED, UNSHADED]) {
+      const start = st.indexOf(shade);
+      if (start < 0) continue;
+      shadeSeen.fill(0);
+      shadeSeen[start] = 1;
+      shadeTodo[0] = start;
+      let n = 1;
+      for (let k = 0; k < n; k++) {
+        for (const o of SIDE_CELLS[shadeTodo[k]]) {
+          if (shadeSeen[o] || st[o] === OTHER_SHADE[shade]) continue;
+          shadeSeen[o] = 1;
+          shadeTodo[n++] = o;
+        }
+      }
+      for (let c = 0; c < 81; c++) {
+        if (shadeSeen[c]) continue;
+        if (st[c] === shade) return false;
+        if (!st[c]) {
+          st[c] = OTHER_SHADE[shade];
+          changed = true;
+        }
+      }
+    }
+    let first = 0;
+    let last = 0;
+    let turns = 0;
+    for (const c of RIM) {
+      if (!st[c]) continue;
+      if (last && st[c] !== last) turns++;
+      if (!first) first = st[c];
+      last = st[c];
+    }
+    if (first && last !== first) turns++;
+    if (turns > 2) return false;
+    if (!changed) return true;
+  }
+  return true;
+}
+
+// How many steps the shading search takes at most, as BUDGET is for the
+// digits, the same everywhere.
+export const SHADE_BUDGET = 100000;
+
+// Up to `limit` shadings that keep Yin-Yang's rules and its circles, as
+// lists of 81 shades, or null if the search ran out of budget before it
+// could say. It shades a cell beside one already known, if any, each way.
+export function shadings(shades, limit = 2) {
+  const start = new Int8Array(81);
+  for (const { cell, shade } of shades) start[cell] = shade;
+  const out = [];
+  let steps = 0;
+  let spent = false;
+  const step = (from) => {
+    if (++steps > SHADE_BUDGET) {
+      spent = true;
+      return true;
+    }
+    const st = from.slice();
+    if (!shadeBounds(st)) return false;
+    let cell = -1;
+    for (let c = 0; c < 81 && cell < 0; c++) if (!st[c] && SIDE_CELLS[c].some((o) => st[o])) cell = c;
+    if (cell < 0) cell = st.indexOf(0);
+    if (cell < 0) {
+      out.push(Array.from(st));
+      return out.length >= limit;
+    }
+    for (const shade of [SHADED, UNSHADED]) {
+      st[cell] = shade;
+      if (step(st)) return true;
+    }
+    return false;
+  };
+  step(start);
+  return spent && out.length < limit ? null : out;
+}
+
+// Whether a full shading keeps Yin-Yang's rules and its circles.
+export function shadingKeeps(shading, shades = []) {
+  if (shading.length !== 81 || shading.some((s) => s !== SHADED && s !== UNSHADED)) return false;
+  if (shades.some(({ cell, shade }) => shading[cell] !== shade)) return false;
+  return shadeBounds(Int8Array.from(shading));
+}
+
+/* ---- Chaos Construction ---- */
+
+// Under Chaos Construction the grid is cut into nine regions of nine cells,
+// each joined edge to edge and holding 1 to 9 once, as a Jigsaw's are; but
+// the cuts are not given, and are worked out with the digits. The search
+// works on the 144 sides two cells share, each joined, its two cells in one
+// region, or walled, in two; undecided until then. A side is joined exactly
+// when its two cells share a region, so each way of cutting the grid is
+// one way of deciding its sides, and the regions come out named in order
+// of their first cells, as sortRegions numbers them.
+export const SIDE_PAIRS = [];
+// For each cell, the side to its right and the side below it, or -1.
+const SIDE_RIGHT = new Int16Array(81).fill(-1);
+const SIDE_DOWN = new Int16Array(81).fill(-1);
+for (let c = 0; c < 81; c++) {
+  if (COL[c] < 8) SIDE_RIGHT[c] = SIDE_PAIRS.push([c, c + 1]) - 1;
+  if (c < 72) SIDE_DOWN[c] = SIDE_PAIRS.push([c, c + 9]) - 1;
+}
+// The side cells a and b share, or -1 if they share none.
+export function sideOf(a, b) {
+  if (a > b) [a, b] = [b, a];
+  if (b === a + 1 && ROW[a] === ROW[b]) return SIDE_RIGHT[a];
+  return b === a + 9 ? SIDE_DOWN[a] : -1;
+}
+const UNDECIDED = 0;
+const JOINED = 1;
+const WALLED = 2;
+
+// Chaos Construction's two clues, both in a cell, both about the cell's
+// own region. A Chaos Arrow points along its row and column, one to four
+// ways, as `ways` says: bits 1, 2, 4 and 8 for up, right, down and left
+// (ARROW_WAYS). Its digit counts the cell and the cells of its region
+// running on from it each way it points, up to the first that is not in
+// it: [{ cell, ways }]. A Chaos Count's digit counts the cells of its
+// region among the nine round it, itself included, fewer at the grid's
+// edge: [cells].
+export const ARROW_WAYS = [
+  [-1, 0],
+  [0, 1],
+  [1, 0],
+  [0, -1],
+];
+
+// The cells from `cell` on along each way in `ways`, to the grid's edge,
+// nearest first; a way off the grid at once has none.
+export function chaosArms(cell, ways) {
+  const out = [];
+  ARROW_WAYS.forEach(([dr, dc], i) => {
+    if (!(ways & (1 << i))) return;
+    const arm = [];
+    for (let r = ROW[cell] + dr, c = COL[cell] + dc; r >= 0 && r < 9 && c >= 0 && c < 9; r += dr, c += dc) arm.push(cellAt(r, c));
+    out.push(arm);
+  });
+  return out;
+}
+
+// The cells round `cell`, touching it along a side or at a corner.
+export const chaosAround = (cell) => [...Array(81).keys()].filter((o) => touching(cell, o));
+const AROUND = [...Array(81).keys()].map(chaosAround);
+
+// The ways a cell's arrow can point: those with a cell to point at.
+export const waysFrom = (cell) => ARROW_WAYS.reduce((m, _, i) => (chaosArms(cell, 1 << i)[0].length ? m | (1 << i) : m), 0);
+
+// Whether Chaos Arrows are well formed: a cell each, none twice, and one to
+// four ways, each with a cell to point at. null if so, or what is wrong:
+// { why, at }, why "cell", "ways" or "twice".
+export function chaosArrowProblem(arrows) {
+  const got = new Set();
+  for (let i = 0; i < arrows.length; i++) {
+    const { cell, ways } = arrows[i] ?? {};
+    if (!Number.isInteger(cell) || cell < 0 || cell > 80) return { why: "cell", at: i };
+    if (!Number.isInteger(ways) || ways < 1 || ways > 15 || ways & ~waysFrom(cell)) return { why: "ways", at: i };
+    if (got.has(cell)) return { why: "twice", at: i };
+    got.add(cell);
+  }
+  return null;
+}
+
+// Whether Chaos Counts are well formed: one cell or more, each on the board,
+// none twice. null if so, or what is wrong: { why }, why "cell" or "twice".
+export function chaosCountProblem(counts) {
+  if (!Array.isArray(counts) || !counts.length || counts.length > 81) return { why: "cell" };
+  const got = new Set();
+  for (const c of counts) {
+    if (!Number.isInteger(c) || c < 0 || c > 80) return { why: "cell" };
+    if (got.has(c)) return { why: "twice" };
+    got.add(c);
+  }
+  return null;
+}
+
+// Each Chaos Arrow with its arms as the sides along them, from the arrow's
+// cell out: [{ cell, all, arms }], all whether it points every way it can.
+const arrowSides = (arrows) =>
+  arrows.map(({ cell, ways }) => ({
+    cell,
+    all: ways === waysFrom(cell),
+    arms: chaosArms(cell, ways).map((arm) => arm.map((c, i) => sideOf(i ? arm[i - 1] : cell, c))),
+  }));
+
+// The totals a number from each of two sets can make, as masks with bit n
+// for n.
+function sumSet(a, b) {
+  let out = 0;
+  for (let n = 0; b >> n; n++) if (b & (1 << n)) out |= a << n;
+  return out;
+}
+
+// Scratch for chaosBounds: each cell's shard, its root's size, digits
+// placed and digits it could hold; each cell's area; the run lengths each
+// arm of an arrow can have; and for the reach of a shard, the cost of
+// reaching each other shard, by the pass that set it.
+const shardRoot = new Int32Array(81);
+const shardSize = new Int32Array(81);
+// Each shard's cells as a list from its root: the next cell, or -1.
+const shardNext = new Int32Array(81);
+const shardLast = new Int32Array(81);
+const shardHave = new Int32Array(81);
+const shardCan = new Int32Array(81);
+const areaOf = new Int32Array(81);
+const areaSize = new Int32Array(82);
+const chaosTodo = new Int32Array(81);
+const armRuns = new Int32Array(4);
+const reachCost = new Int32Array(81);
+const reachQueue = new Int32Array(81);
+const reachPass = new Float64Array(81);
+let reachPasses = 0;
+
+const findShard = (c) => {
+  while (shardRoot[c] !== c) c = shardRoot[c] = shardRoot[shardRoot[c]];
+  return c;
+};
+
+// Each cell's sides, as [side, other cell].
+const CELL_SIDES = [...Array(81).keys()].map((c) =>
+  [c - 9, c + 9, COL[c] > 0 ? c - 1 : -1, COL[c] < 8 ? c + 1 : -1].filter((o) => o >= 0 && o < 81).map((o) => [sideOf(c, o), o])
+);
+
+// Groups the cells into shards, those joined by joined sides, each with its
+// size, its placed digits and the digits it could hold. false if a shard
+// has a walled side inside it, more than nine cells or a digit twice.
+function buildShards(g, free, ws) {
+  for (let c = 0; c < 81; c++) shardRoot[c] = c;
+  for (let s = 0; s < 144; s++) {
+    if (ws[s] !== JOINED) continue;
+    const a = findShard(SIDE_PAIRS[s][0]);
+    const b = findShard(SIDE_PAIRS[s][1]);
+    if (a !== b) shardRoot[Math.max(a, b)] = Math.min(a, b);
+  }
+  shardSize.fill(0);
+  shardHave.fill(0);
+  shardCan.fill(0);
+  for (let c = 0; c < 81; c++) {
+    const r = findShard(c);
+    shardNext[c] = -1;
+    if (r === c) shardLast[r] = c;
+    else {
+      shardNext[shardLast[r]] = c;
+      shardLast[r] = c;
+    }
+    shardSize[r]++;
+    if (g[c]) {
+      const bit = 1 << g[c];
+      if (shardHave[r] & bit) return false;
+      shardHave[r] |= bit;
+      shardCan[r] |= bit;
+    } else shardCan[r] |= free[c];
+  }
+  for (let s = 0; s < 144; s++) if (ws[s] === WALLED && findShard(SIDE_PAIRS[s][0]) === findShard(SIDE_PAIRS[s][1])) return false;
+  for (let c = 0; c < 81; c++) if (shardSize[c] > 9) return false;
+  return true;
+}
+
+// Pairs of cells found to be in different regions that share no side,
+// for this step: a Chaos Count's cells round it when it counts its least.
+const apartA = new Int32Array(81 * 8);
+const apartB = new Int32Array(81 * 8);
+let aparts = 0;
+const isApart = (x, y) => {
+  for (let i = 0; i < aparts; i++) {
+    const [a, b] = [shardRoot[apartA[i]], shardRoot[apartB[i]]];
+    if ((a === x && b === y) || (a === y && b === x)) return true;
+  }
+  return false;
+};
+
+// The shard rooted at r, grown into a region: 0 if it cannot reach nine
+// cells holding every digit, growing by whole shards across sides not
+// walled, none with a digit it has, none walled off from it or kept apart
+// from it, within the cells it has left to take; 2 if it can, and a digit
+// it still needs has one shard to come from, beside it, so that the sides
+// between them are joined; 1 if it can and nothing more is found.
+const reachOut = new Float64Array(81);
+function shardReaches(r, ws) {
+  const pass = ++reachPasses;
+  const budget = 9 - shardSize[r];
+  for (let c = r; c >= 0; c = shardNext[c]) for (const [s, o] of CELL_SIDES[c]) if (ws[s] === WALLED) reachOut[shardRoot[o]] = pass;
+  reachPass[r] = pass;
+  reachCost[r] = 0;
+  let total = 0;
+  let digits = 0;
+  // Shards by cost, cheapest first: few enough to scan. r stays first.
+  const queue = reachQueue;
+  queue[0] = r;
+  let n = 1;
+  for (let k = 0; k < n; k++) {
+    let at = k;
+    for (let j = k + 1; j < n; j++) if (reachCost[queue[j]] < reachCost[queue[at]]) at = j;
+    const t = queue[at];
+    queue[at] = queue[k];
+    queue[k] = t;
+    total += shardSize[t];
+    digits |= shardCan[t];
+    for (let c = t; c >= 0; c = shardNext[c]) {
+      for (const [s, o] of CELL_SIDES[c]) {
+        if (ws[s] === WALLED) continue;
+        const u = shardRoot[o];
+        if (u === t || reachOut[u] === pass || shardHave[u] & shardHave[r]) continue;
+        const cost = reachCost[t] + shardSize[u];
+        if (cost > budget || (reachPass[u] === pass && reachCost[u] <= cost)) continue;
+        if (reachPass[u] !== pass) {
+          if (aparts && isApart(u, r)) {
+            reachOut[u] = pass;
+            continue;
+          }
+          queue[n++] = u;
+        }
+        reachPass[u] = pass;
+        reachCost[u] = cost;
+      }
+    }
+  }
+  if (total < 9 || digits !== ALL) return 0;
+  let found = 1;
+  for (let need = ALL & ~shardCan[r]; need; need &= need - 1) {
+    const bit = need & -need;
+    let from = -1;
+    for (let k = 1; k < n; k++) {
+      if (!(shardCan[queue[k]] & bit)) continue;
+      if (from >= 0) {
+        from = -2;
+        break;
+      }
+      from = queue[k];
+    }
+    if (from < 0) continue;
+    for (let c = from; c >= 0; c = shardNext[c]) {
+      for (const [s, o] of CELL_SIDES[c]) {
+        if (shardRoot[o] !== r || ws[s] !== UNDECIDED) continue;
+        ws[s] = JOINED;
+        found = 2;
+      }
+    }
+  }
+  return found;
+}
+
+// Narrows the sides, in `ws`, and with them the digits, under Chaos
+// Construction; ws holds the sides decided so far, and keeps what this
+// finds. Shards of joined cells never repeat a digit, and a side between
+// two shards that would make more than nine cells, or a digit twice, is
+// walled; one inside a shard is joined. Walls close off areas, and each
+// holds whole regions, nine cells at a time: an area of nine is a region.
+// Each shard can grow to nine cells holding every digit (shardReaches); a
+// shard of nine is a region, so a digit with one cell there left to take
+// it goes there. Each arrow's arms run on as far as its digit says, and
+// each count counts its digit's worth of its region round it. Placed
+// digits count as masks of one, and `free` is narrowed in place, as in
+// thermoBounds; false if the grid cannot be cut so.
+function chaosBounds(arrows, counts, g, free, ws) {
+  aparts = 0;
+  for (let round = 0; round < 8; round++) {
+    let changed = false;
+    if (!buildShards(g, free, ws)) return false;
+    for (let c = 0; c < 81; c++) shardRoot[c] = findShard(c);
+    for (let s = 0; s < 144; s++) {
+      if (ws[s] !== UNDECIDED) continue;
+      const a = shardRoot[SIDE_PAIRS[s][0]];
+      const b = shardRoot[SIDE_PAIRS[s][1]];
+      if (a === b) ws[s] = JOINED;
+      else if (shardSize[a] + shardSize[b] > 9 || shardHave[a] & shardHave[b] || (aparts && isApart(a, b))) ws[s] = WALLED;
+      else continue;
+      changed = true;
+    }
+    for (let c = 0; c < 81; c++) if (!g[c] && !(free[c] &= ~shardHave[shardRoot[c]])) return false;
+    // Areas closed off by walls, each whole regions.
+    areaOf.fill(0);
+    let areas = 0;
+    for (let start = 0; start < 81; start++) {
+      if (areaOf[start]) continue;
+      areaOf[start] = ++areas;
+      chaosTodo[0] = start;
+      let n = 1;
+      for (let k = 0; k < n; k++) {
+        for (const [s, o] of CELL_SIDES[chaosTodo[k]]) {
+          if (ws[s] === WALLED || areaOf[o]) continue;
+          areaOf[o] = areas;
+          chaosTodo[n++] = o;
+        }
+      }
+      if (n % 9) return false;
+      areaSize[areas] = n;
+    }
+    for (let s = 0; s < 144; s++) {
+      if (ws[s] !== UNDECIDED || areaSize[areaOf[SIDE_PAIRS[s][0]]] !== 9) continue;
+      ws[s] = JOINED;
+      changed = true;
+    }
+    if (changed) continue;
+    // An area of nine cells k times over holds each digit k times, one in
+    // each of its regions: never more placed, never fewer able to go; once
+    // that many are placed the rest lose it, and once only that many cells
+    // could take it, they do.
+    if (areas > 1 && !areaDigits(areas, g, free)) return false;
+    // A lone cell walled into too small a space is an area too small; its
+    // reach is left to that.
+    for (let c = 0; c < 81; c++) {
+      if (shardRoot[c] !== c || shardSize[c] < 2 || shardSize[c] > 8) continue;
+      const reach = shardReaches(c, ws);
+      if (!reach) return false;
+      if (reach === 2) changed = true;
+    }
+    if (changed) continue;
+    // A region's digits, as a house's: one with one cell left goes there.
+    for (let r = 0; r < 81; r++) {
+      if (shardRoot[r] !== r || shardSize[r] !== 9) continue;
+      for (let need = ALL & ~shardHave[r]; need; need &= need - 1) {
+        const bit = need & -need;
+        let spot = -1;
+        let count = 0;
+        for (let c = r; c < 81 && count < 2; c++) {
+          if (shardRoot[c] === r && !g[c] && free[c] & bit) {
+            spot = c;
+            count++;
+          }
+        }
+        if (!count) return false;
+        if (count === 1 && free[spot] !== bit) free[spot] = bit;
+      }
+    }
+    for (const { cell, all, arms } of arrows) {
+      let digits = g[cell] ? 1 << g[cell] : free[cell];
+      // A region joins up with some cell beside it, so one pointing every
+      // way it can runs on one cell at least.
+      if (all) digits &= ~(1 << 1);
+      arms.forEach((sides, a) => {
+        let runs = 0;
+        for (let r = 0; r <= sides.length; r++) {
+          if (r && ws[sides[r - 1]] === WALLED) break;
+          if (r < sides.length && ws[sides[r]] === JOINED) continue;
+          runs |= 1 << r;
+        }
+        armRuns[a] = runs;
+      });
+      let totals = 1 << 1;
+      for (let a = 0; a < arms.length; a++) totals = sumSet(totals, armRuns[a]);
+      // The cells of its region off its runs leave the runs the rest of
+      // nine: the cell and the joined sides it is sure of, nearest first,
+      // are all in its shard.
+      let runs = 1;
+      for (let a = 0; a < arms.length; a++) runs += LOW[armRuns[a]];
+      const ok = totals & digits & between(1, 9 - shardSize[shardRoot[cell]] + runs);
+      if (!ok) return false;
+      if (g[cell] ? !(ok & (1 << g[cell])) : !(free[cell] &= ok)) return false;
+      // Each arm's lengths that go with the others to one of its digits:
+      // sides nearer than the shortest are joined, and with one left, the
+      // side past it walled.
+      for (let a = 0; a < arms.length; a++) {
+        let others = 1 << 1;
+        for (let b = 0; b < arms.length; b++) if (b !== a) others = sumSet(others, armRuns[b]);
+        let fits = 0;
+        for (let r = 0; r <= arms[a].length; r++) if (armRuns[a] & (1 << r) && (others << r) & ok) fits |= 1 << r;
+        const sides = arms[a];
+        const least = LOW[fits];
+        for (let i = 0; i < least; i++) {
+          if (ws[sides[i]] === UNDECIDED) {
+            ws[sides[i]] = JOINED;
+            changed = true;
+          }
+        }
+        if (POP[fits] === 1 && least < sides.length && ws[sides[least]] === UNDECIDED) {
+          ws[sides[least]] = WALLED;
+          changed = true;
+        }
+      }
+    }
+    for (const cell of counts) {
+      const home = shardRoot[cell];
+      let least = 1;
+      let most = 1;
+      for (const o of AROUND[cell]) {
+        const t = shardRoot[o];
+        const s = sideOf(cell, o);
+        if (t === home) {
+          least++;
+          most++;
+        } else if (!((s >= 0 && ws[s] === WALLED) || areaOf[o] !== areaOf[cell] || shardSize[t] + shardSize[home] > 9 || shardHave[t] & shardHave[home])) most++;
+      }
+      const ok = between(least, most) & (g[cell] ? 1 << g[cell] : free[cell]) & ~(1 << 1);
+      if (!ok) return false;
+      if (!g[cell]) free[cell] = ok;
+      if (least === most || (HIGH[ok] !== least && LOW[ok] !== most)) continue;
+      // At its least, the cells round it that could be in its region are
+      // not: walled off beside it, kept apart from it at a corner. At its
+      // most, the cells beside it that could join it do.
+      for (const o of AROUND[cell]) {
+        const s = sideOf(cell, o);
+        if (s >= 0 && ws[s] === UNDECIDED) {
+          ws[s] = HIGH[ok] === least ? WALLED : JOINED;
+          changed = true;
+        } else if (s < 0 && HIGH[ok] === least && shardRoot[o] !== home && aparts < apartA.length) {
+          apartA[aparts] = cell;
+          apartB[aparts++] = o;
+        }
+      }
+    }
+    if (!changed) return true;
+  }
+  return true;
+}
+
+// Scratch for areaDigits: for each area, how many of a digit are placed
+// and how many empty cells could take it.
+const areaHave = new Int32Array(82);
+const areaCan = new Int32Array(82);
+
+function areaDigits(areas, g, free) {
+  for (let d = 1; d <= 9; d++) {
+    const bit = 1 << d;
+    areaHave.fill(0, 0, areas + 1);
+    areaCan.fill(0, 0, areas + 1);
+    for (let c = 0; c < 81; c++) {
+      if (g[c] === d) areaHave[areaOf[c]]++;
+      else if (!g[c] && free[c] & bit) areaCan[areaOf[c]]++;
+    }
+    for (let a = 1; a <= areas; a++) {
+      const k = areaSize[a] / 9;
+      if (areaHave[a] > k || areaHave[a] + areaCan[a] < k) return false;
+      if (areaHave[a] < k && areaHave[a] + areaCan[a] > k) continue;
+      for (let c = 0; c < 81; c++) {
+        if (areaOf[c] !== a || g[c] || !(free[c] & bit)) continue;
+        if (!(free[c] = areaHave[a] === k ? free[c] & ~bit : bit)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+// Scratch for probing a side: the sides and digits it would leave.
+const probeWs = new Int8Array(144);
+const probeFree = new Int32Array(81);
+
+// Each undecided side tried both ways, from what chaosBounds left in ws
+// and free: a way chaosBounds finds no grid for leaves the other, kept in
+// ws. `spend` is called for each try, and stops them when it says so.
+// -1 if a side can go neither way, 1 if some side was decided, 0 if not.
+function chaosProbe(arrows, counts, g, free, ws, spend) {
+  let found = 0;
+  for (let s = 0; s < 144; s++) {
+    if (ws[s] !== UNDECIDED) continue;
+    let fails = 0;
+    for (const way of [JOINED, WALLED]) {
+      if (spend()) return found;
+      probeWs.set(ws);
+      probeWs[s] = way;
+      for (let c = 0; c < 81; c++) probeFree[c] = free[c];
+      if (chaosBounds(arrows, counts, g, probeFree, probeWs)) continue;
+      fails++;
+      ws[s] = way === JOINED ? WALLED : JOINED;
+    }
+    if (fails === 2) return -1;
+    if (fails) found = 1;
+  }
+  return found;
+}
+
+// Each cell's region, from sides all decided: the shards, numbered in order
+// of their first cells.
+function chaosCut(ws) {
+  for (let c = 0; c < 81; c++) shardRoot[c] = c;
+  for (let s = 0; s < 144; s++) {
+    if (ws[s] !== JOINED) continue;
+    const a = findShard(SIDE_PAIRS[s][0]);
+    const b = findShard(SIDE_PAIRS[s][1]);
+    if (a !== b) shardRoot[Math.max(a, b)] = Math.min(a, b);
+  }
+  return sortRegions([...Array(81).keys()].map(findShard));
+}
+
+// Region sum lines under Chaos Construction, cut into runs as regionRuns
+// cuts them: only the lines whose every cell's region is known, a shard of
+// nine, as the others cannot be cut yet.
+function chaosRuns(lines) {
+  const known = lines.filter((t) => t.every((c) => shardSize[shardRoot[c]] === 9));
+  return regionRuns(known, shardRoot);
+}
+
+// The undecided side to branch on: the one between the two biggest shards
+// it could join, from shardRoot and shardSize as chaosBounds left them; -1
+// if every side is decided.
+function chaosSide(ws) {
+  let best = -1;
+  let most = -1;
+  for (let s = 0; s < 144; s++) {
+    if (ws[s] !== UNDECIDED) continue;
+    const n = shardSize[shardRoot[SIDE_PAIRS[s][0]]] + shardSize[shardRoot[SIDE_PAIRS[s][1]]];
+    if (n > most) {
+      best = s;
+      most = n;
+    }
+  }
+  return best;
+}
+
 /* ---- candidates and solving ---- */
 
 const norm = (v) => ({
@@ -2734,10 +3662,13 @@ const norm = (v) => ({
   rooms: v?.rooms ?? [],
   circles: v?.circles ?? [],
   circlesets: v?.circlesets ?? [],
+  chaosarrows: v?.chaosarrows ?? [],
+  chaoscounts: v?.chaoscounts ?? [],
   ranks: v?.ranks ?? [],
   indexings: v?.indexings ?? [],
   indexcells: v?.indexcells ?? [],
-  regions: v?.regions?.length ? v.regions : null,
+  // Chaos Construction's regions are found, never given.
+  regions: v?.regions?.length && !has(v.rules ?? 0, "chaos") ? v.regions : null,
   rules: v?.rules ?? 0,
 });
 
@@ -2745,12 +3676,13 @@ const norm = (v) => ({
 // cage of whatever kind, its thermometers, arrows and other lines, its dots
 // and marks, its 2x2 squares under Global Entropy or Global Mod, the digits
 // around it under Anti-taxicab and Dutch Flatmates, the Counting Circles,
-// the clues outside, and under No Rank Ties the views it could tie;
-// 0 for a filled cell. A killer cage allows digits not already
+// the clues outside, under No Rank Ties the views it could tie, and under
+// Chaos Construction the regions it could be in; 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, ranks, indexings, indexcells, regions, rules } = norm(variant);
-  const { peers } = layout(rules, regions);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, chaosarrows, chaoscounts, ranks, indexings, indexcells, regions, rules } = norm(variant);
+  const { peers, houses } = layout(rules, regions);
+  zeroOn = has(rules, "doppelganger") && !has(rules, "chaos");
   const allow = cages.map((cage) => {
     let used = 0;
     let rest = cage.sum;
@@ -2758,7 +3690,7 @@ export function variantCandidates(grid, variant) {
     for (const c of cage.cells) {
       if (grid[c]) {
         used |= 1 << grid[c];
-        rest -= grid[c];
+        rest -= VALUE[grid[c]];
       } else left++;
     }
     return cageAllows(left, rest, used) & ~used;
@@ -2767,11 +3699,14 @@ export function variantCandidates(grid, variant) {
   const out = new Array(81).fill(0);
   for (let c = 0; c < 81; c++) {
     if (grid[c]) continue;
-    let m = ALL;
+    let m = allDigits();
     for (const o of peers[c]) m &= ~(1 << grid[o]);
     if (of[c] >= 0) m &= allow[of[c]];
     out[c] = m;
   }
+  // Under Chaos Construction, the regions it could be in, from none put
+  // down.
+  const chaos = has(rules, "chaos") && chaosBounds(arrowSides(chaosarrows), chaoscounts, grid, out, new Int8Array(144));
   rellikBounds(relliks, grid, out);
   lunchboxBounds(lunchboxes, grid, out);
   sayBounds(sayCages(looksays), grid, out);
@@ -2792,7 +3727,8 @@ export function variantCandidates(grid, variant) {
   entropicBounds(entropics, grid, out);
   modularBounds(modulars, grid, out);
   sumLineBounds(sumlines, grid, out);
-  regionSumBounds(regionRuns(regionsums, regions), grid, out);
+  if (!has(rules, "chaos")) regionSumBounds(regionRuns(regionsums, regions), grid, out);
+  else if (chaos) regionSumBounds(chaosRuns(regionsums), grid, out);
   indexBounds(indexes, grid, out);
   edgeBounds(dots, grid, out);
   edgeBounds(xvs, grid, out);
@@ -2812,6 +3748,8 @@ export function variantCandidates(grid, variant) {
   rankBounds(ranks, grid, out, has(rules, "cluedrankties"));
   if (has(rules, "norankties")) tieBounds(grid, out);
   indexingBounds(indexers(indexings, indexcells), grid, out);
+  if (zeroOn) doppelBounds(houses, grid, out, new Int32Array(houses.length));
+  zeroOn = false;
   return out;
 }
 
@@ -2826,7 +3764,14 @@ export function variantCandidates(grid, variant) {
 // killer cage cannot do without and only one of its cells can take, goes there;
 // otherwise the search branches on the cell with the fewest candidates. A
 // digit with no place left, or a cell with no candidate, ends the branch.
-// `found` is called on each solution and returns true to stop.
+// Under Chaos Construction the search decides the sides between cells as
+// well as the digits (chaosBounds above), what it finds kept from one depth
+// to the next: before it branches, each side is tried both ways
+// (chaosProbe), each try a step; then it branches on a cell with two
+// digits left, or else on the side between the two biggest shards, or
+// else on the cell with the fewest digits. `found` is called on each
+// solution, with each cell's region under Chaos Construction, and returns
+// true to stop.
 //
 // It gives up after BUDGET steps and says so, returning false: a layout
 // with too much freedom can take minutes to settle. The count is the same
@@ -2834,7 +3779,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, ranks, indexings, indexcells, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, chaosarrows, chaoscounts, ranks, indexings, indexcells, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const gap = whisperGap(rules);
   const sets = circleSets(circles, circlesets);
@@ -2851,6 +3796,17 @@ function search(grid, variant, found) {
   const sorts = squareKinds(rules);
   const taxicab = has(rules, "antitaxicab");
   const flatmates = has(rules, "dutchflatmates");
+  const chaos = has(rules, "chaos");
+  const sides = arrowSides(chaosarrows);
+  // Under Doppelgänger, its 0 among the digits, and the digits each house
+  // must hold: every digit 1 to 9 for a classic house, and under
+  // Doppelgänger a 0 and those its row, column or box cannot be missing,
+  // and none for the other houses (doppelBounds).
+  // Never with Chaos Construction (zeroClash), whose houses are rows and
+  // columns alone.
+  const doppel = has(rules, "doppelganger") && !chaos;
+  const top = doppel ? ZERO : 9;
+  const needs = new Int32Array(houses.length).fill(doppel ? 0 : ALL);
   let steps = 0;
   const hm = new Int32Array(houses.length);
   const of = cageOf(cages);
@@ -2875,28 +3831,34 @@ function search(grid, variant, found) {
     for (const h of housesOf[c]) hm[h] |= bit;
     if (k >= 0) {
       used[k] |= bit;
-      rest[k] -= d;
+      rest[k] -= VALUE[d];
       left[k]--;
     }
   }
-  // Scratch for each depth, so a step never allocates.
-  const frees = Array.from({ length: 82 }, () => new Int32Array(81));
+  // Scratch for each depth, so a step never allocates: a digit for each
+  // cell at most, and under Chaos Construction a decision for each side,
+  // with the sides decided so far at each depth, what was found kept.
+  const depths = chaos ? 82 + 144 : 82;
+  const frees = Array.from({ length: depths }, () => new Int32Array(81));
+  const walls = chaos ? Array.from({ length: depths }, () => new Int8Array(144)) : null;
   const allow = new Int32Array(n);
   const need = new Int32Array(n);
 
-  // The next placement: { cell, mask } to branch on, or null on a dead end,
-  // or cell -1 when the grid is full.
-  const choose = (free) => {
+  // The next placement: { cell, mask } to branch on, or with `side` the
+  // side `cell` to decide, or null on a dead end, or cell -1 when the grid
+  // is full.
+  const choose = (free, ws) => {
     for (let c = 0; c < 81; c++) {
       if (g[c]) {
         free[c] = 0;
         continue;
       }
-      let m = ALL;
+      let m = doppel ? ALL_ZERO : ALL;
       for (const h of housesOf[c]) m &= ~hm[h];
       for (const o of pairs[c]) if (g[o]) m &= ~(1 << g[o]);
       free[c] = m;
     }
+    if (chaos && !chaosBounds(sides, chaoscounts, g, free, ws)) return null;
     if (relliks.length && !rellikBounds(relliks, g, free)) return null;
     if (lunchboxes.length && !lunchboxBounds(lunchboxes, g, free)) return null;
     if (says.length && !sayBounds(says, g, free)) return null;
@@ -2917,7 +3879,7 @@ function search(grid, variant, found) {
     if (entropics.length && !entropicBounds(entropics, g, free)) return null;
     if (modulars.length && !modularBounds(modulars, g, free)) return null;
     if (sumlines.length && !sumLineBounds(sumlines, g, free)) return null;
-    if (runs.length && !regionSumBounds(runs, g, free)) return null;
+    if (runs.length && !regionSumBounds(chaos ? chaosRuns(regionsums) : runs, g, free)) return null;
     if (indexes.length && !indexBounds(indexes, g, free)) return null;
     if (dots.length && !edgeBounds(dots, g, free)) return null;
     if (xvs.length && !edgeBounds(xvs, g, free)) return null;
@@ -2937,6 +3899,7 @@ function search(grid, variant, found) {
     if (ranks.length && !rankBounds(ranks, g, free, tied)) return null;
     if (untied && !tieBounds(g, free)) return null;
     if (pointers.length && !indexingBounds(pointers, g, free)) return null;
+    if (doppel && !doppelBounds(houses, g, free, needs)) return null;
     for (let k = 0; k < n; k++) {
       if (!left[k]) {
         if (rest[k]) return null;
@@ -2948,7 +3911,7 @@ function search(grid, variant, found) {
       for (const c of cages[k].cells) if (!g[c]) room |= free[c];
       let a = 0;
       let all = ALL;
-      for (const m of COMBOS[left[k]][rest[k]]) {
+      for (const m of combos()[left[k]][rest[k]]) {
         if (m & used[k] || m & ~room) continue;
         a |= m;
         all &= m;
@@ -2958,7 +3921,8 @@ function search(grid, variant, found) {
       need[k] = all;
     }
     let best = -1;
-    let bestCount = 10;
+    // More than any cell can have: ten digits under Doppelgänger.
+    let bestCount = 11;
     for (let c = 0; c < 81; c++) {
       if (g[c]) continue;
       if (of[c] >= 0) free[c] &= allow[of[c]];
@@ -2969,11 +3933,14 @@ function search(grid, variant, found) {
         bestCount = count;
       }
     }
-    if (best < 0) return { cell: -1, mask: 0 };
+    // Under Chaos Construction, a side still to decide.
+    const side = chaos ? chaosSide(ws) : -1;
+    if (best < 0) return side < 0 ? { cell: -1, mask: 0 } : { cell: side, mask: 0, side: true };
     if (bestCount === 1) return { cell: best, mask: free[best] };
 
-    // A digit with one place in a house, or none.
-    for (const { cells } of houses) {
+    // A digit a house must hold with one place in it, or none.
+    for (let h = 0; h < houses.length; h++) {
+      const { cells } = houses[h];
       let once = 0;
       let twice = 0;
       let placed = 0;
@@ -2984,8 +3951,8 @@ function search(grid, variant, found) {
           once |= free[c];
         }
       }
-      if ((ALL & ~placed) & ~once) return null;
-      const single = once & ~twice;
+      if ((needs[h] & ~placed) & ~once) return null;
+      const single = once & ~twice & needs[h];
       if (single) {
         const bit = single & -single;
         for (const c of cells) if (!g[c] && free[c] & bit) return { cell: c, mask: bit };
@@ -3009,7 +3976,9 @@ function search(grid, variant, found) {
         if (count === 1) return { cell: spot, mask: bit };
       }
     }
-    return { cell: best, mask: free[best] };
+    // A cell with two digits left goes before a side; one with more, after.
+    if (side >= 0 && bestCount > 2) return { cell: side, mask: 0, side: true, branch: true };
+    return { cell: best, mask: free[best], branch: true };
   };
 
   let spent = false;
@@ -3018,27 +3987,49 @@ function search(grid, variant, found) {
       spent = true;
       return true;
     }
-    const next = choose(frees[depth]);
+    const ws = walls?.[depth];
+    let next = choose(frees[depth], ws);
+    // Under Chaos Construction, before branching, each side is tried both
+    // ways; what that decides is kept, and the step looked at again.
+    while (chaos && next?.branch) {
+      const probed = chaosProbe(sides, chaoscounts, g, frees[depth], ws, () => ++steps > BUDGET);
+      if (steps > BUDGET) {
+        spent = true;
+        return true;
+      }
+      if (probed < 0) return false;
+      if (!probed) break;
+      next = choose(frees[depth], ws);
+    }
     if (!next) return false;
-    if (next.cell < 0) return found(g);
+    if (next.cell < 0) return found(g, chaos ? chaosCut(ws) : null);
     const { cell, mask } = next;
+    if (next.side) {
+      for (const way of [JOINED, WALLED]) {
+        walls[depth + 1].set(ws);
+        walls[depth + 1][cell] = way;
+        if (step(depth + 1)) return true;
+      }
+      return false;
+    }
     const hs = housesOf[cell];
     const k = of[cell];
-    for (let d = 1; d <= 9; d++) {
+    for (let d = 1; d <= top; d++) {
       const bit = 1 << d;
       if (!(mask & bit)) continue;
       g[cell] = d;
       for (const h of hs) hm[h] |= bit;
       if (k >= 0) {
         used[k] |= bit;
-        rest[k] -= d;
+        rest[k] -= VALUE[d];
         left[k]--;
       }
+      if (walls) walls[depth + 1].set(ws);
       if (step(depth + 1)) return true;
       for (const h of hs) hm[h] &= ~bit;
       if (k >= 0) {
         used[k] &= ~bit;
-        rest[k] += d;
+        rest[k] += VALUE[d];
         left[k]++;
       }
       g[cell] = 0;
@@ -3050,13 +4041,29 @@ function search(grid, variant, found) {
 }
 
 // Up to `limit` of the solutions, or null if the search ran out of budget
-// before it could say.
+// before it could say. Under Chaos Construction each grid carries its
+// regions too, as `regions`, numbered as sortRegions numbers them; two
+// answers may then have the same digits, cut into different regions. With
+// Yin-Yang each carries its shading, as `shading`, likewise.
 export function variantSolutions(grid, variant, limit = 2) {
+  // Yin-Yang's shading goes with every grid of digits, so it is found
+  // first, and each grid then carries it, as `shading`.
+  const shaded = variant?.shades?.length ? shadings(variant.shades, limit) : [null];
+  if (!shaded) return null;
+  if (!shaded.length) return [];
   const out = [];
-  const settled = search(grid, variant, (g) => {
-    out.push(g.slice());
-    return out.length >= limit;
+  zeroOn = has(variant?.rules ?? 0, "doppelganger") && !has(variant?.rules ?? 0, "chaos");
+  const settled = search(grid, variant, (g, rg) => {
+    for (const shading of shaded) {
+      const solution = g.slice();
+      if (rg) solution.regions = Array.from(rg);
+      if (shading) solution.shading = shading.slice();
+      out.push(solution);
+      if (out.length >= limit) return true;
+    }
+    return false;
   });
+  zeroOn = false;
   return settled || out.length >= limit ? out : null;
 }
 

@@ -5,13 +5,17 @@
 // renban, palindrome, zipper, between, lockout, entropic and modular lines,
 // sum lines, region sum lines, value indexing lines,
 // Kropki dots, Greater Than signs, quads, Counting Circles and their sets,
+// Chaos Arrows and Counts,
 // single indexing cells, XV marks, diagonals and windows as on screen.
 // Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered
 // Room, Full Rank and Row/Column Indexing clues sit outside the grid, in a
 // margin a cell wide the image grows by, an indexing mark's row or column
-// shaded. A Jigsaw's regions take the boxes' heavy lines and tint.
+// shaded. A Jigsaw's regions take the boxes' heavy lines and tint. Under
+// Chaos Construction there are no boxes, and only the grid's edge is heavy;
+// its arrows and counts are drawn as on screen, and so are Yin-Yang's
+// circles, a given shaded cell tinted too.
 
-import { variantName, touching, cagesOf, indexers, circleSets } from "./variant.js";
+import { variantName, touching, cagesOf, indexers, circleSets, hasRule } from "./variant.js";
 
 const CELL = 112;
 const PAD = 36;
@@ -22,6 +26,8 @@ const FONT = "Jua, system-ui, sans-serif";
 
 const INK = "#1d2a22";
 const BOX_ALT = "#eaf6ea";
+// Yin-Yang's shaded cells: grey, never the boxes' green.
+const SHADE_TINT = "#d9dcda";
 const CELL_LINE = "#c9d2cb";
 const BOX_LINE = "#2d3a31";
 const CAPTION = "#5b6b60";
@@ -89,7 +95,11 @@ export async function drawPuzzle(grid, variant = null) {
   const ranks = variant?.ranks ?? [];
   const indexings = variant?.indexings ?? [];
   const indexcells = variant?.indexcells ?? [];
-  const regions = variant?.regions?.length ? variant.regions : null;
+  const chaosarrows = variant?.chaosarrows ?? [];
+  const chaoscounts = variant?.chaoscounts ?? [];
+  const chaos = hasRule(rules, "chaos");
+  const shades = variant?.shades ?? [];
+  const regions = variant?.regions?.length && !chaos ? variant.regions : null;
   // Room round the grid for clues outside it; the grid is drawn as without.
   const margin = [sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings].some((list) => list.length) ? CELL : 0;
   // The font may not have been needed yet on this page; the canvas only uses
@@ -108,9 +118,10 @@ export async function drawPuzzle(grid, variant = null) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.translate(margin, margin);
 
-  // Alternate boxes tinted, as on the board; a Jigsaw has none.
+  // Alternate boxes tinted, as on the board; a Jigsaw has none, nor does
+  // Chaos Construction.
   ctx.fillStyle = BOX_ALT;
-  for (let b = 0; b < 9 && !regions; b++) {
+  for (let b = 0; b < 9 && !regions && !chaos; b++) {
     if ((Math.floor(b / 3) + (b % 3)) % 2 === 1) ctx.fillRect(PAD + (b % 3) * CELL * 3, PAD + Math.floor(b / 3) * CELL * 3, CELL * 3, CELL * 3);
   }
 
@@ -119,6 +130,9 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.fillStyle = WINDOW_TINT;
     for (const r of [1, 5]) for (const c of [1, 5]) ctx.fillRect(PAD + c * CELL, PAD + r * CELL, CELL * 3, CELL * 3);
   }
+  // Yin-Yang's cells given shaded.
+  ctx.fillStyle = SHADE_TINT;
+  for (const { cell, shade } of shades) if (shade === 1) ctx.fillRect(PAD + (cell % 9) * CELL, PAD + Math.floor(cell / 9) * CELL, CELL, CELL);
   // Row/Column Indexing's rows, columns and single cells, darker where two
   // cross.
   ctx.fillStyle = INDEXING_TINT;
@@ -138,7 +152,11 @@ export async function drawPuzzle(grid, variant = null) {
     ctx.stroke();
   };
   line(2, CELL_LINE, 1);
-  if (!regions) line(6, BOX_LINE, 3);
+  if (chaos) {
+    ctx.strokeStyle = BOX_LINE;
+    ctx.lineWidth = 6;
+    ctx.strokeRect(PAD, PAD, BOARD, BOARD);
+  } else if (!regions) line(6, BOX_LINE, 3);
   else {
     // Round the whole, and along each side between two regions.
     ctx.strokeStyle = BOX_LINE;
@@ -407,6 +425,46 @@ export async function drawPuzzle(grid, variant = null) {
     }
   });
   ctx.setLineDash([]);
+  // Chaos Counts: a dashed square round the digit. Chaos Arrows: a chevron
+  // just inside each edge it points through.
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 3;
+  ctx.setLineDash([CELL * 0.09, CELL * 0.06]);
+  for (const c of chaoscounts) {
+    const [x, y] = at(c);
+    const r = CELL * 0.38;
+    ctx.strokeRect(x - r, y - r, 2 * r, 2 * r);
+  }
+  ctx.setLineDash([]);
+  ctx.lineWidth = CELL * 0.05;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const { cell, ways } of chaosarrows) {
+    const [x, y] = at(cell);
+    ctx.beginPath();
+    [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([dx, dy], i) => {
+      if (!(ways & (1 << i))) return;
+      const [tip, base, half] = [CELL * 0.42, CELL * 0.32, CELL * 0.09];
+      ctx.moveTo(x + dx * base - dy * half, y + dy * base - dx * half);
+      ctx.lineTo(x + dx * tip, y + dy * tip);
+      ctx.lineTo(x + dx * base + dy * half, y + dy * base + dx * half);
+    });
+    ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+  ctx.lineJoin = "miter";
+  // Yin-Yang's circles, in the bottom right corner: filled for shaded,
+  // hollow for unshaded.
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 4;
+  for (const { cell, shade } of shades) {
+    const [x, y] = at(cell);
+    ctx.beginPath();
+    ctx.arc(x + CELL * 0.3, y + CELL * 0.3, CELL * 0.12, 0, Math.PI * 2);
+    ctx.fillStyle = shade === 1 ? INK : "#ffffff";
+    ctx.fill();
+    ctx.stroke();
+  }
   // A single indexing cell's pointer, in from its top edge or its left.
   ctx.fillStyle = INK;
   for (const { cell, line } of indexcells) {
@@ -454,7 +512,8 @@ export async function drawPuzzle(grid, variant = null) {
   ctx.textBaseline = "middle";
   for (let c = 0; c < 81; c++) {
     if (!grid[c]) continue;
-    ctx.fillText(String(grid[c]), PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.54) * CELL);
+    // Doppelgänger's 0 is 10 in a grid.
+    ctx.fillText(String(grid[c] === 10 ? 0 : grid[c]), PAD + ((c % 9) + 0.5) * CELL, PAD + (Math.floor(c / 9) + 0.54) * CELL);
   }
 
   // Clues outside, as on the board: a Sandwich's sum by its row or column,
@@ -537,7 +596,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules });
+  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules });
   const caption = `${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`;
   // A long list of rules shrinks to fit across the image.
   const room = canvas.width - PAD * 2;

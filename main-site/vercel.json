@@ -9,18 +9,19 @@
     }],
     "functions": {
         "api/game/start.js": {
+            "maxDuration": 60,
             "includeFiles": "js/{levels,seed,sudoku,calendar}.js"
         },
         "api/game/finish.js": {
-            "maxDuration": 30,
+            "maxDuration": 60,
             "includeFiles": "js/{levels,seed,sudoku,record,score}.js"
         },
         "api/game/submit.js": {
-            "maxDuration": 30,
+            "maxDuration": 60,
             "includeFiles": "js/{levels,seed,sudoku,record,score}.js"
         },
         "api/seed/shorten.js": {
-            "maxDuration": 30,
+            "maxDuration": 60,
             "includeFiles": "js/{levels,seed,sudoku,variant}.js"
         }
     },

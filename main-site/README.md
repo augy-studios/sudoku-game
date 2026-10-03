@@ -26,7 +26,7 @@ the browser and the server always agree on a game.
 | `sudoku.js` | The solver (bitmasks, fewest candidates first) and the seeded puzzle generator. |
 | `levels.js` | The four levels: how many clues come out, and what each is worth. |
 | `seed.js` | Seeds, the integer random numbers the generator draws from, and a seed's puzzle. |
-| `record.js` | The move log: replaying it, undo, checking one from elsewhere, and packing it into a link. |
+| `record.js` | The move log: replaying it, undo, Yin-Yang's shading, checking one from elsewhere, and packing it into a link. |
 | `score.js` | Scoring (below). |
 | `board.js` | The board on screen: nine boxes of nine cells, selection, arrow keys. |
 | `game.js` | The game screen: setup, play, undo, hints, Solve, result, submit, saving. |
@@ -38,7 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
-| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Counting Circles and their sets, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered Room and Full Rank clues, Row/Column Indexing marks and single cells, a Jigsaw's regions, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
+| `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Counting Circles and their sets, Chaos Arrows and Counts, Yin-Yang's shading and its circles, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered Room and Full Rank clues, Row/Column Indexing marks and single cells, a Jigsaw's regions, Chaos Construction's regions found while solving, Doppelgänger's 0, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
 
@@ -124,8 +124,8 @@ in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings, and the Daily's with Killer picked (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
 any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected (Connected Values), Count Distinct, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
-Whispers), Dutch Whispers, Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Sandwich, Little Killer, Skyscrapers,
-X-Sums, Hidden Skyscraper, Numbered Room, Full Rank, No Rank Ties, Clued Rank Ties, Row/Col Indexing (Row/Column Indexing), Jigsaw, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
+Whispers), Dutch Whispers, Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Chaos Arrow, Chaos Count, Yin-Yang, Sandwich, Little Killer, Skyscrapers,
+X-Sums, Hidden Skyscraper, Numbered Room, Full Rank, No Rank Ties, Clued Rank Ties, Row/Col Indexing (Row/Column Indexing), Jigsaw, Chaos Construction, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
 same place in each 3x3 box hold 1 to 9), Anti-consecutive (cells sharing a
@@ -135,8 +135,9 @@ XV (every X and V is given: cells sharing a side with no mark add up to
 neither 10 nor 5), Global Entropy (every 2x2 square holds a low, a middle
 and a high digit), Global Mod (every 2x2 square holds one each of 1 4 7,
 2 5 8 and 3 6 9), Anti-taxicab (a digit X never has another X exactly X
-steps away along rows and columns) and Dutch Flatmates (every 5 has a 1
-above it or a 9 below it). Dutch Whispers, No Rank Ties and Clued Rank Ties
+steps away along rows and columns), Dutch Flatmates (every 5 has a 1
+above it or a 9 below it) and Doppelgänger (a 0 too, each row, column and
+box missing a digit; below). Dutch Whispers, No Rank Ties and Clued Rank Ties
 are switches too, with letters of their own, but options on a part rather
 than rules of the whole grid, so their buttons sit beside Whispers and Full
 Rank. Diagonals are drawn as faint lines and windows tinted,
@@ -155,19 +156,19 @@ every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
 seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
-P, V, QGT, QQD, QCC, QCS, B, L, Y, U, QHS, QNR, QFR, QRX, QCX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT and QCT, always in that
+P, V, QGT, QQD, QCC, QCS, QCA, QCO, QYY, B, L, Y, U, QHS, QNR, QFR, QRX, QCX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT, QCT, QCH and QDP, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
 the Expert level. A seed
 with any before D carries that part in its body too: cages of each kind, thermometers,
 arrows, double arrows, pill arrows, whisper lines, renban lines, palindrome lines, zipper lines,
-between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Counting Circles and more sets of them, Sandwich sums, Little Killer
+between lines, lockout lines, entropic lines, modular lines, sum lines, region sum lines, value indexing lines, dots, XV marks, signs, quads, Counting Circles and more sets of them, Chaos Arrows, Chaos Counts, Yin-Yang circles, Sandwich sums, Little Killer
 sums, Skyscraper counts, X-Sums, Hidden Skyscraper clues, Numbered Room
 clues, Full Rank clues, indexing marks, single indexing cells or regions (a line as its length, its first cell and each step's
 direction, a sum line with its sum first and a loop with its first cell again at the end, and sum and region sum lines'
 lengths, up to 27, and value indexing lines', up to 11, in a wider digit; a pill arrow as its pill's size, first cell and way, then its
-arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Counting Circles as a list of cells or a flag for every cell, whichever is shorter, and each more set the same way; Sandwich
+arrow as a line from the pill cell it starts beside; dots, marks and the clues beside a row or column as a list, or every side's or view's value, whichever is shorter; Counting Circles as a list of cells or a flag for every cell, whichever is shorter, and each more set the same way; Chaos Arrows as each one's cell and ways, and Chaos Counts as Counting Circles are; Yin-Yang circles as a list of each one's cell and shade, or every cell's shade, whichever is shorter; Sandwich
 sums as every row's and column's sum or none; indexing marks as a flag for every row and column, and single indexing cells as a list of each cell and its way; Little Killer sums as each
 one's first cell, way and sum; regions, and each kind of cage, as which
 neighbours share one, a cage's clue after). The
@@ -481,6 +482,94 @@ on one that has none. In a game, a placed digit clears its note from the
 cells of its region, not its box (play() in record.js takes the peers to
 clear; the API leaves them out, as notes never score).
 
+**Chaos Construction.** From the Interactive Sudoku Solver. There are no
+boxes: the grid is cut into nine regions of nine cells, each joined edge
+to edge and holding 1 to 9, and the cuts are worked out while solving,
+never drawn. Rows and columns always fit, each nine joined cells holding 1
+to 9, so the rule alone never has one answer; its two clues, from the same
+solver, say how the grid is cut. A Chaos Arrow (QCA) points one to four
+ways along its cell's row and column, and its digit counts the cell and
+the cells of its region in a straight line from it each way, up to the
+first that is not in it. A Chaos Count (QCO) counts the cell and the cells
+round it, along a side or at a corner, in its region. Both only come with
+the rule (QCH), which never comes with a Jigsaw's regions: turning either
+on turns the other off. A puzzle has one answer only if its digits and its
+regions both do; otherwise Check says which cell's region could go two
+ways. In variant.js the search decides the 144 sides between cells as well
+as the digits, each joined, its cells in one region, or walled, in two
+(`chaosBounds`). Joined cells make shards that never repeat a digit or
+pass nine cells; walls close off areas of nine cells k times over, each
+holding every digit k times; every shard can still reach nine cells
+holding every digit; a shard of nine is a region, and so a house; and
+arrows and counts join and wall the sides round them. Before it branches
+it tries each side both ways (`chaosProbe`), each try a step of its
+budget. Region sum lines follow the regions once they are known. In the
+Marks tool, Middle picks Chaos arrow or Chaos count: a tap in a cell's
+middle puts one in, an arrow pointing every way it can, or takes it out,
+and a tap near an arrow's side turns that way off or on. On the board and
+in a saved image the boxes lose their edges and tint; the regions found
+show once the maker's puzzle checks out, the solver's is solved, or a game
+is over, in its replay. In a game a placed digit clears its note along its
+row and column only. A check can take seconds, so the API's functions that
+parse seeds have 60 s (`vercel.json`). Some published puzzles, such as
+Counting Circles with a Chaos Count in every circle and no givens, are
+still past the checker's budget.
+
+**Doppelgänger.** From the Interactive Sudoku Solver: there is a 0 as well
+as 1 to 9. Every row, column and box, or a Jigsaw's region, holds a 0 and
+eight of 1 to 9, missing the ninth; no two rows miss the same digit, nor
+two columns, nor two boxes; and where a 0 is, its row, column and box miss
+three different digits. A 0 counts as zero: nothing in a sum, the lowest
+digit on a thermometer or in a renban, next to 1 for a white dot, 5 or more
+from its neighbour on a German Whispers line, with 3, 6 and 9 on a modular
+line, and so on. It is not low or high in an Equality cage, never in a
+Counting Circle, never an X-Sum's or a Numbered Room's first digit and never
+a value indexing line's count; a Sandwich needs its line to hold a 1 and a
+9, and a line's tallest skyscraper may be an 8. The rules a 0 means nothing
+to are refused with it, by checkClues and in seeds (`zeroClash`): Chaos
+Construction and its clues, Entropic lines, Global Entropy, Global Mod,
+Anti-taxicab, Dutch Flatmates, Full Rank and its tie rules, and Row/Column
+Indexing. A 0 is digit 10 in a grid (`ZERO`), as 0 means an empty cell, and
+bit 10 in a mask; the engine reads digits as numbers through `VALUE`, `MIN`,
+`MAX` and `between`, which give what they gave before for any mask without
+that bit, so no other puzzle solves differently. Under it the search and
+the candidates work out what each house could be missing (`doppelBounds`),
+and a house's hidden singles are only for the 0 and the digits it cannot be
+missing. A made seed's givens go in base 10 under QDP; a move's digit is up
+to 10, and a short replay link packs digits as one of 10 only in a
+Doppelgänger game's, so a link from before reads as it did. The pads get a
+0 key, ten to a row, the 0 key on the keyboard types a 0, notes go five to
+a row, and each digit's count left is out of eight, the 0's out of nine.
+
+**Yin-Yang.** From the Interactive Sudoku Solver: a shading over the grid,
+apart from the digits. Every cell is shaded or unshaded, the shaded cells
+all join up edge to edge, and so do the unshaded ones, and no 2x2 square
+is all one shade. Circles in some cells give their shade (QYY), filled for
+shaded and hollow for unshaded, in the cell's bottom right corner; the
+Marks tool puts them down, Middle picking Yin-Yang, a tap in a cell's
+middle stepping on through shaded, unshaded and none. A puzzle has one
+answer only if its digits and its shading both do; otherwise Check says
+which cell could go either way. The shading has nothing to do with the
+digits, so variant.js finds it on its own (`shadings`, with a budget of
+its own), every grid of digits carrying it: three of a shade in a square
+leave the other in its fourth, two of a shade at a square's opposite
+corners with the other at a third leave the first in its fourth, as
+shades crossing there would cut each other off, a cell its shade cannot
+reach from its own is the other, and round the grid's edge the shade
+changes twice at most. In a game, Shade (or the S key) turns on a tool
+where a tap shades a cell, a second marks it unshaded, a third clears it;
+the arrow keys still only move. The board is finished once the digits
+are right and the shaded cells are the answer's, a cell left unmarked
+counting as unshaded; shading never scores and is never a mistake. A hint
+fixes a cell's shade with its digit, even in a cell whose digit is given,
+and Solve shades the answer's shaded cells. A shade is a move of its own
+in the log (`y`, record.js), so undo, co-op, replays, replay links and the
+API's check all see it; a short replay link only has it in a Yin-Yang
+game's, so a link from before reads as it did. Shaded cells are tinted on
+the board and in a saved image, and a cell marked unshaded has a small
+faint ring; once the maker's puzzle checks out, or the solver's is solved,
+its shaded cells show.
+
 **Killer.** In Killer, the Cages tool gathers cells (tap them), takes the
 sum from the pad, the keyboard or the sum box, and adds the cage; tapping a
 cage already drawn picks it up to change or remove. Undo covers cages too.
@@ -562,6 +651,12 @@ its cells is the # cell.
 **Copy puzzle.** On every game, its result and the solver: the puzzle's clues
 as 81 characters with . for blanks, which the solver's Paste and most sudoku
 apps read.
+
+**Copy answer.** Once a board is solved, the answer as 81 digits, written
+as Copy puzzle writes a puzzle: in a game's result, when the player
+finished it or Solve did, a replay's when its game did, and in the solver
+once every digit is right. A variant's answer is 81 digits too, so unlike
+Copy puzzle it is there for every variant.
 
 **Levels.** Easy, Medium, Hard and Expert take out 40, 48, 52 and up to 64
 clues. The generator only takes a clue out if the puzzle keeps exactly one

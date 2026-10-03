@@ -19,7 +19,7 @@ import { copyText, hydrateIcons, store, fillRuleHelp } from "./ui.js";
 import { rulesOf } from "./rule-help.js";
 import { confetti } from "./confetti.js";
 import { openSolver } from "./solver.js";
-import { variantName, layout } from "./variant.js";
+import { variantName, notePeers as peersFor, hasRule } from "./variant.js";
 import { puzzleText, parseGrid, checkClues, rateLevel } from "./steps.js";
 import { DAILY_FIRST, isDate, addDays, addMonths, monthWeeks, monthName, dayName, streaks } from "./calendar.js";
 
@@ -40,6 +40,8 @@ let res = null; // play(g.puzzle, g.solution, g.log), refreshed on every change
 let selected = null; // the selected cell
 let padDigit = 0; // a digit picked with no cell selected, to light it up
 let notesMode = false;
+// Yin-Yang's Shade tool: a tap on a cell turns its shade on.
+let shadeMode = false;
 let launching = false;
 let gameCounter = 0;
 let solveTimer = null;
@@ -446,6 +448,7 @@ export function startGame(opts) {
   selected = null;
   padDigit = 0;
   notesMode = false;
+  shadeMode = false;
   disarmSolve();
   disarmLeave();
   showPanel("play");
@@ -531,7 +534,7 @@ function act(k, c = 0, d = 0) {
 // applies the guest's. Times never run backwards, even if the clock does.
 // The cells a digit clears its note from: a Jigsaw's regions in the boxes'
 // place, or play's own rows, columns and boxes.
-const notePeers = () => (g.seed.regions ? layout(0, g.seed.regions).peers : undefined);
+const notePeers = () => peersFor(g.seed.rules, g.seed.regions);
 
 export function applyAction(a) {
   if (!g || isOver()) return false;
@@ -553,8 +556,24 @@ function selectCell(c, { focus = false } = {}) {
   if (!canPlay()) return;
   selected = c;
   padDigit = 0;
+  // With Shade on, a tap shades the cell; the arrow keys only move.
+  if (shadeMode && !focus) return turnShade(c);
   update();
   if (focus) board.focusSelected();
+}
+
+// A Yin-Yang cell's shade, on to the next: none, shaded, unshaded, none. A
+// circle given stays as it is.
+function turnShade(c) {
+  if (g.puzzle.shades?.[c]) return update();
+  if (!act("y", c, (res.shading[c] + 1) % 3)) update();
+}
+
+function toggleShade() {
+  if (!g?.seed.shades) return;
+  shadeMode = !shadeMode;
+  if (shadeMode) notesMode = false;
+  update();
 }
 
 function inputDigit(d) {
@@ -583,10 +602,12 @@ function erase() {
 }
 
 // Fills the selected cell if it needs it, or else the first empty cell,
-// or else the first wrong one.
+// or else the first wrong one. Under Yin-Yang a cell shaded wrong needs it
+// too, and the hint shades it.
 function hint() {
   if (!canPlay()) return;
-  const needs = (c) => !g.puzzle[c] && res.values[c] !== g.solution[c];
+  const shadedWrong = (c) => Boolean(res.shading) && !g.puzzle.shades?.[c] && (res.shading[c] === 1) !== (g.solution.shading[c] === 1);
+  const needs = (c) => (!g.puzzle[c] && res.values[c] !== g.solution[c]) || shadedWrong(c);
   let target = selected != null && needs(selected) ? selected : -1;
   if (target < 0) target = res.values.findIndex((v, c) => !g.puzzle[c] && !v);
   if (target < 0) target = res.values.findIndex((_, c) => needs(c));
@@ -607,6 +628,7 @@ function undo() {
 
 function toggleNotes() {
   notesMode = !notesMode;
+  if (notesMode) shadeMode = false;
   update();
 }
 
@@ -726,6 +748,10 @@ function update({ fresh = false } = {}) {
       rooms: g.seed.rooms ?? null,
       circles: g.seed.circles ?? null,
       circlesets: g.seed.circlesets ?? null,
+      chaosarrows: g.seed.chaosarrows ?? null,
+      chaoscounts: g.seed.chaoscounts ?? null,
+      shades: g.seed.shades ?? null,
+      shading: res.shading,
       ranks: g.seed.ranks ?? null,
       indexings: g.seed.indexings ?? null,
       indexcells: g.seed.indexcells ?? null,
@@ -792,18 +818,26 @@ function seedChipText(seed) {
   return seed.made ? (shareCode(seed.text) ?? "Copy seed") : seed.text;
 }
 
+// Under Doppelgänger each digit 1 to 9 is in eight rows, and its 0, digit
+// 10, in all nine.
+const zeroGame = () => hasRule(g.seed.rules ?? 0, "doppelganger");
+const eachDigit = (d) => (!zeroGame() ? 9 : d === 10 ? 9 : 8);
+
 function renderPad(over) {
   const s = getSettings();
-  const counts = new Array(10).fill(0);
+  const counts = new Array(11).fill(0);
   for (const v of res.values) counts[v]++;
+  $("pad").classList.toggle("ten", zeroGame());
+  $("pad").querySelector(".zero-btn").classList.toggle("hidden", !zeroGame());
   document.querySelectorAll("#pad [data-digit]").forEach((btn) => {
     const d = Number(btn.dataset.digit);
-    const left = Math.max(0, 9 - counts[d]);
+    const left = Math.max(0, eachDigit(d) - counts[d]);
     btn.querySelector(".count").textContent = s.show_counts ? String(left) : "";
     btn.classList.toggle("done", left === 0);
     btn.classList.toggle("lit", padDigit === d);
     btn.disabled = !canPlay();
-    btn.setAttribute("aria-label", notesMode ? `Note ${d}` : s.show_counts ? `${d}, ${left} left` : String(d));
+    const name = d % 10;
+    btn.setAttribute("aria-label", notesMode ? `Note ${name}` : s.show_counts ? `${name}, ${left} left` : String(name));
   });
   $("pad").classList.toggle("notes-mode", notesMode);
   $("pad").classList.toggle("hidden", over);
@@ -817,6 +851,10 @@ function renderActions(over) {
   $("notesBtn").disabled = !playable;
   $("notesBtn").setAttribute("aria-pressed", String(notesMode));
   $("notesLabel").textContent = notesMode ? "Notes on" : "Notes";
+  $("shadeBtn").classList.toggle("hidden", !g.seed.shades);
+  $("shadeBtn").disabled = !playable;
+  $("shadeBtn").setAttribute("aria-pressed", String(shadeMode));
+  $("shadeLabel").textContent = shadeMode ? "Shade on" : "Shade";
   const free = freeHintsLeft();
   $("hintBtn").disabled = !playable;
   $("hintLabel").textContent = free === Infinity ? "Hint, free" : free > 0 ? `Hint, ${free} free` : "Hint";
@@ -849,8 +887,12 @@ function renderStatus(over) {
   }
   if (g.mode === "coop" && g.role === "guest" && !net?.connected()) {
     el.textContent = "Waiting for the host's device.";
+  } else if (shadeMode) {
+    el.textContent = "Shade is on: tap a cell to shade it, again to mark it unshaded, again to clear it.";
   } else if (notesMode) {
     el.textContent = "Notes are on: digits go in as pencil marks.";
+  } else if (res.shading && res.values.every((v, c) => v === g.solution[c])) {
+    el.textContent = "Every digit is right. Now the shading: tap Shade. Each shade joins up, and no 2×2 square is all one shade.";
   } else if (selected == null) {
     el.textContent = "Pick a cell, then a number. Arrow keys and number keys work too.";
   } else {
@@ -951,6 +993,8 @@ function finish(fresh) {
 
   $("result").classList.remove("hidden");
   $("resultPuzzleBtn").classList.toggle("hidden", Boolean(variantName(g.seed)));
+  // The answer is 81 digits whatever the rules, so any solved board has it.
+  $("resultAnswerBtn").classList.toggle("hidden", !res.complete && !res.solved);
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
   replayer.load(
@@ -995,10 +1039,14 @@ function finish(fresh) {
       rooms: g.seed.rooms,
       circles: g.seed.circles,
       circlesets: g.seed.circlesets,
+      chaosarrows: g.seed.chaosarrows,
+      chaoscounts: g.seed.chaoscounts,
+      shades: g.seed.shades,
       ranks: g.seed.ranks,
       indexings: g.seed.indexings,
       indexcells: g.seed.indexcells,
-      regions: g.seed.regions,
+      // Chaos Construction's, found with the answer, now the game is over.
+      regions: g.seed.regions ?? g.solution.regions,
       rules: g.seed.rules,
     },
     { highlightSame: s.highlight_same },
@@ -1225,6 +1273,7 @@ function watch(link) {
 
   $("result").classList.remove("hidden");
   $("resultPuzzleBtn").classList.toggle("hidden", Boolean(variantName(link.seed)));
+  $("resultAnswerBtn").classList.toggle("hidden", !result.complete && !result.solved);
   $("replayBar").classList.remove("hidden");
   hydrateIcons($("play"));
   showCode(link.seed);
@@ -1270,10 +1319,13 @@ function watch(link) {
       rooms: link.seed.rooms,
       circles: link.seed.circles,
       circlesets: link.seed.circlesets,
+      chaosarrows: link.seed.chaosarrows,
+      chaoscounts: link.seed.chaoscounts,
+      shades: link.seed.shades,
       ranks: link.seed.ranks,
       indexings: link.seed.indexings,
       indexcells: link.seed.indexcells,
-      regions: link.seed.regions,
+      regions: link.seed.regions ?? solution.regions,
       rules: link.seed.rules,
     },
     { highlightSame: getSettings().highlight_same },
@@ -1480,8 +1532,10 @@ function onKey(e) {
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (/^[1-9]$/.test(e.key)) inputDigit(Number(e.key));
+  else if (e.key === "0" && zeroGame()) inputDigit(10);
   else if (e.key === "Backspace" || e.key === "Delete" || e.key === "0") erase();
   else if (e.key === "n" || e.key === "N") toggleNotes();
+  else if ((e.key === "s" || e.key === "S") && g.seed.shades) toggleShade();
   else if (e.key.startsWith("Arrow") && selected == null && canPlay()) selectCell(40, { focus: true });
   else return;
   e.preventDefault();
@@ -1536,6 +1590,7 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
   $("undoBtn").addEventListener("click", undo);
   $("eraseBtn").addEventListener("click", erase);
   $("notesBtn").addEventListener("click", toggleNotes);
+  $("shadeBtn").addEventListener("click", toggleShade);
   $("hintBtn").addEventListener("click", hint);
   $("solveBtn").addEventListener("click", onSolve);
   $("leaveBtn").addEventListener("click", onLeave);
@@ -1558,16 +1613,18 @@ export function initGame({ joinCode, replayLink: shared } = {}) {
     if (!seed) return;
     $("copySeedLabel").textContent = (await copyText(seedLabel(seed))) ? "Copied" : "Copy failed";
   });
-  // The puzzle as it started, for the solver or another app.
-  const copyPuzzle = (labelId) => async () => {
+  // The puzzle as it started, for the solver or another app; or, once the
+  // board is solved, its answer, written the same way.
+  const copyGrid = (labelId, which, back) => async () => {
     const seed = shownSeed();
     if (!seed) return;
-    const ok = await copyText(puzzleText(puzzleFor(seed).puzzle));
+    const ok = await copyText(puzzleText(puzzleFor(seed)[which]));
     $(labelId).textContent = ok ? "Copied" : "Copy failed";
-    setTimeout(() => ($(labelId).textContent = "Copy puzzle"), 1500);
+    setTimeout(() => ($(labelId).textContent = back), 1500);
   };
-  $("copyPuzzleBtn").addEventListener("click", copyPuzzle("copyPuzzleLabel"));
-  $("resultPuzzleBtn").addEventListener("click", copyPuzzle("resultPuzzleLabel"));
+  $("copyPuzzleBtn").addEventListener("click", copyGrid("copyPuzzleLabel", "puzzle", "Copy puzzle"));
+  $("resultPuzzleBtn").addEventListener("click", copyGrid("resultPuzzleLabel", "puzzle", "Copy puzzle"));
+  $("resultAnswerBtn").addEventListener("click", copyGrid("resultAnswerLabel", "solution", "Copy answer"));
   $("seedChip").addEventListener("click", async () => {
     const seed = shownSeed();
     if (!seed) return;

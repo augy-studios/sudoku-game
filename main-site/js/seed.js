@@ -21,13 +21,15 @@
 // lockout lines, QEN for entropic lines, QMO for modular
 // lines, QSL for sum lines, QRS for region sum lines, QVX for value
 // indexing lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
-// for quads, QCC for Counting Circles and QCS for more sets of them, B for
+// for quads, QCC for Counting Circles and QCS for more sets of them, QCA
+// for Chaos Arrows, QCO for Chaos Counts, QYY for Yin-Yang's circles, B for
 // Sandwich clues, L for Little Killer clues, Y for Skyscraper clues, U for
 // X-Sum clues, QHS for Hidden Skyscraper clues, QNR for Numbered Room clues,
 // QFR for Full Rank clues, QRX for Row/Column Indexing marks, QCX for single
 // indexing cells and J for a Jigsaw's regions, which the seed then carries
-// too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT and
-// QCT for the switch rules (variant.js). Once the single
+// too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT,
+// QCT, QCH and QDP for the switch rules (variant.js). Under Doppelgänger,
+// QDP, the clues go in base 10, its 0 the tenth. Once the single
 // letters ran out, a new one became Q and two more: Q is read with the two
 // after it, and never alone, so a seed from before reads as it did.
 
@@ -82,6 +84,11 @@ import {
   CIRCLES_MOST,
   circleSetProblem,
   CIRCLE_SETS_MOST,
+  chaosArrowProblem,
+  chaosCountProblem,
+  hasRule,
+  shadeProblem,
+  zeroClash,
   rankProblem,
   RANK_MOST,
   indexingProblem,
@@ -171,13 +178,15 @@ const BASE = BigInt(ALPHABET.length);
 // Fewer clues than this never has one answer.
 const MIN_CLUES = 17;
 
-function encodeGrid(grid) {
+// base: how many digits there are, 9, or 10 under Doppelgänger, whose 0,
+// ZERO, is the tenth.
+function encodeGrid(grid, base = 9) {
   let mask = 0n;
   let digits = 0n;
   grid.forEach((d, c) => {
     if (!d) return;
     mask |= 1n << BigInt(c);
-    digits = digits * 9n + BigInt(d - 1);
+    digits = digits * BigInt(base) + BigInt(d - 1);
   });
   let n = (digits << MASK_BITS) | mask;
   let body = "";
@@ -188,7 +197,7 @@ function encodeGrid(grid) {
   return body.padStart(MADE_MIN, ALPHABET[0]);
 }
 
-function decodeGrid(body) {
+function decodeGrid(body, base = 9) {
   let n = 0n;
   for (const ch of body) {
     const v = ALPHABET.indexOf(ch);
@@ -201,8 +210,8 @@ function decodeGrid(body) {
   for (let c = 0; c < 81; c++) if (mask & (1n << BigInt(c))) cells.push(c);
   const grid = new Array(81).fill(0);
   for (let i = cells.length - 1; i >= 0; i--) {
-    grid[cells[i]] = Number(digits % 9n) + 1;
-    digits /= 9n;
+    grid[cells[i]] = Number(digits % BigInt(base)) + 1;
+    digits /= BigInt(base);
   }
   // Anything left over is not a grid this wrote.
   return digits === 0n ? grid : null;
@@ -238,7 +247,10 @@ function decodeGrid(body) {
    way. Then quads: how many, and for each its corner, how many digits and
    each digit. Then Counting Circles, as whichever is shorter: how many,
    and each one's cell; or for every cell, whether it has one; then how
-   many more sets of them, and each the same way. Then
+   many more sets of them, and each the same way. Then Chaos Arrows: how
+   many, and each one's cell and ways; then Chaos Counts as Counting
+   Circles are. Then Yin-Yang's circles, as whichever is shorter: how many,
+   and each one's cell and shade; or every cell's shade, or none. Then
    Sandwich clues, for each
    row and then each column its sum, or none; then Little Killer clues: how
    many, and for each its first cell, which way it runs and its sum. Then
@@ -304,10 +316,10 @@ const MAX_LINES = 40;
 // parts: { cages, thermos, ... } as PARTS names them, each a list, empty
 // when the puzzle has none, so the reader knows from the seed's letters what
 // to read.
-function encodeParts(grid, parts) {
+function encodeParts(grid, parts, base = 9) {
   const digits = [];
   for (let c = 0; c < 81; c++) digits.push([grid[c] ? 1 : 0, 2]);
-  for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, 9]);
+  for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, base]);
   for (const p of PARTS) if (parts[p.list].length) p.write(digits, parts[p.list]);
   return toBody(packDigits(digits));
 }
@@ -512,10 +524,11 @@ function readQuads(take) {
 const sortQuads = (quads) => quads.map((q) => ({ cell: q.cell, digits: q.digits.slice().sort((a, b) => a - b) })).sort((a, b) => a.cell - b.cell);
 
 // Counting Circles: a flag, then either how many and each one's cell, or
-// every cell's flag, 1 for a circle; whichever is shorter.
-function writeCircles(digits, circles) {
-  if (Math.log2(CIRCLES_MOST) + circles.length * Math.log2(81) <= 81) {
-    digits.push([0, 2], [circles.length - 1, CIRCLES_MOST]);
+// every cell's flag, 1 for a circle; whichever is shorter. Chaos Counts
+// the same way, `most` how many there can be.
+function writeCircles(digits, circles, most = CIRCLES_MOST) {
+  if (Math.log2(most) + circles.length * Math.log2(81) <= 81) {
+    digits.push([0, 2], [circles.length - 1, most]);
     for (const c of circles) digits.push([c, 81]);
   } else {
     digits.push([1, 2]);
@@ -525,9 +538,9 @@ function writeCircles(digits, circles) {
 
 // The other way. A cell listed twice reads as written, so that checking it
 // refuses the seed.
-function readCircles(take) {
+function readCircles(take, most = CIRCLES_MOST) {
   if (take(2)) return [...Array(81).keys()].filter(() => take(2));
-  const count = take(CIRCLES_MOST) + 1;
+  const count = take(most) + 1;
   return Array.from({ length: count }, () => take(81));
 }
 
@@ -547,6 +560,42 @@ function readCircleSets(take) {
 
 // Each set's cells in order, the sets as they were drawn.
 const sortCircleSets = (sets) => sets.map(sortCircles);
+
+// Chaos Arrows: how many, then each one's cell and its ways.
+function writeChaosArrows(digits, arrows) {
+  digits.push([arrows.length - 1, 81]);
+  for (const { cell, ways } of arrows) digits.push([cell, 81], [ways - 1, 15]);
+}
+
+function readChaosArrows(take) {
+  const count = take(81) + 1;
+  return Array.from({ length: count }, () => ({ cell: take(81), ways: take(15) + 1 }));
+}
+
+const sortChaosArrows = (arrows) => arrows.map(({ cell, ways }) => ({ cell, ways })).sort((a, b) => a.cell - b.cell);
+
+// Yin-Yang's circles: a flag, then either how many and each one's cell and
+// shade, or every cell's shade, 0 for none; whichever is shorter.
+function writeShades(digits, shades) {
+  if (Math.log2(81) + shades.length * Math.log2(162) <= 81 * Math.log2(3)) {
+    digits.push([0, 2], [shades.length - 1, 81]);
+    for (const { cell, shade } of shades) digits.push([cell, 81], [shade - 1, 2]);
+  } else {
+    const of = new Map(shades.map(({ cell, shade }) => [cell, shade]));
+    digits.push([1, 2]);
+    for (let c = 0; c < 81; c++) digits.push([of.get(c) ?? 0, 3]);
+  }
+}
+
+// The other way. A cell listed twice reads as written, so that checking it
+// refuses the seed.
+function readShades(take) {
+  if (take(2)) return [...Array(81).keys()].map((cell) => ({ cell, shade: take(3) })).filter(({ shade }) => shade);
+  const count = take(81) + 1;
+  return Array.from({ length: count }, () => ({ cell: take(81), shade: take(2) + 1 }));
+}
+
+const sortShades = (shades) => shades.map(({ cell, shade }) => ({ cell, shade })).sort((a, b) => a.cell - b.cell);
 
 // Single indexing cells: how many, then each one's cell and its line: 0
 // for its column, doing as a marked column's cells do, 1 for its row.
@@ -687,8 +736,8 @@ const sortLittles = (littles) =>
     .sort((a, b) => a.cells[0] - b.cells[0] || b.cells[1] - a.cells[1]);
 
 // withs: which parts the seed's letters say it has, { cages, thermos, ... }
-// as PARTS names them.
-function decodeParts(body, withs) {
+// as PARTS names them; base as encodeGrid has it.
+function decodeParts(body, withs, base = 9) {
   let n = fromBody(body);
   if (n == null) return null;
   const take = (radix) => {
@@ -700,7 +749,7 @@ function decodeParts(body, withs) {
   const grid = new Array(81).fill(0);
   const clued = [];
   for (let c = 0; c < 81; c++) if (take(2)) clued.push(c);
-  for (const c of clued) grid[c] = take(9) + 1;
+  for (const c of clued) grid[c] = take(base) + 1;
   const out = { grid };
   for (const p of PARTS) {
     out[p.list] = withs[p.list] ? p.read(take) : [];
@@ -805,9 +854,10 @@ const edges = (list, letter, name, problem, marks) => ({
   sort: sortEdges,
 });
 const PARTS = [
-  { list: "cages", letter: "K", name: "Killer", problem: cageProblem, write: (digits, cages) => writeCages(digits, cages), read: (take) => readCages(take), sort: sortCages },
+  // ruled: its check takes the rules too, as a sum may hold Doppelgänger's 0.
+  { list: "cages", letter: "K", name: "Killer", problem: cageProblem, ruled: true, write: (digits, cages) => writeCages(digits, cages), read: (take) => readCages(take), sort: sortCages },
   cageKind("relliks", "QRC", "Rellik Cage", rellikProblem, (digits, { sum }) => digits.push([sum, 46]), (take) => ({ sum: take(46) })),
-  cageKind("lunchboxes", "QLB", "Lunchbox", lunchboxProblem, (digits, { sum }) => digits.push([sum, LUNCHBOX_MAX + 1]), (take) => ({ sum: take(LUNCHBOX_MAX + 1) })),
+  { ...cageKind("lunchboxes", "QLB", "Lunchbox", lunchboxProblem, (digits, { sum }) => digits.push([sum, LUNCHBOX_MAX + 1]), (take) => ({ sum: take(LUNCHBOX_MAX + 1) })), ruled: true },
   cageKind("looksays", "QLS", "Look and Say", lookSayProblem, writeSay, readSay),
   cageKind("equalities", "QEC", "Equality Cage", equalityProblem, () => {}, () => ({})),
   { list: "equalsums", letter: "QES", name: "Equal Sum", problem: equalSumProblem, write: writePieces, read: readPieces, sort: sortCages },
@@ -843,8 +893,21 @@ const PARTS = [
   { list: "circles", letter: "QCC", name: "Counting Circles", problem: circleProblem, write: writeCircles, read: readCircles, sort: sortCircles },
   // Only ever with the first set, QCC.
   { list: "circlesets", letter: "QCS", name: "Counting Circles", with: "circles", problem: circleSetProblem, write: writeCircleSets, read: readCircleSets, sort: sortCircleSets },
+  // Only ever under Chaos Construction, QCH.
+  { list: "chaosarrows", letter: "QCA", name: "Chaos Arrow", rule: "chaos", problem: chaosArrowProblem, write: writeChaosArrows, read: readChaosArrows, sort: sortChaosArrows },
+  {
+    list: "chaoscounts",
+    letter: "QCO",
+    name: "Chaos Count",
+    rule: "chaos",
+    problem: chaosCountProblem,
+    write: (digits, counts) => writeCircles(digits, counts, 81),
+    read: (take) => readCircles(take, 81),
+    sort: sortCircles,
+  },
+  { list: "shades", letter: "QYY", name: "Yin-Yang", problem: shadeProblem, write: writeShades, read: readShades, sort: sortShades },
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
-  { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, write: writeLittles, read: readLittles, sort: sortLittles },
+  { list: "littles", letter: "L", name: "Little Killer", problem: littleProblem, ruled: true, write: writeLittles, read: readLittles, sort: sortLittles },
   views("skyscrapers", "Y", "Skyscrapers", skyscraperProblem, "count", 9),
   views("xsums", "U", "X-Sums", xsumProblem, "sum", 45),
   views("hiddens", "QHS", "Hidden Skyscraper", hiddenProblem, "height", 8),
@@ -896,7 +959,8 @@ export function madeSeed(level, grid, variant = null) {
   const rules = variant?.rules ?? 0;
   const prefix = prefixFor(parts, rules);
   const drawn = PARTS.some((p) => parts[p.list].length);
-  const body = drawn ? encodeParts(grid, parts) : encodeGrid(grid);
+  const base = hasRule(rules, "doppelganger") ? 10 : 9;
+  const body = drawn ? encodeParts(grid, parts, base) : encodeGrid(grid, base);
   const text = prefix ? `${prefix}-${level}-${groups(body)}` : `${level}-${groups(body)}`;
   const seed = { level, body, text, made: true, grid: grid.slice(), rules };
   for (const { list } of PARTS) if (parts[list].length) seed[list] = parts[list];
@@ -973,20 +1037,24 @@ function parseMade(letters, level, body) {
   let seed = null;
   const rules = RULES.filter((r) => letters.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
   const withs = Object.fromEntries(PARTS.map((p) => [p.list, letters.includes(p.letter)]));
+  const base = hasRule(rules, "doppelganger") ? 10 : 9;
   if (PARTS.some((p) => withs[p.list])) {
-    const got = decodeParts(body, withs);
+    const got = decodeParts(body, withs, base);
     const variant = got && { ...got, rules };
-    // Each part the letters name is there, well formed, and with the part it
-    // comes with, if it has one.
+    // Each part the letters name is there, well formed, and with the part or
+    // the rule it comes with, if it has one; and drawn regions never come
+    // with regions found while solving.
     const ok =
       variant &&
-      PARTS.every((p) => !withs[p.list] || (variant[p.list].length && !p.problem(variant[p.list]) && (!p.with || withs[p.with]))) &&
+      PARTS.every((p) => !withs[p.list] || (variant[p.list].length && !(p.ruled ? p.problem(variant[p.list], rules) : p.problem(variant[p.list])) && (!p.with || withs[p.with]) && (!p.rule || hasRule(rules, p.rule)))) &&
+      !(withs.regions && hasRule(rules, "chaos")) &&
+      !zeroClash(variant) &&
       variantSolutions(got.grid, variant, 2)?.length === 1;
     seed = ok ? madeSeed(level, got.grid, variant) : null;
   } else if (rules) {
     // The rules do some of the clues' work, so there is no least number.
-    const grid = decodeGrid(body);
-    const ok = grid && variantSolutions(grid, { rules }, 2)?.length === 1;
+    const grid = decodeGrid(body, base);
+    const ok = grid && !zeroClash({ rules }) && variantSolutions(grid, { rules }, 2)?.length === 1;
     seed = ok ? madeSeed(level, grid, { rules }) : null;
   } else {
     const grid = decodeGrid(body);
@@ -1054,6 +1122,12 @@ export function puzzleFor(seed) {
   const { puzzle, solution } = seed.made
     ? { puzzle: seed.grid.slice(), solution: PARTS.some((p) => seed[p.list]) || seed.rules ? variantSolve(seed.grid, seed) : solve(seed.grid) }
     : generate(randomSource(hashString(`puzzle|${seed.text}`)), LEVELS[seed.level].blanks);
+  // Yin-Yang's circles go with the puzzle, as each cell's shade given, 0
+  // for none, and the shading with its answer (variantSolutions).
+  if (seed.shades) {
+    puzzle.shades = new Array(81).fill(0);
+    for (const { cell, shade } of seed.shades) puzzle.shades[cell] = shade;
+  }
   const out = { puzzle, solution, blanks: puzzle.filter((d) => d === 0).length };
   made.set(seed.text, out);
   if (made.size > 8) made.delete(made.keys().next().value);

@@ -256,6 +256,7 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="connected">Connected</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="countdistinct">Count Distinct</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="jigsaw">Jigsaw</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="chaos">Chaos Construction</button>
                         </div>
                     </div>
                     <div class="rule-group" role="group" aria-labelledby="ruleGroupLines">
@@ -287,6 +288,9 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="greater">Greater Than</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="quad">Quad</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="counting">Counting Circles</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="chaosarrow">Chaos Arrow</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="chaoscount">Chaos Count</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="yinyang">Yin-Yang</button>
                         </div>
                     </div>
                     <div class="rule-group" role="group" aria-labelledby="ruleGroupOutside">
@@ -319,6 +323,7 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="globalmod">Global Mod</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="antitaxicab">Anti-taxicab</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="dutchflatmates">Dutch Flatmates</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="doppelganger">Doppelgänger</button>
                         </div>
                     </div>
                 </div>
@@ -380,6 +385,7 @@
                     <button class="pad-btn" type="button" data-digit="7">7<span class="count"></span></button>
                     <button class="pad-btn" type="button" data-digit="8">8<span class="count"></span></button>
                     <button class="pad-btn" type="button" data-digit="9">9<span class="count"></span></button>
+                    <button class="pad-btn zero-btn hidden" type="button" data-digit="10">0<span class="count"></span></button>
                 </div>
 
                 <div id="solverTools" class="tools solver-tools">
@@ -417,6 +423,7 @@
                     <button id="solverSeedCopy" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="solverSeedCopyLabel">Copy seed</span></button>
                     <button id="solverCands" class="btn btn-quiet pill" type="button" aria-pressed="false"><span data-icon="dots"></span><span id="solverCandsLabel">Show candidates</span></button>
                     <button id="solverCopy" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="solverCopyLabel">Copy puzzle</span></button>
+                    <button id="solverAnswer" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="solverAnswerLabel">Copy answer</span></button>
                     <button id="solverImage" class="btn btn-quiet pill" type="button"><span data-icon="image"></span><span id="solverImageLabel">Save image</span></button>
                     <button id="solverEdit" class="btn btn-quiet pill" type="button"><span data-icon="pencil"></span><span id="solverEditLabel">Edit puzzle</span></button>
                     <button id="solverBack" class="btn btn-quiet pill" type="button"><span data-icon="exit"></span>Back</button>
@@ -465,12 +472,14 @@
                     <button class="pad-btn" type="button" data-digit="7">7<span class="count"></span></button>
                     <button class="pad-btn" type="button" data-digit="8">8<span class="count"></span></button>
                     <button class="pad-btn" type="button" data-digit="9">9<span class="count"></span></button>
+                    <button class="pad-btn zero-btn hidden" type="button" data-digit="10">0<span class="count"></span></button>
                 </div>
 
                 <div id="tools" class="tools">
                     <button id="undoBtn" class="tool-btn" type="button"><span data-icon="undo"></span><span>Undo</span></button>
                     <button id="eraseBtn" class="tool-btn" type="button"><span data-icon="erase"></span><span>Erase</span></button>
                     <button id="notesBtn" class="tool-btn" type="button" aria-pressed="false"><span data-icon="pencil"></span><span id="notesLabel">Notes</span></button>
+                    <button id="shadeBtn" class="tool-btn hidden" type="button" aria-pressed="false"><span data-icon="shade"></span><span id="shadeLabel">Shade</span></button>
                     <button id="hintBtn" class="tool-btn" type="button"><span data-icon="bulb"></span><span id="hintLabel">Hint</span></button>
                     <button id="solveBtn" class="tool-btn" type="button"><span data-icon="wand"></span><span id="solveLabel">Solve</span></button>
                 </div>
@@ -509,6 +518,7 @@
                         <span class="seed-text" id="resultSeed"></span>
                         <button id="copySeedBtn" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="copySeedLabel">Copy seed</span></button>
                         <button id="resultPuzzleBtn" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="resultPuzzleLabel">Copy puzzle</span></button>
+                        <button id="resultAnswerBtn" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="resultAnswerLabel">Copy answer</span></button>
                         <button id="shareBtn" class="btn btn-primary pill" type="button"><span data-icon="share"></span><span id="shareLabel">Share replay</span></button>
                     </div>
 

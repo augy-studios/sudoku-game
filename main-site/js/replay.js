@@ -4,7 +4,7 @@
 // undos, so a player can see where a game went wrong.
 
 import { play, cellName } from "./record.js";
-import { layout } from "./variant.js";
+import { notePeers } from "./variant.js";
 import { escapeHtml, hydrateIcons, store } from "./ui.js";
 
 const STEP_MS = 700;
@@ -18,13 +18,15 @@ function describe(a, step, log, players) {
   const who = players > 1 ? `P${a.b + 1} ` : "";
   switch (a.k) {
     case "p":
-      return { c: a.c, kind: step.ok ? "ok" : "wrong", text: `${who}${cellName(a.c)} ${a.d}${step.ok ? "" : ", wrong"}` };
+      return { c: a.c, kind: step.ok ? "ok" : "wrong", text: `${who}${cellName(a.c)} ${a.d % 10}${step.ok ? "" : ", wrong"}` };
     case "e":
       return { c: a.c, kind: "erase", text: `${who}${cellName(a.c)} erased` };
     case "n":
-      return { c: a.c, kind: "note", text: `${who}${cellName(a.c)} note ${a.d}` };
+      return { c: a.c, kind: "note", text: `${who}${cellName(a.c)} note ${a.d % 10}` };
     case "h":
       return { c: a.c, kind: "hint", text: `${who}${cellName(a.c)} hint` };
+    case "y":
+      return { c: a.c, kind: "note", text: `${who}${cellName(a.c)} ${["unmarked", "shaded", "unshaded"][a.d]}` };
     case "u": {
       const undone = log[step.undid];
       return { c: undone?.c ?? null, kind: "undo", text: `${who}Undo${undone && undone.k !== "s" ? ` ${cellName(undone.c)}` : ""}` };
@@ -82,8 +84,9 @@ export class Replay {
     this.active = true;
     this.game = game;
     this.view = view;
-    // A Jigsaw's notes clear along its regions, as in the game.
-    const peers = game.regions ? layout(0, game.regions).peers : undefined;
+    // A Jigsaw's notes clear along its regions, and Chaos Construction's
+    // along rows and columns alone, as in the game.
+    const peers = notePeers(game.rules, game.regions);
     const result = play(game.puzzle, game.solution, game.log, { frames: true, peers });
     this.frames = result.frames;
     this.marks = game.log.slice(0, result.steps.length).map((a, i) => describe(a, result.steps[i], game.log, game.players));
@@ -160,6 +163,10 @@ export class Replay {
       rooms: this.game.rooms ?? null,
       circles: this.game.circles ?? null,
       circlesets: this.game.circlesets ?? null,
+      chaosarrows: this.game.chaosarrows ?? null,
+      chaoscounts: this.game.chaoscounts ?? null,
+      shades: this.game.shades ?? null,
+      shading: frame.shading ?? null,
       ranks: this.game.ranks ?? null,
       indexings: this.game.indexings ?? null,
       indexcells: this.game.indexcells ?? null,

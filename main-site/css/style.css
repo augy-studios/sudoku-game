@@ -702,6 +702,33 @@ body {
 .circle-set-6 { stroke: #d9a514; }
 .circle-set-7 { stroke: #6cc0cf; }
 .circle-set-8 { stroke: #c2a07f; }
+/* Chaos Construction's clues: a dashed square round a Count's digit, and
+   small chevrons at an Arrow's edges, pointing the ways it runs. */
+.chaos-count {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.5;
+  opacity: 0.75;
+}
+/* Yin-Yang: a shaded cell tinted, its digit still easy to read; a given
+   circle in its corner, filled or hollow, and an unshaded mark as a small
+   faint ring there. */
+.cell.shade-dark { background: color-mix(in srgb, var(--ink) 24%, var(--cell-bg)); }
+.shade-given { stroke: var(--ink); }
+.shade-given.shaded { fill: var(--ink); }
+.shade-given.unshaded { fill: var(--cell-bg); }
+.shade-mark {
+  fill: none;
+  stroke: var(--ink);
+  opacity: 0.45;
+}
+.chaos-arrow {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
 /* Warm, so windows never pass for the boxes' green tint. */
 .cell.window { background: color-mix(in srgb, var(--warn) 22%, transparent); }
 /* Row/Column Indexing's rows and columns: cool, so they never pass for a
@@ -724,6 +751,12 @@ body {
   font-size: clamp(8px, 2.1vw, 12px);
   font-size: min(12px, 22cqmin);
   color: var(--muted-strong);
+}
+/* Doppelgänger's ten digits: 1 to 9 and then 0, five to a row. */
+.notes.ten {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  align-content: center;
 }
 .notes span {
   display: grid;
@@ -748,6 +781,8 @@ body {
   grid-template-columns: repeat(9, 1fr);
   gap: 5px;
 }
+/* With Doppelgänger's 0 too. */
+.pad.ten { grid-template-columns: repeat(10, 1fr); }
 .pad-btn {
   position: relative;
   display: flex;
