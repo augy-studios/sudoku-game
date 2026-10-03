@@ -38,6 +38,7 @@ the browser and the server always agree on a game.
 | `calendar.js` | Pure, for the page and the API: the first daily's date, months laid out in weeks, dates to read, and streaks. |
 | `solver.js` | The Solver tab's screen: typing a puzzle in, then hints, Check, candidates and Solve. |
 | `image.js` | Draws a puzzle to a PNG, for the solver's Save image, cages and all. |
+| `sample.js` | Pure. Create's Show sample: a made-up puzzle with an example of each part the rules on would draw, all true of one grid. |
 | `variant.js` | Pure. Variant sudoku: killer, Rellik, lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected Values and Count Distinct cages, thermometers, arrows, double and pill arrows, German Whispers, renban, palindrome, zipper, between, lockout, entropic, modular, sum, region sum and value indexing lines, Kropki dots, XV marks, Greater Than signs, quads, Counting Circles and their sets, Chaos Arrows and Counts, Yin-Yang's shading and its circles, Sandwich, Little Killer, Skyscraper, X-Sum, Hidden Skyscraper, Numbered Room and Full Rank clues, Row/Column Indexing marks and single cells, a Jigsaw's regions, Chaos Construction's regions found while solving, Doppelgänger's 0, and the switch rules, what they allow, and a solver for any mix, which the API uses too. |
 | `api.js`, `leaderboard.js`, `settings.js` | The API client, with the short codes long made seeds are shared by, and the leaderboard and settings windows, after MRT Station Guesser's. |
 | `theme.js`, `icons.js`, `ui.js`, `update-bar.js`, `confetti.js`, `app.js` | Theme, inline SVG icons, modal and storage helpers, the update bar, a solve's confetti, and boot. |
@@ -96,6 +97,17 @@ puzzle that passes is rated (by its blanks, and at least Hard if singles
 alone cannot finish it) and gets a seed that carries the whole puzzle, to
 copy, play, or save as an image with the clues.
 
+Show sample, while the clues go in, puts a made-up puzzle in the board's
+place with an example of each part the rules on would draw: a classic one
+with none on, a killer cage, a thermometer, a dot and so on with them on
+(`sample.js`). It starts from a full grid that keeps the switch rules, a
+Jigsaw's regions and an indexing mark, and takes every part from that grid,
+each checked by the engine, so every sum and mark is true; under a strict
+rule every side its marks fit is marked. Rules that cannot all hold in one
+grid are left out of its digits, and it says so. It follows the rule
+buttons as they are pressed, and Hide sample brings the person's own puzzle
+back untouched.
+
 Both open a seed, in the Open a seed box over the rule buttons or through
 Paste, while the clues go in: a generated seed's clues, or a made seed's
 with its rules and everything drawn on it, every rule switched to what the
@@ -123,8 +135,7 @@ while the clues go in, how to draw it), and in a Rules box over the board
 in a variant game or replay, while Tutorial is on in the new-game screen's
 Solo and Network settings, and the Daily's with Killer picked (it is on to begin with; off, the level chip
 still names the rules). The engine tests fail if a rule button, or
-any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected (Connected Values), Count Distinct, Thermo, Arrow, Double Arrow, Pill Arrow, Whispers (German
-Whispers), Dutch Whispers, Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Chaos Arrow, Chaos Count, Yin-Yang, Sandwich, Little Killer, Skyscrapers,
+any variant `variantName` can name, has no explanation. The rules: Killer, Rellik, Lunchbox, Look and Say, Equality, Equal Sum, Same Values, Connected (Connected Values), Count Distinct, Thermo, Arrow, Double Arrow, Pill Arrow, German Whispers, Dutch Whispers, Renban, Palindrome, Zipper, Between, Lockout, Entropic, Modular, Sum Line, Region Sum (Region Sum Line), Value Indexing, Kropki, XV, Greater Than, Quad, Counting Circles, Chaos Arrow, Chaos Count, Yin-Yang, Sandwich, Little Killer, Skyscrapers,
 X-Sums, Hidden Skyscraper, Numbered Room, Full Rank, No Rank Ties, Clued Rank Ties, Row/Col Indexing (Row/Column Indexing), Jigsaw, Chaos Construction, Diagonal (both long diagonals hold 1 to 9), Anti-knight (cells a knight's move apart differ), Anti-king (cells
 touching at a corner differ), Windoku (four more 3x3 windows, rows and
 columns 2 to 4 and 6 to 8, hold 1 to 9), Disjoint Groups (the cells in the
@@ -137,9 +148,9 @@ and a high digit), Global Mod (every 2x2 square holds one each of 1 4 7,
 2 5 8 and 3 6 9), Anti-taxicab (a digit X never has another X exactly X
 steps away along rows and columns), Dutch Flatmates (every 5 has a 1
 above it or a 9 below it) and Doppelgänger (a 0 too, each row, column and
-box missing a digit; below). Dutch Whispers, No Rank Ties and Clued Rank Ties
+box missing a digit; below). No Rank Ties and Clued Rank Ties
 are switches too, with letters of their own, but options on a part rather
-than rules of the whole grid, so their buttons sit beside Whispers and Full
+than rules of the whole grid, so their buttons sit beside Full
 Rank. Diagonals are drawn as faint lines and windows tinted,
 on the board and in a saved image; the others have nothing to draw, so the
 level chip and the rules line name them. In variant.js, diagonals, windows
@@ -155,8 +166,9 @@ and a cell with no 1 possible above it and no 9 below cannot be 5. So one solver
 every mix, cages included; with no rules it takes the same steps as the
 killer solver it grew from. A variant puzzle needs no least number of
 clues, and one with anything drawn can have no given digits at all. Its
-seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, T, A, QDA, QPA, S, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
-P, V, QGT, QQD, QCC, QCS, QCA, QCO, QYY, B, L, Y, U, QHS, QNR, QFR, QRX, QCX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT, QCT, QCH and QDP, always in that
+seed starts with its rules' letters, K, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, T, A, QDA, QPA, S, QDL, R, O, Z, C, F, QEN, QMO, QSL, QRS, QVX,
+P, V, QGT, QQD, QCC, QCS, QCA, QCO, QYY, B, L, Y, U, QHS, QNR, QFR, QRX, QCX, J, D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT, QCT, QCH and QDP,
+then the details of parts already written, QGS, QAM and QCL, always in that
 order, as in `KD-H-...` or `PQSK-H-...`. Once the single letters ran out, a
 new rule's or part's letter became Q and two more: Q is only ever read with the two after it,
 so a seed from before reads as it did, and the X in QSX is never taken for
@@ -244,11 +256,15 @@ reach. Neighbours on a whisper line less than 5 apart show as a clash, as
 do a repeat on a renban line, and a renban line's digits once they spread
 wider than it is long. They are drawn as a thick line with no bulb, green
 for whispers and purple for renban, on the board and in a saved image.
-Dutch Whispers, a switch beside Whispers (QDW), makes every whisper line
-Dutch: neighbours differ by at least 4 (`whisperGap`), so a 5 may go on one
-beside a 1 or a 9. A puzzle is named Dutch Whispers in German Whispers'
-place, and only the Dutch rule is explained (`replaces` in rule-help.js).
-Puzzles with both kinds of line are left out, as few have them.
+Dutch Whispers lines (QDL, `dutches`) are whisper lines whose neighbours
+differ by at least 4 (`DUTCH_GAP`), so a 5 may go on one beside a 1 or a 9,
+drawn the same green, dashed. Both kinds are drawn with the Whispers tool:
+with German Whispers and Dutch Whispers both on, its kind button says which
+a line is, and a line picked up can be turned to the other kind. So a
+puzzle can have both. The old Dutch Whispers rule (QDW), which made every
+whisper line Dutch (`whisperGap`), has no button now but still reads in
+seeds made with it, its lines explained as Dutch; opening one in the solver
+or Create turns its lines into Dutch lines.
 
 **Palindrome.** A palindrome line's digits read the same from either end,
 so cells the same way in from each end hold the same digit, and a line's
@@ -491,7 +507,16 @@ solver, say how the grid is cut. A Chaos Arrow (QCA) points one to four
 ways along its cell's row and column, and its digit counts the cell and
 the cells of its region in a straight line from it each way, up to the
 first that is not in it. A Chaos Count (QCO) counts the cell and the cells
-round it, along a side or at a corner, in its region. Both only come with
+round it, along a side or at a corner, in its region. As in the other
+solver, either can name cells of its own: an arrow arms of its own, one to
+four paths from beside it, each step along a side, turns allowed, counted
+as its row and column would be; a count any cells at all (`arrowArms`,
+`countedCells`). Those come after every part in a seed, under QAM and QCL.
+In the Marks tool, Middle's Chaos arms takes the arrow's cell, then cells
+along each arm, and Count cells the count's cell, then each cell it counts,
+each tapped again to take it back. They are drawn as dotted lines along the
+arms, and small dashed squares in the counted cells with faint dotted lines
+to them. Both only come with
 the rule (QCH), which never comes with a Jigsaw's regions: turning either
 on turns the other off. A puzzle has one answer only if its digits and its
 regions both do; otherwise Check says which cell's region could go two
@@ -620,17 +645,19 @@ cages are, with its clue: a sum, a Look and Say clue's pairs, or nothing.
 **Equal Sum, Same Values, Connected Values and Count Distinct.** Four more
 kinds of cage on the same Cages tool, after the other solver's rules too:
 
-- An Equal Sum cage, marked Σ, is two or more pieces apart from each
-  other, cells touching along a side being one piece, of one to nine cells
-  each. Every piece adds up to the same total, and digits may repeat.
+- An Equal Sum cage, marked Σ, is two or more pieces of one to nine cells
+  each, each outlined on its own. Every piece adds up to the same total,
+  and digits may repeat. Cells touching along a side are one piece, unless
+  Next piece, in the Cages tool, ended one between them: so pieces can sit
+  side by side, kept as the cage's `pieces` (`piecesFor` in variant.js).
 - A Same Values cage, marked ≡, is pieces the same way, all the same size,
   each holding the same digits in any order, a repeat repeated in each.
   With more than one cage of either kind, each is lettered (ΣA, ΣB), so
   its pieces can be told from another's.
 - A Connected Values cage's clue is one to eight digits, shown after ~ as
   ~135: the cells holding any of them join up edge to edge into one group,
-  and there is one at least. The other solver's optional size of that
-  group is left out.
+  and there is one at least. A size typed in the Size box, shown as
+  ~135:4, says how many cells that group has.
 - A Count Distinct cage's # cell, the first cell tapped when it is drawn,
   holds how many different digits the rest of the cage holds. They may
   repeat.
@@ -640,13 +667,16 @@ total every piece can make, as a sum line's runs are narrowed; a Same Values
 cage keeps a digit only where every piece has room for it, and counts each
 digit across the pieces as a Look and Say cage does; a Connected Values cage
 splits the cells that could hold its digits into parts joined edge to edge,
-and once one is sure, the other parts lose the digits; a Count Distinct
-cage's # cell is kept between the different digits placed and the most the
-rest could hold at once. Their seed letters are QES, QSV, QCV and QCD, after
-QEC. An Equal Sum or Same Values cage is written as its pieces, each a cage
-with no clue, then for each piece which cage it is in; a Connected Values
-cage's clue is which digits it names, and a Count Distinct cage's which of
-its cells is the # cell.
+and once one is sure, the other parts lose the digits, and with a size,
+parts too small lose them, and once the size is sure the rest do; a Count
+Distinct cage's # cell is kept between the different digits placed and the
+most the rest could hold at once. Their seed letters are QES, QSV, QCV and
+QCD, after QEC. An Equal Sum or Same Values cage is written as its pieces,
+each a cage with no clue, then for each piece which cage it is in, so the
+sides between pieces side by side say where one ends; a Connected Values
+cage's clue is which digits it names, and its size, if any cage has one,
+comes after every part under QGS; a Count Distinct cage's which of its cells
+is the # cell.
 
 **Copy puzzle.** On every game, its result and the solver: the puzzle's clues
 as 81 characters with . for blanks, which the solver's Paste and most sudoku

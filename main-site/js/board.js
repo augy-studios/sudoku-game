@@ -18,7 +18,8 @@
 // line between rings round both ends' digits, and a pill arrow a box with
 // round ends round the pill's digits, with an arrow from its edge. German
 // Whispers lines are a
-// green line as thick as a thermometer's, with no bulb, renban lines a
+// green line as thick as a thermometer's, with no bulb, Dutch Whispers
+// lines the same dashed, renban lines a
 // purple one, palindrome lines a blue one, zipper lines a pink one,
 // entropic lines a gold one and modular lines an orange one.
 // Between lines are a thinner teal line from a ring round one end's digit to
@@ -44,8 +45,10 @@
 // each region gets a heavy line round it instead. Under Chaos Construction
 // the boxes go too, with no regions to show until the answer is known, when
 // `regions` brings them; a Chaos Arrow is small chevrons at its cell's edges,
-// pointing the ways it runs, and a Chaos Count a dashed square round its
-// digit. Yin-Yang's shaded cells are tinted, a circle given in a cell's
+// pointing the ways it runs, with arms of its own a dotted line along each,
+// and a Chaos Count a dashed square round its digit, with cells of its own
+// a small dashed square in each one's corner and a faint dotted line to it.
+// Yin-Yang's shaded cells are tinted, a circle given in a cell's
 // bottom right corner, filled for shaded and hollow for unshaded, and a
 // cell marked unshaded has a small faint ring there. Anti-knight, anti-king,
 // Disjoint Groups, Anti-consecutive, Strict Kropki, Strict XV, Global
@@ -53,7 +56,7 @@
 
 import { ROW, COL, BOX } from "./sudoku.js";
 import { cellName } from "./record.js";
-import { layout, touching, cagesOf, indexers, circleSets, RULES } from "./variant.js";
+import { layout, touching, cagesOf, indexers, circleSets, countCell, RULES } from "./variant.js";
 
 const DIAGONAL = RULES.find((r) => r.key === "diagonal").bit;
 const WINDOKU = RULES.find((r) => r.key === "windoku").bit;
@@ -169,7 +172,7 @@ export class BoardView {
   // picked? }. kind is ok, wrong, hint, erase, note or undo, for the
   // replay's last action. wrong, a Set of cells, overrides telling wrong
   // digits by the solution. cages, relliks, lunchboxes, looksays,
-  // equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+  // equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics,
   // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, hiddens, rooms, littles,
   // skyscrapers, xsums, ranks, indexings, indexcells and regions are a variant puzzle's, and
   // rules its switches (variant.js); picked, a Set of cells, are those being
@@ -196,6 +199,7 @@ export class BoardView {
     this.doubles = view.doubles ?? [];
     this.pills = view.pills ?? [];
     this.whispers = view.whispers ?? [];
+    this.dutches = view.dutches ?? [];
     this.renbans = view.renbans ?? [];
     this.palindromes = view.palindromes ?? [];
     this.zippers = view.zippers ?? [];
@@ -304,8 +308,10 @@ export class BoardView {
       if (cage) label += `${cage.words}, `;
       if (circled.has(c)) label += sets > 1 ? `in a counting circle of set ${circled.get(c) + 1}, ` : "in a counting circle, ";
       const pointer = this.chaosarrows.find((a) => a.cell === c);
-      if (pointer) label += `a chaos arrow pointing ${WAY_NAMES.filter((_, i) => pointer.ways & (1 << i)).join(" and ")}, `;
-      if (this.chaoscounts.includes(c)) label += "a chaos count, ";
+      if (pointer?.arms) label += `a chaos arrow with ${pointer.arms.length === 1 ? "an arm" : `${pointer.arms.length} arms`} of its own, `;
+      else if (pointer) label += `a chaos arrow pointing ${WAY_NAMES.filter((_, i) => pointer.ways & (1 << i)).join(" and ")}, `;
+      const count = this.chaoscounts.find((x) => countCell(x) === c);
+      if (count != null) label += typeof count === "number" ? "a chaos count, " : `a chaos count of ${count.cells.length} cells of its own, `;
       const circle = this.shades.find((s) => s.cell === c)?.shade ?? 0;
       const shade = circle || (this.shading?.[c] ?? 0);
       if (circle) label += circle === 1 ? "a shaded circle, " : "an unshaded circle, ";
@@ -329,6 +335,7 @@ export class BoardView {
     const doubles = this.doubles ?? [];
     const pills = this.pills ?? [];
     const whispers = this.whispers ?? [];
+    const dutches = this.dutches ?? [];
     const renbans = this.renbans ?? [];
     const palindromes = this.palindromes ?? [];
     const zippers = this.zippers ?? [];
@@ -354,7 +361,7 @@ export class BoardView {
     const diagonal = Boolean(this.rules & DIAGONAL);
     const margin = this.root.parentElement.classList.contains("margined");
     const regions = this.regions;
-    const lines = [thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes];
+    const lines = [thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes];
     const key = JSON.stringify([cages, diagonal, lines, edges, quads, circles, indexcells, chaosarrows, chaoscounts, shades, unshaded, outside, margin, regions, path, this.pathLoop, this.pathKind, this.pathPill]);
     if (!resized && key === this.cageKey) return;
     this.cageKey = key;
@@ -501,6 +508,12 @@ export class BoardView {
       const d = points.map((p, i) => `${i ? "L" : "M"}${f(p.x)} ${f(p.y)}`).join("") + (t.length === 1 ? "h0" : "");
       return `<path class="${cls}" d="${d}" stroke-width="${f(points[0].w * 0.26)}"/>`;
     };
+    // Dutch Whispers lines: a whisper line, dashed.
+    const dutchLine = (t, cls) => {
+      if (!t.length) return "";
+      const w = centre(t[0]).w;
+      return line(t, cls).replace("/>", ` stroke-dasharray="${f(w * 0.26)} ${f(w * 0.18)}"/>`);
+    };
     // Between and lockout lines: a ring or a diamond round each end's digit,
     // and a line from the edge of one through the other cells' middles to
     // the edge of the other. A line of one cell, while it is drawn, is its
@@ -577,6 +590,7 @@ export class BoardView {
       doublearrow: doubleArrow,
       pillarrow: pathPill,
       whisper: line,
+      dutch: dutchLine,
       renban: line,
       palindrome: line,
       zipper: line,
@@ -592,6 +606,7 @@ export class BoardView {
     const pending = draw[kind](path, `${kind} ${kind}-pending`);
     const marks =
       whispers.map((t) => line(t, "whisper")).join("") +
+      dutches.map((t) => dutchLine(t, "dutch")).join("") +
       renbans.map((t) => line(t, "renban")).join("") +
       palindromes.map((t) => line(t, "palindrome")).join("") +
       zippers.map((t) => line(t, "zipper")).join("") +
@@ -749,26 +764,59 @@ export class BoardView {
           return `<path class="index-mark" d="M${f(px + dx * k)} ${f(py + dy * k)}L${f(px - dy * k)} ${f(py - dx * k)}L${f(px + dy * k)} ${f(py + dx * k)}Z"/>`;
         })
         .join("") +
-      // Chaos Counts: a dashed square round the digit.
+      // Chaos Counts: a dashed square round the digit; one of its own cells,
+      // a faint dotted line to each, which has a small dashed square in its
+      // top right corner.
       chaoscounts
-        .map((c) => {
-          const { x, y, w } = centre(c);
+        .map((count) => {
+          const { x, y, w } = centre(countCell(count));
           const r = w * 0.38;
-          return `<rect class="chaos-count" x="${f(x - r)}" y="${f(y - r)}" width="${f(2 * r)}" height="${f(2 * r)}" rx="${f(w * 0.06)}" stroke-dasharray="${f(w * 0.09)} ${f(w * 0.06)}"/>`;
+          const dash = ` stroke-dasharray="${f(w * 0.09)} ${f(w * 0.06)}"`;
+          let own = "";
+          if (typeof count !== "number") {
+            own = count.cells
+              .map((c) => {
+                const o = centre(c);
+                const s = w * 0.11;
+                const [cx, cy] = [o.x + w * 0.3, o.y - w * 0.3];
+                return (
+                  `<path class="chaos-link" d="M${f(x)} ${f(y)}L${f(cx)} ${f(cy)}" stroke-width="${f(w * 0.03)}" stroke-dasharray="${f(w * 0.03)} ${f(w * 0.07)}"/>` +
+                  `<rect class="chaos-count" x="${f(cx - s)}" y="${f(cy - s)}" width="${f(2 * s)}" height="${f(2 * s)}"${dash}/>`
+                );
+              })
+              .join("");
+          }
+          return `<rect class="chaos-count" x="${f(x - r)}" y="${f(y - r)}" width="${f(2 * r)}" height="${f(2 * r)}" rx="${f(w * 0.06)}"${dash}/>${own}`;
         })
         .join("") +
-      // Chaos Arrows: a chevron just inside each edge it points through.
+      // Chaos Arrows: a chevron just inside each edge it points through; with
+      // arms of its own, through the edge each arm leaves by, and a dotted
+      // line along the arm.
       chaosarrows
-        .map(({ cell, ways }) => {
+        .map((arrow) => {
+          const { cell } = arrow;
           const { x, y, w } = centre(cell);
-          const marks = [[0, -1], [1, 0], [0, 1], [-1, 0]]
-            .filter((_, i) => ways & (1 << i))
+          const STEPS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+          const arms = arrow.arms ?? [];
+          const ways = arrow.arms ? arms.reduce((m, arm) => m | (1 << [-9, 1, 9, -1].indexOf(arm[0] - cell)), 0) : arrow.ways;
+          const marks = STEPS.filter((_, i) => ways & (1 << i))
             .map(([dx, dy]) => {
               const [tip, base, half] = [w * 0.42, w * 0.32, w * 0.09];
               return `M${f(x + dx * base - dy * half)} ${f(y + dy * base - dx * half)}L${f(x + dx * tip)} ${f(y + dy * tip)}L${f(x + dx * base + dy * half)} ${f(y + dy * base + dx * half)}`;
             })
             .join("");
-          return `<path class="chaos-arrow" d="${marks}" stroke-width="${f(w * 0.05)}"/>`;
+          const own = arms
+            .map((arm) => {
+              const points = [centre(cell), ...arm.map(centre)];
+              // From the cell's edge, past its chevron.
+              const [p, q] = points;
+              const ux = Math.sign(q.x - p.x);
+              const uy = Math.sign(q.y - p.y);
+              const d = `M${f(p.x + ux * w * 0.5)} ${f(p.y + uy * w * 0.5)}` + points.slice(1).map((o) => `L${f(o.x)} ${f(o.y)}`).join("");
+              return `<path class="chaos-arm" d="${d}" stroke-width="${f(w * 0.05)}" stroke-dasharray="${f(w * 0.04)} ${f(w * 0.1)}"/>`;
+            })
+            .join("");
+          return `<path class="chaos-arrow" d="${marks}" stroke-width="${f(w * 0.05)}"/>${own}`;
         })
         .join("") +
       // Yin-Yang: a circle given in the bottom right corner, filled for

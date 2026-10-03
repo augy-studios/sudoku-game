@@ -6,7 +6,7 @@
 //
 // Each takes a variant, { cages, relliks, lunchboxes, looksays, equalities,
 // equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles,
-// pills, whispers, renbans, palindromes, zippers, betweens, lockouts,
+// pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts,
 // entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs,
 // quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums,
 // hiddens, rooms, ranks, indexings, indexcells, regions, rules }
@@ -29,6 +29,7 @@ import {
   distinctProblem,
   sayCounts,
   piecesOf,
+  piecesFor,
   clueMask,
   CAGE_LISTS,
   thermoProblem,
@@ -37,6 +38,8 @@ import {
   pillProblem,
   scales,
   whisperProblem,
+  dutchProblem,
+  DUTCH_GAP,
   renbanProblem,
   palindromeProblem,
   zipperProblem,
@@ -68,9 +71,10 @@ import {
   circleSets,
   chaosArrowProblem,
   chaosCountProblem,
-  chaosArms,
-  chaosAround,
-  waysFrom,
+  arrowArms,
+  countCell,
+  countedCells,
+  besideAll,
   shadeProblem,
   zeroClash,
   ZERO,
@@ -99,7 +103,7 @@ import {
 const DIGITS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 const ALL = 0b1111111110;
 
-const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "chaosarrows", "chaoscounts", "shades", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"];
+const DRAWN = ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "thermos", "arrows", "doubles", "pills", "whispers", "dutches", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "chaosarrows", "chaoscounts", "shades", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"];
 // A Jigsaw's regions, or null; a seed without them reads them as empty.
 // Under Chaos Construction the regions are found, never given.
 const chaosOf = (v) => hasRule(v?.rules ?? 0, "chaos");
@@ -260,8 +264,8 @@ export function clashes(grid, variant = null) {
       if (some.length > cells.length / 2) some.forEach((c) => out.add(c));
     }
   }
-  for (const { cells } of variant?.equalsums ?? []) {
-    const pieces = piecesOf(cells).map((piece) => {
+  for (const cage of variant?.equalsums ?? []) {
+    const pieces = piecesFor(cage).map((piece) => {
       const filled = piece.filter((c) => grid[c]);
       return { filled, empty: piece.length - filled.length, total: filled.reduce((t, c) => t + val[c], 0) };
     });
@@ -273,8 +277,8 @@ export function clashes(grid, variant = null) {
       pieces.filter((p) => p.total + p.empty > total).forEach((p) => p.filled.forEach((c) => out.add(c)));
     }
   }
-  for (const { cells } of variant?.samevalues ?? []) {
-    const pieces = piecesOf(cells);
+  for (const cage of variant?.samevalues ?? []) {
+    const pieces = piecesFor(cage);
     for (const piece of pieces) {
       for (let d = 1; d <= 9; d++) {
         const have = piece.filter((c) => grid[c] === d);
@@ -282,7 +286,7 @@ export function clashes(grid, variant = null) {
       }
     }
   }
-  for (const { clue, cells } of variant?.connecteds ?? []) {
+  for (const { clue, cells, size } of variant?.connecteds ?? []) {
     if (typeof clue !== "string") continue;
     const want = clueMask(clue);
     const holds = cells.filter((c) => grid[c] && want & (1 << grid[c]));
@@ -291,6 +295,9 @@ export function clashes(grid, variant = null) {
     const parts = piecesOf(cells.filter((c) => !grid[c] || want & (1 << grid[c])));
     if (new Set(holds.map((c) => parts.findIndex((p) => p.includes(c)))).size > 1) holds.forEach((c) => out.add(c));
     if (!holds.length && cells.every((c) => grid[c])) cells.forEach((c) => out.add(c));
+    // With a size: more of them placed, or too small a part left for them.
+    const part = holds.length ? parts.find((p) => p.includes(holds[0])) : null;
+    if (size && (holds.length > size || (part && part.length < size))) holds.forEach((c) => out.add(c));
   }
   for (const { control, cells } of variant?.distincts ?? []) {
     if (!grid[control]) continue;
@@ -337,12 +344,17 @@ export function clashes(grid, variant = null) {
     if (total > hi || (full && total < lo)) cells.filter((c) => grid[c]).forEach((c) => out.add(c));
   }
   const gap = whisperGap(variant?.rules);
-  for (const t of variant?.whispers ?? []) {
-    for (let i = 1; i < t.length; i++) {
-      const [a, b] = [t[i - 1], t[i]];
-      if (grid[a] && grid[b] && Math.abs(val[a] - val[b]) < gap) {
-        out.add(a);
-        out.add(b);
+  for (const [lines, apart] of [
+    [variant?.whispers ?? [], gap],
+    [variant?.dutches ?? [], DUTCH_GAP],
+  ]) {
+    for (const t of lines) {
+      for (let i = 1; i < t.length; i++) {
+        const [a, b] = [t[i - 1], t[i]];
+        if (grid[a] && grid[b] && Math.abs(val[a] - val[b]) < apart) {
+          out.add(a);
+          out.add(b);
+        }
       }
     }
   }
@@ -563,13 +575,16 @@ export function clashes(grid, variant = null) {
   // what the cells they could count could make, or a 1 that every way it
   // could run would make 2 at least, as a region joins up with a cell
   // beside it.
-  for (const { cell, ways } of variant?.chaosarrows ?? []) {
-    const d = grid[cell];
-    if (d && (d > 1 + chaosArms(cell, ways).reduce((t, arm) => t + arm.length, 0) || (d === 1 && ways === waysFrom(cell)))) out.add(cell);
+  for (const arrow of variant?.chaosarrows ?? []) {
+    const d = grid[arrow.cell];
+    const arms = arrowArms(arrow);
+    if (d && (d > 1 + arms.reduce((t, arm) => t + arm.length, 0) || (d === 1 && besideAll(arrow.cell, arms.map((arm) => arm[0]))))) out.add(arrow.cell);
   }
-  for (const cell of variant?.chaoscounts ?? []) {
+  for (const count of variant?.chaoscounts ?? []) {
+    const cell = countCell(count);
+    const cells = countedCells(count);
     const d = grid[cell];
-    if (d && (d === 1 || d > 1 + chaosAround(cell).length)) out.add(cell);
+    if (d && ((d === 1 && besideAll(cell, cells)) || d > 1 + cells.length)) out.add(cell);
   }
   for (const circles of circleSets(variant?.circles, variant?.circlesets)) {
     // A 0 would be in no circles, its own one among them.
@@ -721,7 +736,7 @@ export const MIN_CLUES = 17;
 // "cages" (also for two cages of different kinds sharing a cell),
 // "relliks", "lunchboxes", "looksays", "equalities", "equalsums",
 // "samevalues", "connecteds", "distincts", "thermos", "arrows",
-// "doubles", "pills", "whispers", "renbans", "palindromes",
+// "doubles", "pills", "whispers", "dutches", "renbans", "palindromes",
 // "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines",
 // "regionsums", "indexes", "dots", "xvs",
 // "signs", "quads",
@@ -791,6 +806,10 @@ export function checkClues(clues, variant = null) {
   if (variant?.whispers?.length) {
     const problem = whisperProblem(variant.whispers);
     if (problem) return { ok: false, why: "whispers", problem };
+  }
+  if (variant?.dutches?.length) {
+    const problem = dutchProblem(variant.dutches);
+    if (problem) return { ok: false, why: "dutches", problem };
   }
   if (variant?.renbans?.length) {
     const problem = renbanProblem(variant.renbans);

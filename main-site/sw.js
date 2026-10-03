@@ -33,7 +33,7 @@
 // 4. Nothing under /api/ is ever cached. A cached leaderboard or start
 //    ticket is a wrong answer, not a stale one.
 
-const VERSION = "uwusudoku-v34";
+const VERSION = "uwusudoku-v35";
 
 const SHELL = `uwusudoku-shell-${VERSION}`;
 
@@ -71,6 +71,7 @@ const PRECACHE = [
   "/js/record.js",
   "/js/replay.js",
   "/js/rule-help.js",
+  "/js/sample.js",
   "/js/score.js",
   "/js/seed.js",
   "/js/settings.js",

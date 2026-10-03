@@ -20,21 +20,15 @@ Each variant has letters at the front of a made puzzle's seed (`seed.js`,
 are all taken but I, which is easily misread, so a new variant's letters are
 **Q and two more** that name it and no other. Taken so far: QEN, QMO, QGT,
 QQD, QHS, QNR, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDA, QPA, QRC, QLB, QLS, QEC, QES, QSV, QCV, QCD, QSL, QRS,
-QVX, QCC, QFR, QRX, QCS, QCX, QDW, QNT, QCT, QCH, QCA, QCO, QYY and QDP. Q is only read with the two after it,
+QVX, QCC, QFR, QRX, QCS, QCX, QDW, QNT, QCT, QCH, QCA, QCO, QYY, QDP, QDL, QGS, QAM and QCL. Q is only read with the two after it,
 so every seed made before still reads as it did. Put the entry in `PARTS` or
-`RULES` where its letters should go.
+`RULES` where its letters should go, or in `DETAILS` for more about a part
+already written.
 
 ## Also worth knowing
 
-- **Equal Sum** and **Same Values** pieces are told apart by not touching,
-  so two pieces side by side cannot be drawn; the other solver's segments
-  can. **Connected Values** leaves out the other solver's optional size of
-  the group.
-- **Chaos Arrow** takes the arms from its own cell along its row and
-  column, and **Chaos Count** the nine cells round its own: the other
-  solver also lets either name any cells. Puzzles that lean on Counting
-  Circles with a Chaos Count in every circle and no givens, such as its
-  "Let there be chaos", are still past the checker's budget.
+These are where uwuSudoku differs from the other solver on purpose.
+
 - **Yin-Yang** gives shades only by circles: the other solver can also
   tie the shading to the digits with its general tools, which uwuSudoku
   leaves out, so here the two are solved apart.
@@ -43,21 +37,36 @@ so every seed made before still reads as it did. Put the entry in `PARTS` or
   Anti-taxicab, Dutch Flatmates, Full Rank and its tie rules, and
   Row/Column Indexing. Quads, Look and Say, Connected Values and Hidden
   Skyscraper clues name digits 1 to 9 only, never its 0.
-- **Dutch Whispers** turns every whisper line Dutch, so a puzzle with both
-  kinds of line, or the other solver's other differences, cannot be drawn.
-- A new kind of cage is one more entry in `CAGES` in `solver.js` and
-  `CAGE_LISTS` in `variant.js`; one in pieces sets `split` there.
-- A clue outside the grid with no number sets `key: null` in `OUTSIDE` in
-  `solver.js`, as Row/Column Indexing does.
-- More of a part in a list of its own, as Counting Circles' sets and single
-  indexing cells are, takes a letter of its own in `PARTS` (`with` if it
-  only comes with the first), `also` in `rule-help.js`, and an entry in
-  `EXTRAS` in `solver.js`. An option on a part is a switch rule, as Dutch
-  Whispers is, `replaces` naming the rule it changes.
+- **Chaos Arrow** arms of its own step from cell to cell along sides,
+  turns allowed, since a run along one only means something cell by cell.
+  **Chaos Count** cells of its own can be anywhere.
+- **Whispers** come German (5 apart) or Dutch (4 apart), line by line; the
+  other solver's other differences are left out. The old Dutch Whispers
+  rule (QDW), which made every line Dutch, is still read in seeds made with
+  it, and opening one in Create turns its lines into Dutch ones.
+- Puzzles that lean on Counting Circles with a Chaos Count in every circle
+  and no givens, such as the other solver's "Let there be chaos", are past
+  the checker's budget.
 - Not counted here: the other solver's general tools (Sum, All Different,
   Contain, Regex and NFA lines, custom pairs, Given, No Boxes, Region Size,
   Region Same Values, Replicate and the Or/And containers). They are for
   building puzzles by hand, not named puzzle types.
 
-Equal Sum and Same Values pieces side by side are left out: the seed would
-need to say where pieces meet, for puzzles that rarely have them.
+## Adding a variant
+
+- A new kind of cage is one more entry in `CAGES` in `solver.js` and
+  `CAGE_LISTS` in `variant.js`; one in pieces sets `split` in both.
+- A new kind of line is one more entry in `LINES` in `solver.js`. Lines
+  drawn with another kind's tool, as Dutch Whispers lines are with the
+  Whispers tool, go in that tool's kinds (`WHISPER_KINDS`).
+- A clue outside the grid with no number sets `key: null` in `OUTSIDE` in
+  `solver.js`, as Row/Column Indexing does.
+- More of a part in a list of its own, as Counting Circles' sets and single
+  indexing cells are, takes a letter of its own in `PARTS` (`with` if it
+  only comes with the first), `also` in `rule-help.js`, and an entry in
+  `EXTRAS` in `solver.js`.
+- More about a part's own items, as a Connected Values cage's group size
+  or a Chaos Arrow's own arms, takes a letter in `DETAILS` in `seed.js`,
+  written after every part, so seeds without it read as before.
+- Show sample (`sample.js`) needs a way to take the new part from a full
+  grid; its test fails until every rule button has one.

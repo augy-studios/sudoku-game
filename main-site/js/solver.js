@@ -47,6 +47,10 @@
 // Copy seed: its puzzle goes in to change, check again for a new seed, or
 // save as an image. A made seed brings its rules and everything drawn on it.
 //
+// The maker's Show sample puts a made-up puzzle in the board's place, with
+// an example of each part the rules on would draw (sample.js), until Hide
+// sample brings the person's own back.
+//
 // Nothing here is scored or leaves the browser, until a made puzzle is
 // played as a game.
 
@@ -64,7 +68,8 @@ import {
   sameValueProblem,
   connectedProblem,
   distinctProblem,
-  piecesOf,
+  piecesFor,
+  tidyPieces,
   linkWords,
   LUNCHBOX_MAX,
   sayWords,
@@ -74,6 +79,8 @@ import {
   pillProblem,
   PILL_ARROW_MOST,
   whisperProblem,
+  dutchProblem,
+  DUTCH_GAP,
   renbanProblem,
   palindromeProblem,
   zipperProblem,
@@ -108,6 +115,10 @@ import {
   chaosArrowProblem,
   chaosCountProblem,
   waysFrom,
+  chaosArms,
+  chaosAround,
+  countCell,
+  sideOf,
   shadeProblem,
   rankProblem,
   RANK_MOST,
@@ -134,6 +145,7 @@ import { store, copyText, hydrateIcons, fillRuleHelp } from "./ui.js";
 import { RULE_HELP, rulesOf } from "./rule-help.js";
 import { confetti } from "./confetti.js";
 import { savePuzzleImage } from "./image.js";
+import { samplePuzzle } from "./sample.js";
 
 const BOX_NAMES = ["top left", "top middle", "top right", "middle left", "centre", "middle right", "bottom left", "bottom middle", "bottom right"];
 
@@ -147,7 +159,7 @@ let board = null;
 // browser so a reload comes back to the same puzzle. stage is "enter" while
 // the clues go in; then "solve" in the solver, or "made" in the maker.
 // killer, rellik, lunchbox, looksay, equality, equalsum, samevalue,
-// connected, countdistinct, thermo, arrow, doublearrow, pillarrow, whisper, renban, palindrome, zipper, between,
+// connected, countdistinct, thermo, arrow, doublearrow, pillarrow, whisper, dutch, renban, palindrome, zipper, between,
 // lockout, entropic, modular, sumline, regionsum, valueindex, kropki, xv, greater, quad, counting, sandwich, little, skyscraper, xsum,
 // hiddensky, room, fullrank, rowcolindex, chaosarrow, chaoscount, yinyang,
 // jigsaw and rules
@@ -176,6 +188,7 @@ const fresh = () => ({
   doublearrow: false,
   pillarrow: false,
   whisper: false,
+  dutch: false,
   renban: false,
   palindrome: false,
   zipper: false,
@@ -218,6 +231,7 @@ const fresh = () => ({
   doubles: [],
   pills: [],
   whispers: [],
+  dutches: [],
   renbans: [],
   palindromes: [],
   zippers: [],
@@ -263,12 +277,18 @@ let cageMode = false;
 let cageKind = "killer";
 let picked = new Set();
 let editing = null;
+// An Equal Sum or Same Values cage's pieces ended with Next piece, each a
+// list of the picked cells; the picked cells after them are the next piece.
+let closedPieces = [];
 // The Thermos, Arrows or another line tool, likewise: which is on, a key of
 // LINES below, the path so far from its first cell, and the line
 // being changed.
 let lineKind = null;
 let path = [];
 let editingLine = -1;
+// The kind of the line being changed, which the Whispers tool's kind button
+// may since have turned from.
+let editingKind = null;
 // Whether the sum line being drawn is closed in a loop.
 let pathLoop = false;
 // The Pills tool's pill size, 2 or 3: the path's first that many cells are
@@ -298,6 +318,11 @@ let mark = null; // the cell a hint just filled
 let note = ""; // says what just happened, until the next change
 let seedNote = ""; // why the Open a seed box's seed did not open
 let editTimer = null;
+// Show sample, in the maker: on, and the sample made for the rules on, with
+// the key it was made for (sampleKey), until they change.
+let sampleOn = false;
+let sample = null;
+let sampleTimer = null;
 
 const creating = () => mode === "create";
 // The grid this stage edits.
@@ -319,6 +344,7 @@ const arrows = () => (s.arrow && s.arrows.length ? s.arrows : null);
 const doubles = () => (s.doublearrow && s.doubles.length ? s.doubles : null);
 const pills = () => (s.pillarrow && s.pills.length ? s.pills : null);
 const whispers = () => (s.whisper && s.whispers.length ? s.whispers : null);
+const dutches = () => (s.dutch && s.dutches.length ? s.dutches : null);
 const renbans = () => (s.renban && s.renbans.length ? s.renbans : null);
 const palindromes = () => (s.palindrome && s.palindromes.length ? s.palindromes : null);
 const zippers = () => (s.zipper && s.zippers.length ? s.zippers : null);
@@ -354,7 +380,7 @@ const chaos = () => hasRule(s.rules, "chaos");
 const zero = () => hasRule(s.rules, "doppelganger");
 const eachDigit = (d) => (!zero() ? 9 : d === 10 ? 9 : 8);
 const drawn = () =>
-  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || circles() || circlesets() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms() || ranks() || indexings() || indexcells() || chaosarrows() || chaoscounts() || shades());
+  Boolean(cages() || relliks() || lunchboxes() || looksays() || equalities() || equalsums() || samevalues() || connecteds() || distincts() || thermos() || arrows() || doubles() || pills() || whispers() || dutches() || renbans() || palindromes() || zippers() || betweens() || lockouts() || entropics() || modulars() || sumlines() || regionsums() || indexes() || dots() || xvs() || signs() || quads() || circles() || circlesets() || sandwiches() || littles() || skyscrapers() || xsums() || hiddens() || rooms() || ranks() || indexings() || indexcells() || chaosarrows() || chaoscounts() || shades());
 // The variant, for steps.js and variant.js, or null for a classic puzzle.
 const variant = () =>
   drawn() || s.rules || regions()
@@ -373,6 +399,7 @@ const variant = () =>
         doubles: doubles() ?? [],
         pills: pills() ?? [],
         whispers: whispers() ?? [],
+        dutches: dutches() ?? [],
         renbans: renbans() ?? [],
         palindromes: palindromes() ?? [],
         zippers: zippers() ?? [],
@@ -459,6 +486,20 @@ function load(which) {
     st.values = saved.values;
   }
   if (which === "create" && saved.stage === "made") st.stage = "made";
+  undutch(st);
+}
+
+// The Dutch Whispers rule of before turned every whisper line Dutch. Each
+// line is now one kind or the other, so a state with the rule has its
+// whisper lines made Dutch ones, and the rule off.
+const DUTCH_RULE = RULES.find((r) => r.key === "dutchwhispers").bit;
+function undutch(st) {
+  if (!(st.rules & DUTCH_RULE)) return;
+  st.rules &= ~DUTCH_RULE;
+  st.dutches = st.dutches.concat(st.whispers);
+  st.whispers = [];
+  st.dutch = st.dutch || st.whisper;
+  st.whisper = false;
 }
 
 /* ---- words ---- */
@@ -503,6 +544,7 @@ function hintText(step, reveal) {
       ...(doubles() ? ["double arrows"] : []),
       ...(pills() ? ["pill arrows"] : []),
       ...(whispers() ? ["whisper lines"] : []),
+      ...(dutches() ? ["Dutch whisper lines"] : []),
       ...(renbans() ? ["renban lines"] : []),
       ...(palindromes() ? ["palindrome lines"] : []),
       ...(zippers() ? ["zipper lines"] : []),
@@ -549,7 +591,7 @@ function problemText(check) {
   if (why === "arrows") return ARROW_PROBLEMS[check.problem.why];
   if (why === "doubles") return DOUBLE_PROBLEMS[check.problem.why];
   if (why === "pills") return PILL_PROBLEMS[check.problem.why];
-  if (why === "whispers") return WHISPER_PROBLEMS[check.problem.why];
+  if (why === "whispers" || why === "dutches") return WHISPER_PROBLEMS[check.problem.why];
   if (why === "renbans") return RENBAN_PROBLEMS[check.problem.why];
   if (why === "palindromes") return PALINDROME_PROBLEMS[check.problem.why];
   if (why === "zippers") return ZIPPER_PROBLEMS[check.problem.why];
@@ -622,6 +664,7 @@ function clashText() {
   if (doubles()) extra.push("not adding up to a double arrow's two circles");
   if (pills()) extra.push("not adding up to a pill arrow's pill");
   if (whispers()) extra.push(`less than ${whisperGap(s.rules)} apart next to each other on a whisper line`);
+  if (dutches()) extra.push(`less than ${DUTCH_GAP} apart next to each other on a Dutch whisper line`);
   if (renbans()) extra.push("repeating or leaving a gap on a renban line");
   if (palindromes()) extra.push("not the same from either end of a palindrome line");
   if (zippers()) extra.push("not making a zipper line's total");
@@ -840,6 +883,7 @@ const INDEXING_PROBLEMS = {
 const CHAOS_ARROW_PROBLEMS = {
   cell: "A Chaos Arrow is off the board.",
   ways: "A Chaos Arrow points one to four ways, each with a cell to point at.",
+  arms: "A Chaos Arrow has one to four arms, each from beside it, each cell beside the last, and none sharing a cell.",
   twice: "That cell has a Chaos Arrow already.",
 };
 
@@ -852,6 +896,7 @@ const SHADE_PROBLEMS = {
 const CHAOS_COUNT_PROBLEMS = {
   cell: "A Chaos Count is off the board.",
   twice: "That cell has a Chaos Count already.",
+  counted: "A Chaos Count of its own cells counts one cell at least, not its own.",
 };
 
 const INDEX_CELL_PROBLEMS = {
@@ -929,16 +974,18 @@ const EQUALITY_PROBLEMS = {
 const EQUAL_SUM_PROBLEMS = {
   ...CAGE_PROBLEMS,
   size: "An Equal Sum cage needs two cells at least, in two pieces or more.",
-  pieces: "An Equal Sum cage comes in two pieces or more, apart from each other: cells touching along a side are one piece.",
+  pieces: "An Equal Sum cage comes in two pieces or more: cells touching along a side are one piece, unless Next piece split them.",
   piece: "Each piece of an Equal Sum cage is one to nine cells.",
+  split: "Each piece of an Equal Sum cage must join up edge to edge.",
 };
 
 const SAME_VALUE_PROBLEMS = {
   ...CAGE_PROBLEMS,
   size: "A Same Values cage needs two cells at least, in two pieces or more.",
-  pieces: "A Same Values cage comes in two pieces or more, apart from each other: cells touching along a side are one piece.",
+  pieces: "A Same Values cage comes in two pieces or more: cells touching along a side are one piece, unless Next piece split them.",
   piece: "Each piece of a Same Values cage is one to nine cells.",
   uneven: "The pieces of a Same Values cage are all the same size.",
+  split: "Each piece of a Same Values cage must join up edge to edge.",
 };
 
 const CONNECTED_PROBLEMS = {
@@ -946,6 +993,7 @@ const CONNECTED_PROBLEMS = {
   size: "A Connected Values cage needs two cells at least.",
   clue: "A Connected Values clue is one to eight different digits 1 to 9, like 135.",
   apart: "A Connected Values cage's cells must join up edge to edge.",
+  groupsize: "A Connected Values cage's group size is 1 up to how many cells the cage has.",
 };
 
 const DISTINCT_PROBLEMS = {
@@ -1119,6 +1167,7 @@ function undo() {
   brush = null;
   path = [];
   editingLine = -1;
+  editingKind = null;
   pathLoop = false;
   checked = false;
   pending = null;
@@ -1181,6 +1230,16 @@ function openSeed(found, how) {
   }
   s.jigsaw = Boolean(seed.regions);
   parts.regions = seed.regions ? seed.regions.slice() : s.regions;
+  // A seed from before Dutch Whispers lines, with the rule that made every
+  // whisper line Dutch: its lines go in as Dutch ones.
+  if (s.rules & DUTCH_RULE && seed.whispers) {
+    s.rules &= ~DUTCH_RULE;
+    parts.dutches = (seed.dutches ?? []).concat(parts.whispers);
+    parts.whispers = [];
+    s.dutch = true;
+    s.whisper = false;
+  }
+  s.rules &= ~DUTCH_RULE;
   change(seed.grid.slice(), parts);
   selected = null;
   const name = variantName(seed);
@@ -1299,6 +1358,7 @@ function onGo() {
   if (s.doublearrow && !s.doubles.length) return say("Draw a double arrow first: tap Doubles, then a circle, each cell along it, and the other circle.");
   if (s.pillarrow && !s.pills.length) return say("Draw a pill arrow first: tap Pills, then the pill's cells and each cell along its arrow.");
   if (s.whisper && !s.whispers.length) return say("Draw a whisper line first: tap Whispers, then each cell along it.");
+  if (s.dutch && !s.dutches.length) return say("Draw a Dutch whisper line first: tap Whispers, then each cell along it.");
   if (s.renban && !s.renbans.length) return say("Draw a renban line first: tap Renbans, then each cell along it.");
   if (s.palindrome && !s.palindromes.length) return say("Draw a palindrome line first: tap Palindromes, then each cell along it.");
   if (s.zipper && !s.zippers.length) return say("Draw a zipper line first: tap Zippers, then each cell along it.");
@@ -1313,7 +1373,6 @@ function onGo() {
   if (s.xv && !s.xvs.length) return say("Put an X or a V down first: tap Marks, then near the side between two cells.");
   if (s.greater && !s.signs.length) return say("Put a sign down first: tap Marks, then near the side between two cells.");
   if (s.quad && !s.quads.length) return say("Put a quad down first: tap Marks, then near a corner where four cells meet, and type its digits.");
-  if (hasRule(s.rules, "dutchwhispers") && !whispers()) return say("Dutch Whispers changes the whisper lines: turn Whispers on and draw one, or turn Dutch Whispers off.");
   if (s.counting && !s.circles.length) return say("Put some counting circles down first: tap Marks, then the middle of a cell.");
   if (s.chaosarrow && !s.chaosarrows.length) return say("Put a Chaos Arrow down first: tap Marks, pick Chaos arrow with Middle, then the middle of a cell.");
   if (s.chaoscount && !s.chaoscounts.length) return say("Put a Chaos Count down first: tap Marks, pick Chaos count with Middle, then the middle of a cell.");
@@ -1543,10 +1602,11 @@ const CAGES = {
     clue: null,
     problem: equalSumProblem,
     problems: EQUAL_SUM_PROBLEMS,
-    tap: "Tap the cells of two or more pieces of an Equal Sum cage, apart from each other: every piece adds up to the same.",
-    first: "Draw an Equal Sum cage first: tap Cages, then the cells of two or more pieces apart from each other.",
-    intro: "An Equal Sum puzzle: tap Cages, then the cells of two or more pieces, apart from each other. Every piece of a cage adds up to the same total.",
-    added: ({ cells }) => `in ${piecesOf(cells).length} pieces adding up the same`,
+    split: true,
+    tap: "Tap the cells of two or more pieces of an Equal Sum cage: every piece adds up to the same. Next piece ends one, even beside the next.",
+    first: "Draw an Equal Sum cage first: tap Cages, then the cells of two or more pieces.",
+    intro: "An Equal Sum puzzle: tap Cages, then the cells of two or more pieces, tapping Next piece between pieces side by side. Every piece of a cage adds up to the same total.",
+    added: (cage) => `in ${piecesFor(cage).length} pieces adding up the same`,
   },
   samevalue: {
     list: "samevalues",
@@ -1554,10 +1614,11 @@ const CAGES = {
     clue: null,
     problem: sameValueProblem,
     problems: SAME_VALUE_PROBLEMS,
-    tap: "Tap the cells of two or more pieces of a Same Values cage, the same size and apart from each other: every piece holds the same digits.",
-    first: "Draw a Same Values cage first: tap Cages, then the cells of two or more pieces the same size, apart from each other.",
-    intro: "A Same Values puzzle: tap Cages, then the cells of two or more pieces the same size, apart from each other. Every piece of a cage holds the same digits.",
-    added: ({ cells }) => `in ${piecesOf(cells).length} pieces holding the same digits`,
+    split: true,
+    tap: "Tap the cells of two or more pieces of a Same Values cage, the same size: every piece holds the same digits. Next piece ends one, even beside the next.",
+    first: "Draw a Same Values cage first: tap Cages, then the cells of two or more pieces the same size.",
+    intro: "A Same Values puzzle: tap Cages, then the cells of two or more pieces the same size, tapping Next piece between pieces side by side. Every piece of a cage holds the same digits.",
+    added: (cage) => `in ${piecesFor(cage).length} pieces holding the same digits`,
   },
   connected: {
     list: "connecteds",
@@ -1570,10 +1631,12 @@ const CAGES = {
     tidy: (text) => [...new Set(text)].sort().join(""),
     problem: connectedProblem,
     problems: CONNECTED_PROBLEMS,
-    tap: "Tap the cells of a Connected Values cage, then type its digits, like 135: the cells holding them join up.",
+    // An optional group size, in the Size box.
+    size: true,
+    tap: "Tap the cells of a Connected Values cage, then type its digits, like 135: the cells holding them join up. The Size box, if filled in, says how many of them there are.",
     first: "Draw a Connected Values cage first: tap Cages, then the cells of a cage, then type its digits.",
     intro: "A Connected Values puzzle: tap Cages, then the cells of a cage, then type its digits, like 135. The cells holding any of them join up edge to edge.",
-    added: ({ clue }) => `with its ${linkWords(clue)} joined up`,
+    added: ({ clue, size }) => `with its ${linkWords(clue)} joined up${size ? `, ${plural(size, "cell")} of them` : ""}`,
   },
   countdistinct: {
     list: "distincts",
@@ -1654,7 +1717,24 @@ function toggleCageMode() {
 function clearPicked() {
   picked = new Set();
   editing = null;
+  closedPieces = [];
   $("cageSum").value = "";
+  $("cageSize").value = "";
+}
+
+// The picked cells not in a piece ended with Next piece.
+const openPiece = () => {
+  const closed = new Set(closedPieces.flat());
+  return [...picked].filter((c) => !closed.has(c)).sort((a, b) => a - b);
+};
+
+// Next piece: the cells picked since the last one are a piece of their own,
+// even if the next one's cells touch them.
+function onNextPiece() {
+  const piece = openPiece();
+  if (!piece.length) return say("Tap the cells of this piece first, then Next piece.");
+  closedPieces.push(piece);
+  say(`Piece ${closedPieces.length} of ${plural(piece.length, "cell")}. Tap the cells of the next one.`);
 }
 
 // Leaves the Cages tool, and any line tool or the Marks tool with it; `draw`
@@ -1682,13 +1762,18 @@ function pickCell(c) {
     editing = held;
     cageKind = held.kind;
     const cage = s[CAGES[held.kind].list][held.index];
-    // A control goes first, as it was tapped.
+    // A control goes first, as it was tapped; pieces side by side come back
+    // ended, all but the last.
     picked = new Set(cage.control != null ? [cage.control, ...cage.cells] : cage.cells);
+    closedPieces = cage.pieces ? cage.pieces.slice(0, -1).map((p) => p.slice()) : [];
     $("cageSum").value = clueText(held.kind, cage);
+    $("cageSize").value = cage.size != null ? String(cage.size) : "";
   } else if (held && !same) {
     return say("That cell is in another cage. Add or clear this one first, then tap it to change that cage.");
-  } else if (picked.has(c)) picked.delete(c);
-  else picked.add(c);
+  } else if (picked.has(c)) {
+    picked.delete(c);
+    closedPieces = closedPieces.map((p) => p.filter((o) => o !== c)).filter((p) => p.length);
+  } else picked.add(c);
   note = "";
   render();
 }
@@ -1719,7 +1804,8 @@ function cageStatus() {
   if (!n) return `${K.tap} Tap a cage already drawn to change it.${kinds}`;
   const then = editing ? "Change cage" : "Add cage";
   const head = K.control ? ` The # cell is ${where([...picked][0])}.` : "";
-  return `${plural(n, "cell")} picked.${head} ${K.clue ? `Type the ${K.typed}, then ${then}` : `Tap ${then}`}.${kinds}`;
+  const pieces = K.split && closedPieces.length ? ` Piece ${closedPieces.length + 1} has ${plural(openPiece().length, "cell")}.` : "";
+  return `${plural(n, "cell")} picked.${head}${pieces} ${K.clue ? `Type the ${K.typed}, then ${then}` : `Tap ${then}`}.${kinds}`;
 }
 
 function onCageAdd() {
@@ -1729,7 +1815,14 @@ function onCageAdd() {
   const typed = $("cageSum").value.trim();
   if (K.clue && !/^\d+$/.test(typed)) return say(`Type the ${K.typed} first.`);
   const text = K.tidy ? K.tidy(typed) : typed;
-  const cage = K.clue === "sum" ? { sum: Number(text), cells } : K.clue === "clue" ? { clue: text, cells } : K.control ? { control: [...picked][0], cells } : { cells };
+  let cage = K.clue === "sum" ? { sum: Number(text), cells } : K.clue === "clue" ? { clue: text, cells } : K.control ? { control: [...picked][0], cells } : { cells };
+  // Pieces ended with Next piece, kept only where some sit side by side.
+  if (K.split && closedPieces.length) cage = tidyPieces(cells, [...closedPieces, openPiece()].filter((p) => p.length));
+  if (K.size) {
+    const size = $("cageSize").value.trim();
+    if (size && !/^\d+$/.test(size)) return say("Type the group's size as a number, or leave the Size box empty.");
+    if (size) cage.size = Number(size);
+  }
   // The cage picked up goes from its own kind's list, whichever that is.
   const parts = {};
   if (editing) parts[CAGES[editing.kind].list] = s[CAGES[editing.kind].list].filter((_, i) => i !== editing.index);
@@ -1803,6 +1896,8 @@ const LINES = {
     problem: pillProblem,
     problems: PILL_PROBLEMS,
   },
+  // German and Dutch Whispers lines are both drawn with the Whispers tool,
+  // its kind button picking which a line is (WHISPER_KINDS below).
   whisper: {
     list: "whispers",
     short: "whisper",
@@ -1810,11 +1905,19 @@ const LINES = {
     title: "Whisper line",
     a: "A whisper line",
     start: "end",
-    // Dutch Whispers brings the least gap down to 4.
-    get started() {
-      return `One end placed. Tap the next cell: digits next to each other on the line differ by at least ${whisperGap(s.rules)}.`;
-    },
+    started: "One end placed. Tap the next cell: digits next to each other on the line differ by at least 5.",
     problem: whisperProblem,
+    problems: WHISPER_PROBLEMS,
+  },
+  dutch: {
+    list: "dutches",
+    short: "whisper",
+    name: "Dutch whisper line",
+    title: "Dutch whisper line",
+    a: "A Dutch whisper line",
+    start: "end",
+    started: `One end placed. Tap the next cell: digits next to each other on the line differ by at least ${DUTCH_GAP}.`,
+    problem: dutchProblem,
     problems: WHISPER_PROBLEMS,
   },
   renban: {
@@ -1944,13 +2047,32 @@ const LINES = {
 
 const addLabel = () => `${editingLine >= 0 ? "Change" : "Add"} ${LINES[lineKind].short}`;
 
-// kind: a key of LINES.
+// The kinds of line the Whispers tool draws, and those of them with their
+// rules on: German and Dutch. A tool for one kind of line, `kind`, draws
+// those of `kind` alone.
+const WHISPER_KINDS = ["whisper", "dutch"];
+const kindsOf = (kind) => (WHISPER_KINDS.includes(kind) ? WHISPER_KINDS.filter((k) => s[k]) : [kind]);
+// The kind of whisper line drawn last, for the Whispers tool to start on.
+let whisperKind = "whisper";
+
+// kind: a key of LINES; for the Whispers tool, either kind of whisper line.
 function toggleLineMode(kind) {
-  if (lineKind === kind) return endCage(true);
+  if (lineKind && kindsOf(kind).includes(lineKind)) return endCage(true);
   endCage();
-  lineKind = kind;
+  const kinds = kindsOf(kind);
+  lineKind = kinds.includes(whisperKind) ? whisperKind : kinds[0] ?? kind;
   selected = null;
   padDigit = 0;
+  note = "";
+  render();
+}
+
+// The Whispers tool's kind button: the line being drawn, or the next one,
+// German or Dutch.
+function turnLineKind() {
+  const kinds = kindsOf(lineKind);
+  if (kinds.length < 2) return;
+  lineKind = whisperKind = kinds[(kinds.indexOf(lineKind) + 1) % kinds.length];
   note = "";
   render();
 }
@@ -1968,6 +2090,7 @@ function endLine() {
   lineKind = null;
   path = [];
   editingLine = -1;
+  editingKind = null;
   pathLoop = false;
   $("lineSum").value = "";
 }
@@ -1992,20 +2115,24 @@ const canClose = () => LINES[lineKind].loops && !pathLoop && path.length >= 3 &&
 // A sum line's first cell, tapped again where the line can close, closes
 // it in a loop; its first or last cell then opens it again.
 function pickLineCell(c) {
-  const L = LINES[lineKind];
-  const lines = s[L.list];
   if (!path.length) {
-    const i = lines.findIndex((t) => pathOf(t).includes(c));
-    if (i >= 0) {
+    // A line of any kind the tool draws; the tool turns to its kind.
+    for (const kind of kindsOf(lineKind)) {
+      const lines = s[LINES[kind].list];
+      const i = lines.findIndex((t) => pathOf(t).includes(c));
+      if (i < 0) continue;
+      lineKind = kind;
       editingLine = i;
+      editingKind = kind;
       path = pathOf(lines[i]).slice();
       pathLoop = Boolean(lines[i].loop);
-      if (L.pill) pillSize = lines[i].pill.length;
-      if (L.sum) $("lineSum").value = String(lines[i].sum);
+      if (LINES[kind].pill) pillSize = lines[i].pill.length;
+      if (LINES[kind].sum) $("lineSum").value = String(lines[i].sum);
       note = "";
       return render();
     }
   }
+  const L = LINES[lineKind];
   if (pathLoop) {
     if (c !== path[0] && c !== path.at(-1)) return say(`The loop is closed. Tap its first or last cell to open it, or ${addLabel()}.`);
     pathLoop = false;
@@ -2021,6 +2148,7 @@ function pickLineCell(c) {
   const head = path.slice(0, L.pill ? pillSize : 1);
   if (editingLine >= 0 && head.includes(c)) {
     editingLine = -1;
+    editingKind = null;
     path = head;
     note = "";
     return render();
@@ -2102,14 +2230,19 @@ function onLineAdd() {
     : L.sum
       ? { sum, cells: path.slice(), ...(pathLoop ? { loop: true } : {}) }
       : path.slice();
-  const next = s[L.list].filter((_, i) => i !== editingLine).concat([line]);
+  // The line picked up goes from its own kind's list, whichever that is.
+  const parts = {};
+  if (editingKind && editingKind !== lineKind) parts[LINES[editingKind].list] = s[LINES[editingKind].list].filter((_, i) => i !== editingLine);
+  const next = s[L.list].filter((_, i) => editingKind !== lineKind || i !== editingLine).concat([line]);
   const problem = L.problem(next);
   if (problem) return say(L.problems[problem.why]);
   const n = path.length;
   const closed = pathLoop;
-  change(s.clues, { [L.list]: next });
+  parts[L.list] = next;
+  change(s.clues, parts);
   path = [];
   editingLine = -1;
+  editingKind = null;
   pathLoop = false;
   // The sum stays typed for the next line, as puzzles often give every
   // line the same.
@@ -2119,10 +2252,11 @@ function onLineAdd() {
 
 function onLineRemove() {
   if (editingLine < 0) return;
-  const L = LINES[lineKind];
+  const L = LINES[editingKind ?? lineKind];
   change(s.clues, { [L.list]: s[L.list].filter((_, i) => i !== editingLine) });
   path = [];
   editingLine = -1;
+  editingKind = null;
   pathLoop = false;
   say(`${L.title} removed. Undo brings it back.`);
 }
@@ -2144,8 +2278,16 @@ const MARK_WORDS = { white: "white dot", black: "black dot", x: "X", v: "V", gt:
 const QUADS = {
   quad: { list: "quads", problem: quadProblem, copy: (quads) => quads.map((q) => ({ cell: q.cell, digits: q.digits.slice() })) },
   counting: { list: "circles", problem: circleProblem, copy: (circles) => circles.slice() },
-  chaosarrow: { list: "chaosarrows", problem: chaosArrowProblem, copy: (arrows) => arrows.map(({ cell, ways }) => ({ cell, ways })) },
-  chaoscount: { list: "chaoscounts", problem: chaosCountProblem, copy: (counts) => counts.slice() },
+  chaosarrow: {
+    list: "chaosarrows",
+    problem: chaosArrowProblem,
+    copy: (arrows) => arrows.map(({ cell, ways, arms }) => (arms ? { cell, arms: arms.map((arm) => arm.slice()) } : { cell, ways })),
+  },
+  chaoscount: {
+    list: "chaoscounts",
+    problem: chaosCountProblem,
+    copy: (counts) => counts.map((x) => (typeof x === "number" ? x : { cell: x.cell, cells: x.cells.slice() })),
+  },
   yinyang: { list: "shades", problem: shadeProblem, copy: (list) => list.map(({ cell, shade }) => ({ cell, shade })) },
 };
 
@@ -2177,6 +2319,7 @@ function endMarks() {
   markMode = false;
   anchor = null;
   quadAt = null;
+  ownAt = null;
 }
 
 // The corner of cell c nearest a tap at `at`, by the top left of its four
@@ -2237,6 +2380,8 @@ function sideNear(c, at) {
 // instead; from the keyboard, where there is no middle, a cell picked twice
 // does.
 function pickMarkSide(c, at) {
+  // Giving an arrow arms or a count cells of its own, every tap is for it.
+  if (ownAt != null) return middleKind()?.arms ? tapArms(c) : tapCounted(c);
   // With Quad on, a tap near a corner picks it for the quad's digits.
   const corner = s.quad ? cornerNear(c, at) : -1;
   if (corner >= 0) {
@@ -2251,7 +2396,7 @@ function pickMarkSide(c, at) {
   // With Chaos arrow picked, a tap near the side of a cell holding one
   // turns it to point that way, or not.
   const way = middles && middleKind().arrow ? wayNear(c, at) : -1;
-  if (way >= 0 && s.chaosarrows.some((a) => a.cell === c)) {
+  if (way >= 0 && s.chaosarrows.some((a) => a.cell === c && !a.arms)) {
     anchor = null;
     return turnArrowWay(c, way);
   }
@@ -2267,7 +2412,9 @@ function pickMarkSide(c, at) {
     const kind = middleKind();
     if (kind.circle) return toggleCircle(c, kind.set);
     if (kind.arrow) return toggleChaosArrow(c);
+    if (kind.arms) return tapArms(c);
     if (kind.count) return toggleChaosCount(c);
+    if (kind.counted) return tapCounted(c);
     if (kind.shade) return turnShade(c);
     return toggleIndexCell(c, kind.column);
   }
@@ -2292,8 +2439,8 @@ function middleKinds() {
     if (n && n <= CIRCLE_SETS_MOST) out.push({ circle: true, set: n, label: "New circle set" });
   }
   if (s.rowcolindex) out.push({ column: true, label: "Column indexing" }, { column: false, label: "Row indexing" });
-  if (s.chaosarrow) out.push({ arrow: true, label: "Chaos arrow" });
-  if (s.chaoscount) out.push({ count: true, label: "Chaos count" });
+  if (s.chaosarrow) out.push({ arrow: true, label: "Chaos arrow" }, { arms: true, label: "Chaos arms" });
+  if (s.chaoscount) out.push({ count: true, label: "Chaos count" }, { counted: true, label: "Count cells" });
   if (s.yinyang) out.push({ shade: true, label: "Yin-Yang" });
   return out;
 }
@@ -2346,11 +2493,86 @@ function turnArrowWay(c, way) {
   say(`Chaos Arrow at ${where(c)} now points ${waysText(ways)}.`);
 }
 
-// Puts a Chaos Count in cell c, or takes it out.
+// Puts a Chaos Count in cell c, or takes it out, of its own cells or not.
 function toggleChaosCount(c) {
-  const had = s.chaoscounts.includes(c);
-  change(s.clues, { chaoscounts: had ? s.chaoscounts.filter((o) => o !== c) : s.chaoscounts.concat([c]).sort((a, b) => a - b) });
+  const had = s.chaoscounts.some((x) => countCell(x) === c);
+  change(s.clues, { chaoscounts: had ? s.chaoscounts.filter((x) => countCell(x) !== c) : s.chaoscounts.concat([c]).sort((a, b) => countCell(a) - countCell(b)) });
   say(had ? `Chaos Count at ${where(c)} taken off. Undo brings it back.` : `Chaos Count at ${where(c)}: its digit counts it and the cells round it in its region.`);
+}
+
+// Chaos arms and Count cells: the cell of the Chaos Arrow being given arms
+// of its own, or of the Chaos Count being given cells of its own, once one
+// is tapped; tapping it again is done.
+let ownAt = null;
+
+// A tap with Chaos arms picked: the arrow's cell first, then cells along
+// its arms. A cell beside the end of an arm, along a side, carries it on;
+// one beside the arrow starts another, up to four; an arm's last cell takes
+// it back. An arrow pointing its ways starts from those arms, to the edge.
+function tapArms(c) {
+  if (ownAt == null || c === ownAt) {
+    ownAt = ownAt == null ? c : null;
+    note = "";
+    return render();
+  }
+  const cell = ownAt;
+  const arrow = s.chaosarrows.find((a) => a.cell === cell);
+  const arms = (arrow ? arrow.arms ?? chaosArms(cell, arrow.ways) : []).map((arm) => arm.slice());
+  const end = arms.findIndex((arm) => arm.at(-1) === c);
+  if (end >= 0) {
+    arms[end].pop();
+    if (!arms[end].length) arms.splice(end, 1);
+  } else {
+    if (arms.some((arm) => arm.includes(c))) return say("That cell is on an arm already: tap an arm's last cell to take it back.");
+    const from = arms.findIndex((arm) => sideOf(arm.at(-1), c) >= 0);
+    if (from >= 0) arms[from].push(c);
+    else if (sideOf(cell, c) >= 0 && arms.length < 4) arms.push([c]);
+    else return say("An arm starts beside the arrow and goes on a cell at a time, each beside the last along a side.");
+  }
+  const kept = s.chaosarrows.filter((a) => a.cell !== cell);
+  const next = arms.length ? kept.concat([{ cell, arms }]).sort((a, b) => a.cell - b.cell) : kept;
+  const problem = chaosArrowProblem(next);
+  if (problem) return say(CHAOS_ARROW_PROBLEMS[problem.why]);
+  change(s.clues, { chaosarrows: next });
+  if (!arms.length) return say(`Chaos Arrow at ${where(cell)} taken off. Undo brings it back.`);
+  const long = arms.map((arm) => arm.length);
+  const lengths = long.length > 1 ? `${long.slice(0, -1).join(", ")} and ${long.at(-1)} cells long` : plural(long[0], "cell") + " long";
+  say(`Chaos Arrow at ${where(cell)}: ${plural(arms.length, "arm")}, ${lengths}. Tap on, or its cell when done.`);
+}
+
+// A tap with Count cells picked: the count's cell first, then each cell it
+// counts, in or out. A count of the cells round it is a plain one; it
+// starts from those.
+function tapCounted(c) {
+  if (ownAt == null || c === ownAt) {
+    ownAt = ownAt == null ? c : null;
+    note = "";
+    return render();
+  }
+  const cell = ownAt;
+  const now = s.chaoscounts.find((x) => countCell(x) === cell);
+  const cells = now == null ? [] : typeof now === "number" ? chaosAround(cell) : now.cells.slice();
+  const at = cells.indexOf(c);
+  if (at >= 0) cells.splice(at, 1);
+  else cells.push(c);
+  cells.sort((a, b) => a - b);
+  const plain = cells.join() === chaosAround(cell).join();
+  const kept = s.chaoscounts.filter((x) => countCell(x) !== cell);
+  const next = cells.length ? kept.concat([plain ? cell : { cell, cells }]).sort((a, b) => countCell(a) - countCell(b)) : kept;
+  change(s.clues, { chaoscounts: next });
+  if (!cells.length) return say(`Chaos Count at ${where(cell)} taken off. Undo brings it back.`);
+  say(`Chaos Count at ${where(cell)} counts ${plain ? "the cells round it" : plural(cells.length, "cell")} of its region. Tap more, or its cell when done.`);
+}
+
+// The cells the arrow or count being given its own has, for the board.
+function ownCells() {
+  if (ownAt == null) return [];
+  if (middleKind()?.arms) {
+    const arrow = s.chaosarrows.find((a) => a.cell === ownAt);
+    return arrow ? (arrow.arms ?? chaosArms(ownAt, arrow.ways)).flat() : [];
+  }
+  const count = s.chaoscounts.find((x) => countCell(x) === ownAt);
+  return count == null ? [] : typeof count === "number" ? chaosAround(ownAt) : count.cells;
 }
 const middleKind = () => {
   const kinds = middleKinds();
@@ -2361,6 +2583,7 @@ const middleKind = () => {
 function turnMiddle() {
   const kinds = middleKinds();
   middle = (Math.min(middle, kinds.length - 1) + 1) % kinds.length;
+  ownAt = null;
   note = "";
   render();
 }
@@ -2432,6 +2655,12 @@ function markStatus() {
   if (kind?.circle) what = n < 2 && kind.set < 1 ? "a counting circle" : kind.set < n ? `a circle of set ${kind.set + 1}` : "a circle of a new set";
   if (kind?.arrow) what = "a Chaos Arrow pointing every way; tap near the side of one to turn that way off or on";
   if (kind?.count) what = "a Chaos Count";
+  if (kind?.arms && ownAt != null) {
+    return `Arms for the Chaos Arrow at ${where(ownAt)}: tap a cell beside it to start an arm, or beside an arm's last cell to carry it on; an arm's last cell takes it back. Tap the arrow's cell when done.`;
+  }
+  if (kind?.counted && ownAt != null) return `Cells the Chaos Count at ${where(ownAt)} counts: tap a cell to put it in or take it out. Tap the count's cell when done.`;
+  if (kind?.arms) what = "a Chaos Arrow with arms of its own, then the cells along each arm";
+  if (kind?.counted) what = "a Chaos Count of cells of its own, then each cell it counts";
   if (kind?.shade) what = "a Yin-Yang circle, once shaded and again unshaded";
   if (anchor != null) return `${capital(where(anchor))} picked. Tap a cell beside it to mark the side between them${kind ? `, or it again for ${what}` : ""}.`;
   const kinds = markCycle().map((m) => MARK_WORDS[m]).join(", ");
@@ -2640,7 +2869,7 @@ const places = () => Object.entries(OUTSIDE).filter(([kind]) => s[kind]).map(([,
 // A tap in the margin: picks the spot, and the clue there if it has one.
 // Out of the Outside tool, it opens it first.
 function pickSpot(at) {
-  if (s.stage !== "enter" || !outsideOn()) return;
+  if (s.stage !== "enter" || !outsideOn() || showingSample()) return;
   if (!outMode) toggleOutMode();
   const kinds = spotKinds(at);
   if (!kinds.length) {
@@ -2776,6 +3005,85 @@ function regionStatus() {
   return `This region has ${plural(size, "cell")}${need}. Tap cells to move them in, or one of its own to let it go.`;
 }
 
+/* ---- Show sample ---- */
+
+// While the clues go in, the maker can show a made-up puzzle in the board's
+// place with an example of each part the rules on would draw, to see how a
+// puzzle like that looks. It follows the rule buttons as they are pressed,
+// and goes on Hide sample, leaving the person's own puzzle as it was.
+const showingSample = () => sampleOn && creating() && s.stage === "enter";
+
+// The parts' switches on, and the switch rules, which the sample is made
+// for.
+const sampleSwitches = () => [...new Set([...Object.keys(CAGES), "jigsaw", ...Object.keys(LINES), ...Object.keys(EDGES), ...Object.keys(QUADS), ...Object.keys(OUTSIDE)])].filter((k) => s[k]);
+const sampleKey = () => JSON.stringify([sampleSwitches(), s.rules]);
+
+function toggleSample() {
+  if (!creating() || s.stage !== "enter") return;
+  endCage();
+  sampleOn = !sampleOn;
+  selected = null;
+  padDigit = 0;
+  note = "";
+  render();
+}
+
+// Makes the sample a moment later, so "Making a sample…" shows first: a
+// Chaos Construction grid can take a second or so to find.
+function scheduleSample() {
+  if (sampleTimer) return;
+  sampleTimer = setTimeout(() => {
+    sampleTimer = null;
+    if (!showingSample()) return;
+    const key = sampleKey();
+    sample = { key, ...samplePuzzle({ on: sampleSwitches(), rules: s.rules }) };
+    render();
+  }, 30);
+}
+
+const sampleReady = () => sample && sample.key === sampleKey();
+
+// The board's view of the sample: its clues as givens, its parts, and the
+// regions and shading it was made with.
+function sampleView(settings) {
+  const shown = sampleReady() ? sample : null;
+  const clues = shown?.clues ?? empty();
+  return {
+    puzzle: clues,
+    solution: shown?.grid ?? clues,
+    values: clues,
+    notes: empty(),
+    selected: null,
+    interactive: false,
+    highlightSame: settings.highlight_same,
+    highlightPeers: false,
+    focusDigit: 0,
+    mark: null,
+    wrong: new Set(),
+    ...(shown?.parts ?? {}),
+    shading: shown?.shading ? shown.shading.map((shade) => (shade === 1 ? 1 : 0)) : null,
+    regions: shown?.regions ?? null,
+    margin: outsideOn(),
+    rules: s.rules,
+  };
+}
+
+function sampleStatus() {
+  if (!sampleReady()) return "Making a sample…";
+  const name = variantName({ ...sample.parts, regions: s.jigsaw ? sample.regions : null, rules: s.rules });
+  const what = name ? `${/^[AEIOU]/.test(name) ? "An" : "A"} ${name} puzzle` : "A classic puzzle";
+  const parts = [`${what}, made up to show how one looks: every clue and mark in it is true of the same answer.`];
+  if (sample.regions && chaos()) parts.push("Its regions are drawn, though a real one finds them while solving.");
+  if (sample.shading) parts.push("Its shading is drawn too, though a real one finds it while solving.");
+  if (sample.loose) parts.push("Its digits leave some of these rules out, as they cannot all hold in one grid.");
+  const chaosOnly = sample.missing.filter((k) => k === "chaosarrow" || k === "chaoscount");
+  if (chaosOnly.length && !chaos()) parts.push(`${chaosOnly.map((k) => RULE_HELP[k].name).join(" and ")} need Chaos Construction on.`);
+  const rest = sample.missing.filter((k) => !chaosOnly.includes(k));
+  if (rest.length) parts.push(`No example of ${rest.map((k) => RULE_HELP[k].name).join(", ")} fits this one.`);
+  parts.push("Turn rules on or off to see others, or tap Hide sample to go back to yours.");
+  return parts.join(" ");
+}
+
 /* ---- drawing ---- */
 
 function defaultStatus() {
@@ -2795,8 +3103,11 @@ function defaultStatus() {
       return "A pill arrow puzzle: tap Pills, then the pill's cells and each cell along its arrow. The pill's digits make a number, like 17, that the arrow's add up to.";
     }
     if (s.whisper && !s.whispers.length) {
-      const dutch = hasRule(s.rules, "dutchwhispers");
-      return `A ${dutch ? "Dutch" : "German"} Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least ${whisperGap(s.rules)}.`;
+      const both = s.dutch ? " With Dutch Whispers on too, the kind button says which a line is." : "";
+      return `A German Whispers puzzle: tap Whispers, then each cell along a line. Digits next to each other on it differ by at least 5.${both}`;
+    }
+    if (s.dutch && !s.dutches.length) {
+      return `A Dutch Whispers puzzle: tap Whispers${s.whisper ? ", pick Dutch line with the kind button," : ""} then each cell along a line. Digits next to each other on it differ by at least ${DUTCH_GAP}.`;
     }
     if (s.renban && !s.renbans.length) return "A renban puzzle: tap Renbans, then each cell along a line. Its digits are a run, like 3 4 5, in any order.";
     if (s.palindrome && !s.palindromes.length) {
@@ -2907,7 +3218,7 @@ const FOOTS = {
 
 // A kind of line to draw, with its rule on: all but the one being changed,
 // which is drawn as the path, not twice. null with the rule off.
-const shownLines = (kind) => (s[kind] ? s[LINES[kind].list].filter((_, i) => lineKind !== kind || i !== editingLine) : null);
+const shownLines = (kind) => (s[kind] ? s[LINES[kind].list].filter((_, i) => !lineKind || editingKind !== kind || i !== editingLine) : null);
 
 function render() {
   if (!board) return;
@@ -2922,8 +3233,11 @@ function render() {
   // yet or not; after, those the puzzle uses.
   const helpKeys = enter ? Object.keys(RULE_HELP).filter(ruleOn) : rulesOf(variant());
   if (checked) for (const c of wrongCells()) wrong.add(c);
+  const sampled = showingSample();
+  if (sampled && !sampleReady()) scheduleSample();
 
-  board.set({
+  if (sampled) board.set(sampleView(settings));
+  else board.set({
     // While the clues go in they are drawn as clues.
     puzzle: solving ? s.clues : g,
     solution: solving ? solution : g,
@@ -2951,6 +3265,7 @@ function render() {
     doubles: shownLines("doublearrow"),
     pills: shownLines("pillarrow"),
     whispers: shownLines("whisper"),
+    dutches: shownLines("dutch"),
     renbans: shownLines("renban"),
     palindromes: shownLines("palindrome"),
     zippers: shownLines("zipper"),
@@ -2996,7 +3311,9 @@ function render() {
       ? picked
       : lineKind
         ? new Set(path)
-        : markMode && quadAt != null
+        : markMode && ownAt != null
+          ? new Set([ownAt, ...ownCells()])
+          : markMode && quadAt != null
           ? new Set(quadCells(quadAt))
           : markMode && anchor != null
             ? new Set([anchor])
@@ -3006,7 +3323,7 @@ function render() {
   });
 
   $("solverTitle").textContent = TITLES[mode][stage];
-  $("solverStatus").textContent = note || defaultStatus();
+  $("solverStatus").textContent = sampled ? sampleStatus() : note || defaultStatus();
   $("solverSeed").textContent = made ? `Seed ${seedLabel(made)}` : "";
   $("solverSeed").classList.toggle("hidden", !made);
   $("solverFoot").textContent = stage === "made" ? FOOTS.made : FOOTS[mode];
@@ -3048,7 +3365,7 @@ function render() {
     solverArrows: enter && s.arrow,
     solverDoubles: enter && s.doublearrow,
     solverPills: enter && s.pillarrow,
-    solverWhispers: enter && s.whisper,
+    solverWhispers: enter && (s.whisper || s.dutch),
     solverRenbans: enter && s.renban,
     solverPalindromes: enter && s.palindrome,
     solverZippers: enter && s.zipper,
@@ -3069,8 +3386,15 @@ function render() {
     // A variant's rules and cages do not fit in 81 characters.
     solverCopy: !cageKinds().length && !s.jigsaw && ![LINES, EDGES, QUADS, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
     solverAnswer: solved,
+    solverSample: creating() && enter,
+    solverImage: true,
   };
+  // A sample shows only itself, the rule buttons that change it, and the
+  // way back.
+  if (sampled) for (const id of Object.keys(shown)) if (!["solverRules", "solverRuleHelp", "solverSample"].includes(id)) shown[id] = false;
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
+  $("solverSample").setAttribute("aria-pressed", String(sampled));
+  $("solverSampleLabel").textContent = sampled ? "Hide sample" : "Show sample";
 
   const icon = creating() ? "check" : "bulb";
   if ($("solverGoIcon").dataset.icon !== icon) {
@@ -3090,7 +3414,7 @@ function render() {
   $("solverCands").setAttribute("aria-pressed", String(s.candidates));
   $("solverCandsLabel").textContent = s.candidates ? "Hide candidates" : "Show candidates";
   document.querySelectorAll("#solverRules [data-rule]").forEach((b) => b.setAttribute("aria-pressed", String(ruleOn(b.dataset.rule))));
-  fillRuleHelp($("solverRuleHelp"), helpKeys, { draw: enter });
+  fillRuleHelp($("solverRuleHelp"), helpKeys, { draw: enter && !sampled });
   $("solverSeedNote").textContent =
     seedNote || (creating() ? "A seed's puzzle, to change and check again for a new seed, or to save as an image." : "A seed's puzzle, to solve here or save as an image.");
   $("solverCages").setAttribute("aria-pressed", String(cageMode));
@@ -3098,7 +3422,7 @@ function render() {
   $("solverArrows").setAttribute("aria-pressed", String(lineKind === "arrow"));
   $("solverDoubles").setAttribute("aria-pressed", String(lineKind === "doublearrow"));
   $("solverPills").setAttribute("aria-pressed", String(lineKind === "pillarrow"));
-  $("solverWhispers").setAttribute("aria-pressed", String(lineKind === "whisper"));
+  $("solverWhispers").setAttribute("aria-pressed", String(WHISPER_KINDS.includes(lineKind)));
   $("solverRenbans").setAttribute("aria-pressed", String(lineKind === "renban"));
   $("solverPalindromes").setAttribute("aria-pressed", String(lineKind === "palindrome"));
   $("solverZippers").setAttribute("aria-pressed", String(lineKind === "zipper"));
@@ -3140,6 +3464,8 @@ function render() {
     $("lineAdd").disabled = path.length < least(LINES[lineKind]);
     $("linePill").classList.toggle("hidden", !LINES[lineKind].pill);
     $("linePillLabel").textContent = `Pill of ${pillSize}`;
+    $("lineKind").classList.toggle("hidden", kindsOf(lineKind).length < 2);
+    $("lineKindLabel").textContent = lineKind === "dutch" ? "Dutch line" : "German line";
     for (const id of ["lineSum", "lineSumLabel"]) $(id).classList.toggle("hidden", !LINES[lineKind].sum);
   }
   if (cageMode) {
@@ -3151,6 +3477,9 @@ function render() {
     $("cageKindLabel").textContent = K.title;
     // An Equality cage, among others, has no clue to type.
     for (const id of ["cageSum", "cageSumLabel"]) $(id).classList.toggle("hidden", !K.clue);
+    $("cageSize").classList.toggle("hidden", !K.size);
+    $("cageNext").classList.toggle("hidden", !K.split);
+    $("cageNext").disabled = !openPiece().length;
     if (K.clue) {
       $("cageSumLabel").textContent = K.label;
       $("cageSum").placeholder = K.clue === "clue" ? "Clue" : "Sum";
@@ -3173,6 +3502,7 @@ export function openSolver(which = "solver") {
   }
   resetStage();
   endCage();
+  sampleOn = false;
   settle();
   showPanel("solver");
   render();
@@ -3190,6 +3520,13 @@ function closeSolver() {
 function onKey(e) {
   if ($("solver").classList.contains("hidden")) return;
   if (e.defaultPrevented || e.target.closest("input, textarea, select") || document.body.classList.contains("modal-open")) return;
+  // A sample takes no digits; Escape puts it away.
+  if (showingSample()) {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    toggleSample();
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
     e.preventDefault();
     undo();
@@ -3245,6 +3582,7 @@ export function initSolver({ reopen = true } = {}) {
   $("solverCopy").addEventListener("click", onCopy);
   $("solverAnswer").addEventListener("click", onCopyAnswer);
   $("solverImage").addEventListener("click", onImage);
+  $("solverSample").addEventListener("click", toggleSample);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
   $("solverSeedOpen").addEventListener("click", onSeedOpen);
@@ -3299,6 +3637,7 @@ export function initSolver({ reopen = true } = {}) {
     if (e.key === "Enter") onLineAdd();
   });
   $("linePill").addEventListener("click", turnPill);
+  $("lineKind").addEventListener("click", turnLineKind);
   $("lineRemove").addEventListener("click", onLineRemove);
   $("lineDone").addEventListener("click", () => endCage(true));
   $("cageKind").addEventListener("click", turnCageKind);
@@ -3309,9 +3648,13 @@ export function initSolver({ reopen = true } = {}) {
   $("cageSum").addEventListener("keydown", (e) => {
     if (e.key === "Enter") onCageAdd();
   });
+  $("cageSize").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") onCageAdd();
+  });
+  $("cageNext").addEventListener("click", onNextPiece);
   document.addEventListener("keydown", onKey);
   document.addEventListener("paste", (e) => {
-    if ($("solver").classList.contains("hidden") || e.target.closest?.("input, textarea")) return;
+    if ($("solver").classList.contains("hidden") || e.target.closest?.("input, textarea") || showingSample()) return;
     e.preventDefault();
     pasteText(e.clipboardData?.getData("text"));
   });

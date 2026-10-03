@@ -15,7 +15,7 @@
 // its arrows and counts are drawn as on screen, and so are Yin-Yang's
 // circles, a given shaded cell tinted too.
 
-import { variantName, touching, cagesOf, indexers, circleSets, hasRule } from "./variant.js";
+import { variantName, touching, cagesOf, indexers, circleSets, countCell, hasRule } from "./variant.js";
 
 const CELL = 112;
 const PAD = 36;
@@ -56,7 +56,7 @@ const CIRCLE_SET_COLOURS = ["#3f86d4", "#d4509a", "#e0692a", "#9a5bd8", "#2f9e57
 
 // variant: { cages, relliks, lunchboxes, looksays, equalities, equalsums,
 // samevalues, connecteds, distincts, thermos,
-// arrows, doubles, pills, whispers, renbans,
+// arrows, doubles, pills, whispers, dutches, renbans,
 // palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines,
 // regionsums, indexes, dots, xvs, signs, quads, circles, circlesets,
 // sandwiches,
@@ -70,6 +70,7 @@ export async function drawPuzzle(grid, variant = null) {
   const doubles = variant?.doubles ?? [];
   const pills = variant?.pills ?? [];
   const whispers = variant?.whispers ?? [];
+  const dutches = variant?.dutches ?? [];
   const renbans = variant?.renbans ?? [];
   const palindromes = variant?.palindromes ?? [];
   const zippers = variant?.zippers ?? [];
@@ -211,6 +212,18 @@ export async function drawPuzzle(grid, variant = null) {
       t.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
       ctx.stroke();
     }
+  }
+  // Dutch Whispers lines: a whisper line, dashed.
+  for (const t of dutches) {
+    ctx.strokeStyle = WHISPER_GREEN;
+    ctx.lineWidth = CELL * 0.26;
+    ctx.lineCap = "butt";
+    ctx.lineJoin = "round";
+    ctx.setLineDash([CELL * 0.26, CELL * 0.18]);
+    ctx.beginPath();
+    t.forEach((c, i) => (i ? ctx.lineTo(...at(c)) : ctx.moveTo(...at(c))));
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
   // Sum lines: dashed, square-ended so the gaps show. Their sums go in with
   // the cages' clues, below.
@@ -425,22 +438,43 @@ export async function drawPuzzle(grid, variant = null) {
     }
   });
   ctx.setLineDash([]);
-  // Chaos Counts: a dashed square round the digit. Chaos Arrows: a chevron
-  // just inside each edge it points through.
+  // Chaos Counts: a dashed square round the digit; one of its own cells, a
+  // faint dotted line to each, which has a small dashed square in its top
+  // right corner. Chaos Arrows: a chevron just inside each edge it points
+  // through, or each arm of its own leaves by, and a dotted line along each
+  // arm of its own.
   ctx.strokeStyle = INK;
-  ctx.lineWidth = 3;
-  ctx.setLineDash([CELL * 0.09, CELL * 0.06]);
-  for (const c of chaoscounts) {
-    const [x, y] = at(c);
+  for (const count of chaoscounts) {
+    const [x, y] = at(countCell(count));
     const r = CELL * 0.38;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([CELL * 0.09, CELL * 0.06]);
     ctx.strokeRect(x - r, y - r, 2 * r, 2 * r);
+    if (typeof count === "number") continue;
+    for (const c of count.cells) {
+      const [ox, oy] = at(c);
+      const [cx, cy] = [ox + CELL * 0.3, oy - CELL * 0.3];
+      const s = CELL * 0.11;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([CELL * 0.09, CELL * 0.06]);
+      ctx.strokeRect(cx - s, cy - s, 2 * s, 2 * s);
+      ctx.globalAlpha = 0.3;
+      ctx.setLineDash([CELL * 0.03, CELL * 0.07]);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
   }
   ctx.setLineDash([]);
   ctx.lineWidth = CELL * 0.05;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  for (const { cell, ways } of chaosarrows) {
+  for (const arrow of chaosarrows) {
+    const { cell } = arrow;
     const [x, y] = at(cell);
+    const ways = arrow.arms ? arrow.arms.reduce((m, arm) => m | (1 << [-9, 1, 9, -1].indexOf(arm[0] - cell)), 0) : arrow.ways;
     ctx.beginPath();
     [[0, -1], [1, 0], [0, 1], [-1, 0]].forEach(([dx, dy], i) => {
       if (!(ways & (1 << i))) return;
@@ -450,6 +484,17 @@ export async function drawPuzzle(grid, variant = null) {
       ctx.lineTo(x + dx * base + dy * half, y + dy * base + dx * half);
     });
     ctx.stroke();
+    for (const arm of arrow.arms ?? []) {
+      const [fx, fy] = at(arm[0]);
+      ctx.globalAlpha = 0.45;
+      ctx.setLineDash([CELL * 0.04, CELL * 0.1]);
+      ctx.beginPath();
+      ctx.moveTo(x + Math.sign(fx - x) * CELL * 0.5, y + Math.sign(fy - y) * CELL * 0.5);
+      for (const c of arm) ctx.lineTo(...at(c));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
   }
   ctx.lineCap = "butt";
   ctx.lineJoin = "miter";
@@ -596,7 +641,7 @@ export async function drawPuzzle(grid, variant = null) {
 
   ctx.fillStyle = CAPTION;
   ctx.font = `30px ${FONT}`;
-  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules });
+  const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules });
   const caption = `${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`;
   // A long list of rules shrinks to fit across the image.
   const room = canvas.width - PAD * 2;

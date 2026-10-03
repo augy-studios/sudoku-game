@@ -110,7 +110,12 @@ import {
   SHADED,
   UNSHADED,
   ZERO,
+  hasRule,
+  piecesFor,
+  tidyPieces,
+  sideOf,
 } from "../main-site/js/variant.js";
+import { samplePuzzle, sampleRegionsOk } from "../main-site/js/sample.js";
 
 const killerSolutions = (grid, cages, limit) => variantSolutions(grid, { cages }, limit);
 import { tally, liveScore, finalScore, timeBonus, turnBonus, CELL, MISTAKE, HINT, FINISH } from "../main-site/js/score.js";
@@ -3609,16 +3614,22 @@ test("every variant rule has its explanation", () => {
   // every switch alone too.
   const all = RULES.reduce((m, r) => m | r.bit, 0);
   const every = { rules: all & ~rule("dutchwhispers") };
-  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "chaosarrows", "chaoscounts", "shades", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"]) every[list] = [1];
+  for (const list of ["cages", "relliks", "lunchboxes", "looksays", "equalities", "equalsums", "samevalues", "connecteds", "distincts", "regions", "thermos", "arrows", "doubles", "pills", "whispers", "dutches", "renbans", "palindromes", "zippers", "betweens", "lockouts", "entropics", "modulars", "sumlines", "regionsums", "indexes", "dots", "xvs", "signs", "quads", "circles", "circlesets", "chaosarrows", "chaoscounts", "shades", "sandwiches", "littles", "skyscrapers", "xsums", "hiddens", "rooms", "ranks", "indexings", "indexcells"]) every[list] = [1];
   const named = [...new Set([...variantName(every).split(", "), ...variantName({ rules: all }).split(", ")])].sort();
   assert.deepEqual(Object.values(RULE_HELP).map((h) => h.name).sort(), named, "every variant has an explanation");
   assert.deepEqual(rulesOf(null), []);
   assert.deepEqual(rulesOf({ cages: [1], rules: 1 }), ["killer", "diagonal"]);
-  // Dutch Whispers stands in German Whispers' place, named and explained.
+  // A seed from before Dutch Whispers lines, whose rule turned every
+  // whisper line Dutch: its lines named and explained as Dutch.
   const dutch = { whispers: [1], thermos: [1], rules: rule("dutchwhispers") | 1 };
   assert.equal(variantName(dutch), "Thermo, Dutch Whispers, Diagonal");
-  assert.deepEqual(rulesOf(dutch), ["thermo", "dutchwhispers", "diagonal"]);
+  assert.deepEqual(rulesOf(dutch), ["thermo", "dutch", "diagonal"]);
   assert.equal(seedVariantName("TSQDW-H-BBBB"), "Thermo, Dutch Whispers");
+  // Lines of both kinds, each named and explained.
+  assert.equal(variantName({ whispers: [1], dutches: [1] }), "German Whispers, Dutch Whispers");
+  assert.deepEqual(rulesOf({ whispers: [1], dutches: [1] }), ["whisper", "dutch"]);
+  assert.equal(seedVariantName("SQDL-H-BBBB"), "German Whispers, Dutch Whispers");
+  assert.equal(seedVariantName("QCVQGS-H-BBBB"), "Connected Values");
   // A part with two lists is found, and named once, by either.
   assert.deepEqual(rulesOf({ circlesets: [1], indexcells: [1] }), ["counting", "rowcolindex"]);
   assert.equal(seedVariantName("QCCQCSQRXQCX-H-BBBB"), "Counting Circles, Row/Column Indexing");
@@ -3698,6 +3709,145 @@ test("the daily calendar lays out months and counts streaks", () => {
   assert.deepEqual(streaks([...gap, "2026-09-25", "2026-09-25"], today), { current: 8, longest: 8 });
   // Across a month's end, and nonsense left out.
   assert.deepEqual(streaks(["2026-08-31", "2026-09-01", "bad"], "2026-09-01"), { current: 2, longest: 2 });
+});
+
+// The variants roadmap's gaps, closed: a Connected Values group's size,
+// Equal Sum and Same Values pieces side by side, Dutch Whispers lines beside
+// German ones, and Chaos Arrows and Counts of their own cells. Each kept by
+// its grid, refused when wrong, and through a seed and back.
+test("group sizes, pieces side by side, Dutch lines and Chaos clues of their own", () => {
+  const bit = (k) => RULES.find((r) => r.key === k).bit;
+  const keeps = (grid, v) => variantSolutions(grid, v, 1)?.length === 1;
+  const blanked = (grid) => grid.map((d, c) => (c % 13 ? d : 0));
+  const roundTrip = (grid, v) => {
+    const seed = madeSeed("H", blanked(grid), v);
+    const back = parseSeed(seed.text);
+    assert.ok(back, seed.text);
+    for (const [list, parts] of Object.entries(v)) if (list !== "rules") assert.deepEqual(back[list], parts, list);
+    return seed;
+  };
+
+  // Connected Values: the group of ~ab in its three cells is two cells.
+  const linked = samplePuzzle({ on: ["connected"] });
+  const link = linked.parts.connecteds[0];
+  assert.equal(link.size, 2);
+  assert.ok(keeps(linked.grid, { connecteds: [link] }));
+  assert.ok(!keeps(linked.grid, { connecteds: [{ ...link, size: 3 }] }));
+  assert.ok(connectedProblem([{ ...link, size: 4 }]));
+  assert.match(roundTrip(linked.grid, { connecteds: [link] }).text, /^QCVQGS-/);
+  assert.equal(cagesOf({ connecteds: [link] })[0].label, `~${link.clue}:2`);
+  // With the size its clash shows once there are too many of its digits.
+  const g = linked.grid.slice();
+  const [a, b, c] = link.cells;
+  assert.equal(clashes(g, { connecteds: [{ ...link, size: 1 }] }).has(a), true);
+  assert.equal(clashes(g, { connecteds: [link] }).has(c), false);
+
+  // Equal Sum: two pieces side by side, told apart as given, a seed keeping
+  // them; pieces apart need none.
+  const grid = linked.grid;
+  let row = null;
+  for (let r = 0; r < 9 && !row; r++) for (let x = 0; x + 3 < 9 && !row; x++) {
+    const cells = [0, 1, 2, 3].map((i) => r * 9 + x + i);
+    if (grid[cells[0]] + grid[cells[1]] === grid[cells[2]] + grid[cells[3]]) row = cells;
+  }
+  const side = { cells: row, pieces: [row.slice(0, 2), row.slice(2)] };
+  assert.deepEqual(piecesFor(side), side.pieces);
+  assert.ok(!equalSumProblem([side]));
+  assert.ok(keeps(grid, { equalsums: [side] }));
+  assert.equal(equalSumProblem([{ cells: row }])?.why, "pieces", "without them, one piece");
+  assert.equal(equalSumProblem([{ cells: row, pieces: [[row[0], row[2]], [row[1], row[3]]] }])?.why, "split", "pieces must join up");
+  assert.match(roundTrip(grid, { equalsums: [side] }).text, /^QES-/);
+  assert.deepEqual(cagesOf({ equalsums: [side] }).map((k) => k.cells), side.pieces);
+  assert.deepEqual(tidyPieces([1, 2, 20], [[20], [1, 2]]), { cells: [1, 2, 20] }, "pieces apart need none");
+
+  // Dutch Whispers lines beside German ones: 4 apart is enough on a Dutch
+  // line, not on a German one, whatever the rules.
+  const dutch = samplePuzzle({ on: ["dutch"] });
+  const line = dutch.parts.dutches[0];
+  assert.ok(keeps(dutch.grid, { dutches: [line] }));
+  assert.ok(!keeps(dutch.grid, { whispers: [line] }));
+  assert.match(roundTrip(dutch.grid, { dutches: [line] }).text, /^QDL-/);
+  assert.equal(variantName({ whispers: [1], dutches: [1] }), "German Whispers, Dutch Whispers");
+
+  // Chaos Arrows with arms of their own, turning, and Chaos Counts of their
+  // own cells, wherever they are: every cell a count of its own, so the cuts
+  // go one way.
+  const chaos = samplePuzzle({ on: ["chaosarrow"], rules: bit("chaos") });
+  const reg = chaos.regions;
+  const cg = chaos.grid;
+  let arrow = null;
+  for (let cell = 0; cell < 81 && !arrow; cell++) {
+    for (const turn of [[1, 9], [9, 1], [-1, 9], [9, -1]]) {
+      const arm = [cell + turn[0], cell + turn[0] + turn[1]];
+      if (arm.some((o) => o < 0 || o > 80) || sideOf(cell, arm[0]) < 0 || sideOf(arm[0], arm[1]) < 0) continue;
+      let run = 1;
+      for (const o of arm) {
+        if (reg[o] !== reg[cell]) break;
+        run++;
+      }
+      if (run === cg[cell]) arrow = { cell, arms: [arm] };
+    }
+  }
+  assert.ok(arrow);
+  assert.ok(!chaosArrowProblem([arrow]));
+  assert.equal(chaosArrowProblem([{ cell: 0, arms: [[10]] }])?.why, "arms", "an arm steps along a side");
+  const counts = [...Array(81).keys()].filter((c) => c !== arrow.cell).map((c) => {
+    const mine = [...Array(81).keys()].filter((o) => o !== c && reg[o] === reg[c]).slice(0, cg[c] - 1);
+    const other = [...Array(81).keys()].find((o) => reg[o] !== reg[c]);
+    return { cell: c, cells: [...mine, other].sort((x, y) => x - y) };
+  });
+  assert.equal(chaosCountProblem([{ cell: 3, cells: [3] }])?.why, "counted");
+  const v = { chaosarrows: [arrow], chaoscounts: counts, rules: bit("chaos") };
+  assert.ok(keeps(cg, v));
+  assert.ok(checkClues(blanked(cg), v).ok);
+  // One count off by one, and there is no answer.
+  const wrong = counts.map((x, i) => (i ? x : { ...x, cells: x.cells.slice(0, -2) }));
+  assert.ok(!keeps(cg, { ...v, chaoscounts: wrong }) || cg[counts[0].cell] === 1);
+  assert.match(roundTrip(cg, v).text, /^QCAQCOQCHQAMQCL-/);
+});
+
+test("Show sample makes a part of each kind on, true of its grid", () => {
+  const bit = (k) => RULES.find((r) => r.key === k).bit;
+  const OPTIONS = bit("dutchwhispers") | bit("cluedrankties");
+  // Every switch key the Create screen has, by its rule button.
+  const html = readFileSync(new URL("../main-site/index.html", import.meta.url), "utf8");
+  const buttons = [...html.matchAll(/data-rule="(\w+)"/g)].map((m) => m[1]);
+  const switches = buttons.filter((k) => !RULES.some((r) => r.key === k));
+  const keeps = (sample, on, rules) => {
+    const variant = { ...sample.parts, rules: (sample.kept & ~bit("chaos")) | (rules & OPTIONS), regions: sample.regions };
+    assert.equal(variantSolutions(sample.grid, variant, 1)?.length, 1, `sample for ${on} ${rules}`);
+    assert.ok(sample.clues.every((d, c) => !d || d === sample.grid[c]));
+    if (sample.shading) assert.ok(shadingKeeps(sample.shading, sample.parts.shades));
+  };
+  assert.ok(sampleRegionsOk());
+  for (const key of switches) {
+    const rules = key === "chaosarrow" || key === "chaoscount" ? bit("chaos") : 0;
+    const sample = samplePuzzle({ on: [key], rules });
+    assert.deepEqual(sample.missing, [], key);
+    assert.equal(sample.loose, false, key);
+    keeps(sample, [key], rules);
+  }
+  for (const r of RULES) {
+    const on = { dutchwhispers: ["whisper"], norankties: ["fullrank"], cluedrankties: ["fullrank"], strictkropki: ["kropki"], strictxv: ["xv"] }[r.key] ?? [];
+    const sample = samplePuzzle({ on, rules: r.bit });
+    assert.equal(sample.loose, false, r.key);
+    keeps(sample, on, r.bit);
+  }
+  // Under a strict rule, every side its marks fit is marked.
+  const strict = samplePuzzle({ on: ["kropki"], rules: bit("strictkropki") });
+  assert.ok(strict.parts.dots.length > 10);
+  // None on is a classic puzzle; everything on still keeps its grid, though
+  // its rules cannot all hold, and Doppelgänger goes with Entropic lines.
+  const none = samplePuzzle();
+  assert.deepEqual(none.parts, {});
+  assert.equal(none.clues.filter(Boolean).length, 23);
+  const all = RULES.reduce((m, r) => m | r.bit, 0) & ~bit("cluedrankties");
+  const everything = samplePuzzle({ on: switches.filter((k) => k !== "jigsaw"), rules: all });
+  assert.equal(everything.loose, true);
+  keeps(everything, "everything", all);
+  const zero = samplePuzzle({ on: ["entropic"], rules: bit("doppelganger") });
+  assert.equal(zero.loose, true);
+  assert.ok(!hasRule(zero.kept, "doppelganger"));
 });
 
 console.log(`engine ok: ${passed} tests.`);

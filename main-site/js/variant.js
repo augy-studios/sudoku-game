@@ -3,7 +3,7 @@
 //
 // A variant is { cages, relliks, lunchboxes, looksays, equalities, equalsums,
 // samevalues, connecteds, distincts, thermos, arrows, doubles, pills,
-// whispers, renbans, palindromes, zippers, betweens, lockouts, entropics,
+// whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics,
 // modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads,
 // circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches,
 // littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings,
@@ -27,17 +27,21 @@
 //   equalities  Equality cages, [{ cells }] of an even number of cells: as
 //            many odd digits as even, and as many low (1 to 4) as high (6
 //            to 9), so never a 5. They never repeat.
-//   equalsums  Equal Sum cages, [{ cells }] in two or more pieces, each
-//            joined edge to edge and one to nine cells, no two touching
-//            along an edge (piecesOf below): every piece adds up to the same
-//            total. Digits may repeat where the rules allow.
+//   equalsums  Equal Sum cages, [{ cells, pieces? }] in two or more pieces,
+//            each joined edge to edge and one to nine cells: every piece
+//            adds up to the same total. Digits may repeat where the rules
+//            allow. Pieces apart from each other need no `pieces`, as the
+//            cells joined edge to edge are the pieces (piecesOf below); pieces
+//            side by side are given as `pieces`, lists of cells in reading
+//            order, in order of their first cells (piecesFor below).
 //   samevalues  Same Values cages, as Equal Sum cages with pieces all the
 //            same size: every piece holds the same digits, a digit twice in
 //            one twice in each.
-//   connecteds  Connected Values cages, [{ clue, cells }], cells joined edge
-//            to edge and clue one to eight different digits in rising
-//            order: the cells holding any of them form one group joined
-//            edge to edge, of one cell or more.
+//   connecteds  Connected Values cages, [{ clue, cells, size? }], cells
+//            joined edge to edge and clue one to eight different digits in
+//            rising order: the cells holding any of them form one group
+//            joined edge to edge, of one cell or more, and of exactly `size`
+//            cells if it says.
 //   distincts  Count Distinct cages, [{ control, cells }], cells joined edge
 //            to edge and control one of them: its digit is how many
 //            different digits the other cells hold. They may repeat where
@@ -59,8 +63,10 @@
 //            arrow's add up to it. They may share cells, and pills.
 //   whispers German Whispers lines, paths like a thermometer's: digits next
 //            to each other on one differ by at least 5, so no 5 is ever on
-//            one; under Dutch Whispers, by at least 4 (whisperGap below).
-//            They may share cells.
+//            one; under the Dutch Whispers rule, every one by at least 4
+//            (whisperGap below). They may share cells.
+//   dutches  Dutch Whispers lines, as whisper lines, always by at least 4,
+//            so one puzzle can have lines of both kinds.
 //   renbans  renban lines, paths like a thermometer's: a line's digits are
 //            a run of consecutive digits in any order, with no repeats.
 //            They may share cells.
@@ -121,12 +127,18 @@
 //   chaosarrows  Chaos Arrows, [{ cell, ways }], ways one to four of up,
 //            right, down and left as bits 1, 2, 4 and 8: the cell's digit
 //            counts it and the cells of its region running on from it each
-//            way it points, up to the first not in it. Only under Chaos
-//            Construction.
+//            way it points, up to the first not in it. Or [{ cell, arms }],
+//            arms of its own: one to four paths from beside the cell, each
+//            step to a cell sharing a side with the last, turns allowed, no
+//            cell twice; its digit counts it and the cells of its region
+//            along each arm from the cell, up to the first not in it
+//            (arrowArms below). Only under Chaos Construction.
 //   chaoscounts  Chaos Counts, a list of cells in reading order: a cell's
 //            digit counts it and the cells round it, touching it along a
-//            side or at a corner, in its region. Only under Chaos
-//            Construction.
+//            side or at a corner, in its region. Or, in the same list, a
+//            count of its own cells, { cell, cells }: its digit counts it and
+//            those of `cells` in its region, wherever they are (countCell
+//            and countedCells below). Only under Chaos Construction.
 //   shades   Yin-Yang's circles, [{ cell, shade }] in reading order, shade
 //            SHADED or UNSHADED: a shading over the grid, apart from the
 //            digits, every cell shaded or unshaded, each shade joined up
@@ -269,11 +281,13 @@ export function renamed(names, rules = 0) {
     if (!r.replaces || !(rules & r.bit) || !out.includes(r.replaces)) continue;
     out = out.filter((name) => name !== r.name).map((name) => (name === r.replaces ? r.name : name));
   }
-  return out;
+  // Dutch Whispers lines and the rule that makes German ones Dutch name the
+  // same thing once.
+  return [...new Set(out)];
 }
 
 // The rules' names, for a label: "Killer, Thermo, Diagonal".
-export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } = {}) {
+export function variantName({ cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } = {}) {
   const names = RULES.filter((r) => rules & r.bit).map((r) => r.name);
   if (regions?.length) names.unshift("Jigsaw");
   if (indexings?.length || indexcells?.length) names.unshift("Row/Column Indexing");
@@ -302,6 +316,7 @@ export function variantName({ cages, relliks, lunchboxes, looksays, equalities, 
   if (zippers?.length) names.unshift("Zipper");
   if (palindromes?.length) names.unshift("Palindrome");
   if (renbans?.length) names.unshift("Renban");
+  if (dutches?.length) names.unshift("Dutch Whispers");
   if (whispers?.length) names.unshift("German Whispers");
   if (pills?.length) names.unshift("Pill Arrow");
   if (doubles?.length) names.unshift("Double Arrow");
@@ -473,7 +488,8 @@ function groupProblem(cages, { least = 1, most = 9, even = false, straight = fal
     }
     if (fits && !fits(cage)) return { why: clue, cage: i };
     if (pieces) {
-      const why = pieces(piecesOf(cells));
+      if (cage.pieces != null && !piecesSplit(cage)) return { why: "split", cage: i };
+      const why = pieces(piecesFor(cage));
       if (why) return { why, cage: i };
     } else if (straight ? !inLine(cells) : !joined(cells)) return { why: straight ? "line" : "apart", cage: i };
   }
@@ -512,10 +528,16 @@ export const equalSumProblem = (equalsums) => groupProblem(equalsums, { least: 2
 // "uneven" if not.
 export const sameValueProblem = (samevalues) =>
   groupProblem(samevalues, { least: 2, most: 81, pieces: (ps) => splitProblem(ps) ?? (ps.some((p) => p.length !== ps[0].length) ? "uneven" : null) });
-// Connected Values cages: two cells or more, and one to eight different
-// digits in rising order.
+// Connected Values cages: two cells or more, one to eight different digits
+// in rising order, and a size, if one says, of one cell up to all of them,
+// "groupsize" if not.
 export const connectedProblem = (connecteds) =>
-  groupProblem(connecteds, { least: 2, most: 81, clue: "clue", fits: ({ clue }) => typeof clue === "string" && /^[1-9]{1,8}$/.test(clue) && [...clue].every((d, i) => !i || d > clue[i - 1]) });
+  groupProblem(connecteds, { least: 2, most: 81, clue: "clue", fits: ({ clue }) => typeof clue === "string" && /^[1-9]{1,8}$/.test(clue) && [...clue].every((d, i) => !i || d > clue[i - 1]) }) ??
+  linkSizeProblem(connecteds);
+function linkSizeProblem(connecteds) {
+  const i = connecteds.findIndex(({ size, cells }) => size != null && !(Number.isInteger(size) && size >= 1 && size <= cells.length));
+  return i < 0 ? null : { why: "groupsize", cage: i };
+}
 // Count Distinct cages: two cells or more, the control among them,
 // "control" if not.
 export const distinctProblem = (distincts) => groupProblem(distincts, { least: 2, most: 81, clue: "control", fits: ({ control, cells }) => cells.includes(control) });
@@ -598,16 +620,20 @@ export const CAGE_LISTS = [
   {
     list: "equalsums",
     label: (_, i, n) => `Σ${pieceName(i, n)}`,
-    words: ({ cells }, i, n) => `Equal Sum cage${n > 1 ? ` ${pieceName(i, n)}` : ""}, ${piecesOf(cells).length} pieces adding up the same`,
+    words: (cage, i, n) => `Equal Sum cage${n > 1 ? ` ${pieceName(i, n)}` : ""}, ${piecesFor(cage).length} pieces adding up the same`,
     split: true,
   },
   {
     list: "samevalues",
     label: (_, i, n) => `≡${pieceName(i, n)}`,
-    words: ({ cells }, i, n) => `Same Values cage${n > 1 ? ` ${pieceName(i, n)}` : ""}, ${piecesOf(cells).length} pieces holding the same digits`,
+    words: (cage, i, n) => `Same Values cage${n > 1 ? ` ${pieceName(i, n)}` : ""}, ${piecesFor(cage).length} pieces holding the same digits`,
     split: true,
   },
-  { list: "connecteds", label: ({ clue }) => `~${clue}`, words: ({ clue, cells }) => `Connected Values cage of ${cells.length}, its ${linkWords(clue)} joined up` },
+  {
+    list: "connecteds",
+    label: ({ clue, size }) => `~${clue}${size ? `:${size}` : ""}`,
+    words: ({ clue, cells, size }) => `Connected Values cage of ${cells.length}, its ${linkWords(clue)} joined up${size ? `, ${size} of them` : ""}`,
+  },
   { list: "distincts", label: () => "#", words: ({ cells }) => `Count Distinct cage of ${cells.length}, the # cell counting the different digits in the rest` },
 ];
 
@@ -618,7 +644,7 @@ export const cagesOf = (v) =>
   CAGE_LISTS.flatMap(({ list, label, words, solid = false, split = false }) => {
     const all = v?.[list] ?? [];
     return all.flatMap((cage, i) =>
-      (split ? piecesOf(cage.cells) : [cage.cells]).map((cells) => ({
+      (split ? piecesFor(cage) : [cage.cells]).map((cells) => ({
         cells,
         head: cage.control ?? Math.min(...cells),
         label: label(cage, i, all.length),
@@ -650,6 +676,29 @@ export function piecesOf(cells) {
     out.push(piece.sort((a, b) => a - b));
   }
   return out;
+}
+
+// An Equal Sum or Same Values cage's pieces: as it gives them, side by side
+// if need be, or else its cells as they join edge to edge.
+export const piecesFor = (cage) => cage.pieces ?? piecesOf(cage.cells);
+
+// Whether a cage's own pieces are its cells cut up: lists in reading order,
+// in order of their first cells, each joined edge to edge, every cell in one.
+function piecesSplit({ cells, pieces }) {
+  if (!Array.isArray(pieces) || !pieces.every((p) => Array.isArray(p) && p.length)) return false;
+  const all = pieces.flat();
+  if (all.length !== cells.length || new Set(all).size !== all.length || !all.every((c) => cells.includes(c))) return false;
+  return pieces.every((p, i) => joined(p) && p.every((c, j) => !j || c > p[j - 1]) && (!i || p[0] > pieces[i - 1][0]));
+}
+
+// A cage's pieces as piecesFor gives them, kept only where they differ from
+// how its cells join: { cells, pieces } with pieces side by side, or
+// { cells }. Each piece sorted, the pieces by their first cells.
+export function tidyPieces(cells, pieces) {
+  const sorted = pieces.map((p) => p.slice().sort((a, b) => a - b)).sort((a, b) => a[0] - b[0]);
+  const plain = piecesOf(cells);
+  const same = plain.length === sorted.length && plain.every((p, i) => p.join() === sorted[i].join());
+  return same ? { cells } : { cells, pieces: sorted };
 }
 
 // Every cell reachable from the first through edges within the group.
@@ -943,8 +992,11 @@ function scaleBounds(list, g, free) {
 }
 
 // How far apart digits next to each other on a whisper line are at least:
-// 5 on a German Whispers line, 4 under Dutch Whispers.
+// 5 on a German Whispers line, 4 under the Dutch Whispers rule, and 4 on a
+// Dutch Whispers line, whatever the rules.
 export const whisperGap = (rules = 0) => (has(rules, "dutchwhispers") ? 4 : 5);
+export const DUTCH_GAP = 4;
+export const dutchProblem = (lines) => lineProblem(lines);
 
 // FAR[gap][m]: the digits at least `gap` away from some digit in m, for a
 // gap of 4 or 5, by value. A 5 has nothing 5 away, and only 1 and 9 4 away;
@@ -2687,9 +2739,9 @@ function sameValueBounds(groups, g, free) {
   return true;
 }
 
-// Connected Values cages with their clues read: [{ cells, want }], want the
-// clue's digits as a mask.
-export const linkCages = (connecteds = []) => connecteds.map(({ clue, cells }) => ({ cells, want: clueMask(clue) }));
+// Connected Values cages with their clues read: [{ cells, want, size }],
+// want the clue's digits as a mask, size the group's or 0 for any.
+export const linkCages = (connecteds = []) => connecteds.map(({ clue, cells, size }) => ({ cells, want: clueMask(clue), size: size ?? 0 }));
 
 // Scratch for connectedBounds: which cells could hold a digit of the clue,
 // by the pass that found them (so none needs clearing), and which part of
@@ -2702,11 +2754,15 @@ let linkPasses = 0;
 // Narrows each Connected Values cage. The cells that could hold one of the
 // clue's digits split into parts joined edge to edge; one must be there,
 // and every cell sure to hold one must be in the same part. Once one is,
-// the cells of the other parts lose the clue's digits. Placed digits count
+// the cells of the other parts lose the clue's digits. With a size, the
+// group is in a part of that many cells or more: smaller parts lose the
+// clue's digits, and once the size is sure, the other cells do too, as
+// once the part is that size its cells keep only them. Placed digits count
 // as masks of one, and `free` is narrowed in place, as in thermoBounds;
 // false if the clue's cells cannot join up.
+const linkSize = new Int32Array(82);
 function connectedBounds(links, g, free) {
-  for (const { cells, want } of links) {
+  for (const { cells, want, size } of links) {
     const pass = ++linkPasses;
     for (const c of cells) {
       if (!((g[c] ? 1 << g[c] : free[c]) & want)) continue;
@@ -2729,10 +2785,30 @@ function connectedBounds(links, g, free) {
     }
     if (!parts) return false;
     let home = 0;
+    let sure = 0;
     for (const c of cells) {
       if (linkPass[c] !== pass || (g[c] ? 0 : free[c] & ~want)) continue;
       if (home && linkPart[c] !== home) return false;
       home = linkPart[c];
+      sure++;
+    }
+    if (size) {
+      linkSize.fill(0, 0, parts + 1);
+      for (const c of cells) if (linkPass[c] === pass) linkSize[linkPart[c]]++;
+      if (sure > size || (home && linkSize[home] < size)) return false;
+      let room = false;
+      for (let p = 1; p <= parts; p++) room ||= linkSize[p] >= size;
+      if (!room) return false;
+      for (const c of cells) {
+        if (linkPass[c] !== pass || g[c]) continue;
+        const p = linkPart[c];
+        const sureCell = !(free[c] & ~want);
+        // Too small a part, or the size reached without this cell: none of
+        // the clue's digits. Its part the size exactly: only them.
+        if (linkSize[p] < size || (sure === size && !sureCell)) {
+          if (!(free[c] &= ~want)) return false;
+        } else if (home === p && linkSize[p] === size && !(free[c] &= want)) return false;
+      }
     }
     if (!home) continue;
     for (const c of cells) if (linkPass[c] === pass && linkPart[c] !== home && !g[c] && !(free[c] &= ~want)) return false;
@@ -3167,7 +3243,6 @@ export function chaosArms(cell, ways) {
 
 // The cells round `cell`, touching it along a side or at a corner.
 export const chaosAround = (cell) => [...Array(81).keys()].filter((o) => touching(cell, o));
-const AROUND = [...Array(81).keys()].map(chaosAround);
 
 // The ways a cell's arrow can point: those with a cell to point at.
 export const waysFrom = (cell) => ARROW_WAYS.reduce((m, _, i) => (chaosArms(cell, 1 << i)[0].length ? m | (1 << i) : m), 0);
@@ -3178,9 +3253,12 @@ export const waysFrom = (cell) => ARROW_WAYS.reduce((m, _, i) => (chaosArms(cell
 export function chaosArrowProblem(arrows) {
   const got = new Set();
   for (let i = 0; i < arrows.length; i++) {
-    const { cell, ways } = arrows[i] ?? {};
+    const { cell, ways, arms } = arrows[i] ?? {};
     if (!Number.isInteger(cell) || cell < 0 || cell > 80) return { why: "cell", at: i };
-    if (!Number.isInteger(ways) || ways < 1 || ways > 15 || ways & ~waysFrom(cell)) return { why: "ways", at: i };
+    // Arms of its own, "arms" if not well formed.
+    if (arms != null) {
+      if (ways != null || armsProblem(cell, arms)) return { why: "arms", at: i };
+    } else if (!Number.isInteger(ways) || ways < 1 || ways > 15 || ways & ~waysFrom(cell)) return { why: "ways", at: i };
     if (got.has(cell)) return { why: "twice", at: i };
     got.add(cell);
   }
@@ -3188,26 +3266,77 @@ export function chaosArrowProblem(arrows) {
 }
 
 // Whether Chaos Counts are well formed: one cell or more, each on the board,
-// none twice. null if so, or what is wrong: { why }, why "cell" or "twice".
+// none twice, in reading order; a count of its own cells counting one to
+// eighty others, none twice. null if so, or what is wrong: { why }, why
+// "cell", "twice" or "counted".
 export function chaosCountProblem(counts) {
   if (!Array.isArray(counts) || !counts.length || counts.length > 81) return { why: "cell" };
+  const on = (c) => Number.isInteger(c) && c >= 0 && c <= 80;
   const got = new Set();
-  for (const c of counts) {
-    if (!Number.isInteger(c) || c < 0 || c > 80) return { why: "cell" };
+  for (const count of counts) {
+    const c = count == null ? null : countCell(count);
+    if (!on(c)) return { why: "cell" };
     if (got.has(c)) return { why: "twice" };
+    if (typeof count !== "number") {
+      const { cells } = count;
+      if (!Array.isArray(cells) || !cells.length || !cells.every(on) || cells.includes(c) || new Set(cells).size !== cells.length) return { why: "counted" };
+    }
     got.add(c);
   }
   return null;
 }
 
+// A Chaos Arrow's arms, its own or along its row and column as it points.
+export const arrowArms = (arrow) => arrow.arms ?? chaosArms(arrow.cell, arrow.ways);
+// A Chaos Count's cell, and the cells it counts besides: its own, or those
+// round it.
+export const countCell = (count) => (typeof count === "number" ? count : count.cell);
+export const countedCells = (count) => (typeof count === "number" ? chaosAround(count) : count.cells);
+// The cells sharing a side with `cell`.
+const sideCells = (cell) => CELL_SIDES[cell].map(([, o]) => o);
+// Whether arms or counted cells take in every cell beside `cell`, so that
+// its region, which joins one of them, makes its digit 2 at least.
+export const besideAll = (cell, cells) => sideCells(cell).every((o) => cells.includes(o));
+
 // Each Chaos Arrow with its arms as the sides along them, from the arrow's
-// cell out: [{ cell, all, arms }], all whether it points every way it can.
+// cell out: [{ cell, all, arms }], all whether its arms set off past every
+// side it has.
 const arrowSides = (arrows) =>
-  arrows.map(({ cell, ways }) => ({
-    cell,
-    all: ways === waysFrom(cell),
-    arms: chaosArms(cell, ways).map((arm) => arm.map((c, i) => sideOf(i ? arm[i - 1] : cell, c))),
-  }));
+  arrows.map((arrow) => {
+    const { cell } = arrow;
+    const arms = arrowArms(arrow);
+    return {
+      cell,
+      all: besideAll(cell, arms.map((arm) => arm[0])),
+      arms: arms.map((arm) => arm.map((c, i) => sideOf(i ? arm[i - 1] : cell, c))),
+    };
+  });
+
+// Each Chaos Count with the cells it counts: [{ cell, cells, all }], all
+// whether those take in every cell beside it.
+const countSides = (counts) =>
+  counts.map((count) => {
+    const cell = countCell(count);
+    const cells = countedCells(count);
+    return { cell, cells, all: besideAll(cell, cells) };
+  });
+
+// Whether Chaos Arrows of their own have well formed arms: one to four,
+// each from beside the cell, each step sharing a side with the last, no
+// cell twice among them or the arrow's own.
+function armsProblem(cell, arms) {
+  if (!Array.isArray(arms) || !arms.length || arms.length > 4) return true;
+  const seen = new Set([cell]);
+  for (const arm of arms) {
+    if (!Array.isArray(arm) || !arm.length) return true;
+    for (let i = 0; i < arm.length; i++) {
+      const c = arm[i];
+      if (!Number.isInteger(c) || c < 0 || c > 80 || seen.has(c) || sideOf(i ? arm[i - 1] : cell, c) < 0) return true;
+      seen.add(c);
+    }
+  }
+  return false;
+}
 
 // The totals a number from each of two sets can make, as masks with bit n
 // for n.
@@ -3495,11 +3624,11 @@ function chaosBounds(arrows, counts, g, free, ws) {
         }
       }
     }
-    for (const cell of counts) {
+    for (const { cell, cells, all } of counts) {
       const home = shardRoot[cell];
       let least = 1;
       let most = 1;
-      for (const o of AROUND[cell]) {
+      for (const o of cells) {
         const t = shardRoot[o];
         const s = sideOf(cell, o);
         if (t === home) {
@@ -3507,14 +3636,17 @@ function chaosBounds(arrows, counts, g, free, ws) {
           most++;
         } else if (!((s >= 0 && ws[s] === WALLED) || areaOf[o] !== areaOf[cell] || shardSize[t] + shardSize[home] > 9 || shardHave[t] & shardHave[home])) most++;
       }
-      const ok = between(least, most) & (g[cell] ? 1 << g[cell] : free[cell]) & ~(1 << 1);
+      // A region joins up with some cell beside it, so one counting every
+      // cell beside it counts 2 at least.
+      const ok = between(least, most) & (g[cell] ? 1 << g[cell] : free[cell]) & (all ? ~(1 << 1) : ~0);
       if (!ok) return false;
       if (!g[cell]) free[cell] = ok;
       if (least === most || (HIGH[ok] !== least && LOW[ok] !== most)) continue;
-      // At its least, the cells round it that could be in its region are
-      // not: walled off beside it, kept apart from it at a corner. At its
-      // most, the cells beside it that could join it do.
-      for (const o of AROUND[cell]) {
+      // At its least, the cells it counts that could be in its region are
+      // not: walled off beside it, kept apart from it elsewhere. At its
+      // most, the cells beside it that could join it do; those further off
+      // are left to the cuts.
+      for (const o of cells) {
         const s = sideOf(cell, o);
         if (s >= 0 && ws[s] === UNDECIDED) {
           ws[s] = HIGH[ok] === least ? WALLED : JOINED;
@@ -3640,6 +3772,7 @@ const norm = (v) => ({
   doubles: v?.doubles ?? [],
   pills: v?.pills ?? [],
   whispers: v?.whispers ?? [],
+  dutches: v?.dutches ?? [],
   renbans: v?.renbans ?? [],
   palindromes: v?.palindromes ?? [],
   zippers: v?.zippers ?? [],
@@ -3680,7 +3813,7 @@ const norm = (v) => ({
 // Chaos Construction the regions it could be in; 0 for a filled cell. A killer cage allows digits not already
 // in it that some way of filling the rest of it can use.
 export function variantCandidates(grid, variant) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, chaosarrows, chaoscounts, ranks, indexings, indexcells, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, chaosarrows, chaoscounts, ranks, indexings, indexcells, regions, rules } = norm(variant);
   const { peers, houses } = layout(rules, regions);
   zeroOn = has(rules, "doppelganger") && !has(rules, "chaos");
   const allow = cages.map((cage) => {
@@ -3706,19 +3839,20 @@ export function variantCandidates(grid, variant) {
   }
   // Under Chaos Construction, the regions it could be in, from none put
   // down.
-  const chaos = has(rules, "chaos") && chaosBounds(arrowSides(chaosarrows), chaoscounts, grid, out, new Int8Array(144));
+  const chaos = has(rules, "chaos") && chaosBounds(arrowSides(chaosarrows), countSides(chaoscounts), grid, out, new Int8Array(144));
   rellikBounds(relliks, grid, out);
   lunchboxBounds(lunchboxes, grid, out);
   sayBounds(sayCages(looksays), grid, out);
   equalityBounds(equalities, grid, out);
-  equalSumBounds(equalsums.map(({ cells }) => piecesOf(cells)), grid, out);
-  sameValueBounds(samevalues.map(({ cells }) => piecesOf(cells)), grid, out);
+  equalSumBounds(equalsums.map(piecesFor), grid, out);
+  sameValueBounds(samevalues.map(piecesFor), grid, out);
   connectedBounds(linkCages(connecteds), grid, out);
   countDistinctBounds(distincts, grid, out);
   thermoBounds(thermos, grid, out);
   arrowBounds(arrows, grid, out);
   scaleBounds(scales(doubles, pills), grid, out);
   whisperBounds(whispers, grid, out, whisperGap(rules));
+  whisperBounds(dutches, grid, out, DUTCH_GAP);
   renbanBounds(renbans, grid, out);
   palindromeBounds(palindromes, grid, out);
   zipperBounds(zippers, grid, out);
@@ -3779,7 +3913,7 @@ export function variantCandidates(grid, variant) {
 export const BUDGET = 400000;
 
 function search(grid, variant, found) {
-  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, chaosarrows, chaoscounts, ranks, indexings, indexcells, regions, rules } = norm(variant);
+  const { cages, relliks, lunchboxes, looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, circles, circlesets, chaosarrows, chaoscounts, ranks, indexings, indexcells, regions, rules } = norm(variant);
   const { houses, housesOf, pairs } = layout(rules, regions);
   const gap = whisperGap(rules);
   const sets = circleSets(circles, circlesets);
@@ -3787,8 +3921,8 @@ function search(grid, variant, found) {
   const untied = has(rules, "norankties");
   const pointers = indexers(indexings, indexcells);
   const says = sayCages(looksays);
-  const sumGroups = equalsums.map(({ cells }) => piecesOf(cells));
-  const sameGroups = samevalues.map(({ cells }) => piecesOf(cells));
+  const sumGroups = equalsums.map(piecesFor);
+  const sameGroups = samevalues.map(piecesFor);
   const links = linkCages(connecteds);
   const balances = scales(doubles, pills);
   const runs = regionRuns(regionsums, regions);
@@ -3798,6 +3932,7 @@ function search(grid, variant, found) {
   const flatmates = has(rules, "dutchflatmates");
   const chaos = has(rules, "chaos");
   const sides = arrowSides(chaosarrows);
+  const counts = countSides(chaoscounts);
   // Under Doppelgänger, its 0 among the digits, and the digits each house
   // must hold: every digit 1 to 9 for a classic house, and under
   // Doppelgänger a 0 and those its row, column or box cannot be missing,
@@ -3858,7 +3993,7 @@ function search(grid, variant, found) {
       for (const o of pairs[c]) if (g[o]) m &= ~(1 << g[o]);
       free[c] = m;
     }
-    if (chaos && !chaosBounds(sides, chaoscounts, g, free, ws)) return null;
+    if (chaos && !chaosBounds(sides, counts, g, free, ws)) return null;
     if (relliks.length && !rellikBounds(relliks, g, free)) return null;
     if (lunchboxes.length && !lunchboxBounds(lunchboxes, g, free)) return null;
     if (says.length && !sayBounds(says, g, free)) return null;
@@ -3871,6 +4006,7 @@ function search(grid, variant, found) {
     if (arrows.length && !arrowBounds(arrows, g, free)) return null;
     if (balances.length && !scaleBounds(balances, g, free)) return null;
     if (whispers.length && !whisperBounds(whispers, g, free, gap)) return null;
+    if (dutches.length && !whisperBounds(dutches, g, free, DUTCH_GAP)) return null;
     if (renbans.length && !renbanBounds(renbans, g, free)) return null;
     if (palindromes.length && !palindromeBounds(palindromes, g, free)) return null;
     if (zippers.length && !zipperBounds(zippers, g, free)) return null;
@@ -3992,7 +4128,7 @@ function search(grid, variant, found) {
     // Under Chaos Construction, before branching, each side is tried both
     // ways; what that decides is kept, and the step looked at again.
     while (chaos && next?.branch) {
-      const probed = chaosProbe(sides, chaoscounts, g, frees[depth], ws, () => ++steps > BUDGET);
+      const probed = chaosProbe(sides, counts, g, frees[depth], ws, () => ++steps > BUDGET);
       if (steps > BUDGET) {
         spent = true;
         return true;

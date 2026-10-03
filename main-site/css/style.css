@@ -547,6 +547,7 @@ body {
    which here is a thermometer's, so blue; zippers pink, entropic lines
    gold and modular lines orange. */
 .whisper,
+.dutch,
 .renban,
 .palindrome,
 .zipper,
@@ -558,6 +559,8 @@ body {
   opacity: 0.4;
 }
 .whisper { stroke: var(--ok); }
+/* Dutch Whispers: the same green, dashed, square-ended so the gaps show. */
+.dutch { stroke: var(--ok); stroke-linecap: butt; }
 .renban { stroke: #9a5bd8; }
 .palindrome { stroke: #3f86d4; }
 .zipper { stroke: #d4509a; }
@@ -599,6 +602,7 @@ body {
   opacity: 0.4;
 }
 .whisper-pending,
+.dutch-pending,
 .renban-pending,
 .palindrome-pending,
 .zipper-pending,
@@ -729,6 +733,18 @@ body {
   stroke-linejoin: round;
   opacity: 0.8;
 }
+/* A Chaos Arrow's own arms, and a Chaos Count's own cells: a dotted line
+   from its digit along the arm, or to each cell it counts, which has a
+   small dashed square in its corner. */
+.chaos-arm,
+.chaos-link {
+  fill: none;
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.45;
+}
+.chaos-link { opacity: 0.3; }
 /* Warm, so windows never pass for the boxes' green tint. */
 .cell.window { background: color-mix(in srgb, var(--warn) 22%, transparent); }
 /* Row/Column Indexing's rows and columns: cool, so they never pass for a

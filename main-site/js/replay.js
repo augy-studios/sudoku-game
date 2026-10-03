@@ -74,7 +74,7 @@ export class Replay {
   // game: { puzzle, solution, log, players, cages?, relliks?, lunchboxes?,
   // looksays?, equalities?, equalsums?, samevalues?, connecteds?,
   // distincts?, thermos?, arrows?,
-  // doubles?, pills?, whispers?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
+  // doubles?, pills?, whispers?, dutches?, renbans?, palindromes?, zippers?, betweens?, lockouts?,
   // entropics?, modulars?, sumlines?, regionsums?, indexes?, dots?, xvs?, signs?, quads?, circles?, sandwiches?, littles?, skyscrapers?, xsums?, hiddens?, rooms?, ranks?, indexings?, regions?,
   // rules? }.
   // view: { highlightSame }.
@@ -141,6 +141,7 @@ export class Replay {
       doubles: this.game.doubles ?? null,
       pills: this.game.pills ?? null,
       whispers: this.game.whispers ?? null,
+      dutches: this.game.dutches ?? null,
       renbans: this.game.renbans ?? null,
       palindromes: this.game.palindromes ?? null,
       zippers: this.game.zippers ?? null,

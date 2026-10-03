@@ -266,8 +266,8 @@
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="arrow">Arrow</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="doublearrow">Double Arrow</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="pillarrow">Pill Arrow</button>
-                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="whisper">Whispers</button>
-                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="dutchwhispers">Dutch Whispers</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="whisper">German Whispers</button>
+                            <button class="rule-btn" type="button" aria-pressed="false" data-rule="dutch">Dutch Whispers</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="renban">Renban</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="palindrome">Palindrome</button>
                             <button class="rule-btn" type="button" aria-pressed="false" data-rule="zipper">Zipper</button>
@@ -339,6 +339,10 @@
                     <label id="cageSumLabel" class="field-label" for="cageSum">Cage sum</label>
                     <button id="cageKind" class="btn btn-quiet pill hidden" type="button"><span id="cageKindLabel">Killer cage</span></button>
                     <input id="cageSum" class="field cage-sum-field" type="text" inputmode="numeric" autocomplete="off" placeholder="Sum" enterkeyhint="done">
+                    <!-- A Connected Values cage's group size, if it has one. -->
+                    <input id="cageSize" class="field cage-sum-field hidden" type="text" inputmode="numeric" autocomplete="off" placeholder="Size" enterkeyhint="done" aria-label="Group size, if any">
+                    <!-- Equal Sum and Same Values: the cells tapped so far are one piece, even beside the next. -->
+                    <button id="cageNext" class="btn btn-quiet pill hidden" type="button"><span>Next piece</span></button>
                     <button id="cageAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="cageAddLabel">Add cage</span></button>
                     <button id="cageRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span>Remove cage</button>
                     <button id="cageDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
@@ -349,6 +353,8 @@
                     <label id="lineSumLabel" class="field-label hidden" for="lineSum">Sum line's sum</label>
                     <input id="lineSum" class="field cage-sum-field hidden" type="text" inputmode="numeric" autocomplete="off" placeholder="Sum" enterkeyhint="done">
                     <button id="linePill" class="btn btn-quiet pill hidden" type="button"><span id="linePillLabel">Pill of 2</span></button>
+                    <!-- The Whispers tool's, with both kinds on: which kind the line is. -->
+                    <button id="lineKind" class="btn btn-quiet pill hidden" type="button"><span id="lineKindLabel">German line</span></button>
                     <button id="lineAdd" class="btn btn-primary pill" type="button"><span data-icon="check"></span><span id="lineAddLabel">Add thermo</span></button>
                     <button id="lineRemove" class="btn btn-quiet pill hidden" type="button"><span data-icon="trash"></span><span id="lineRemoveLabel">Remove thermo</span></button>
                     <button id="lineDone" class="btn btn-quiet pill" type="button"><span data-icon="close"></span>Done</button>
@@ -419,6 +425,8 @@
 
                 <div class="game-actions">
                     <button id="solverGo" class="btn btn-primary pill" type="button"><span data-icon="bulb" id="solverGoIcon"></span><span id="solverGoLabel">Help me solve it</span></button>
+                    <!-- Create only: a made-up puzzle with the rules on, to show how one looks (sample.js). -->
+                    <button id="solverSample" class="btn btn-quiet pill" type="button" aria-pressed="false"><span data-icon="grid"></span><span id="solverSampleLabel">Show sample</span></button>
                     <button id="solverPlay" class="btn btn-primary pill" type="button"><span data-icon="play"></span>Play it</button>
                     <button id="solverSeedCopy" class="btn btn-quiet pill" type="button"><span data-icon="copy"></span><span id="solverSeedCopyLabel">Copy seed</span></button>
                     <button id="solverCands" class="btn btn-quiet pill" type="button" aria-pressed="false"><span data-icon="dots"></span><span id="solverCandsLabel">Show candidates</span></button>

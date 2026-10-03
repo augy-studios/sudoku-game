@@ -10,12 +10,10 @@
 // list  the variant's list that holds the drawn part, or none for a switch
 //       rule (RULES in variant.js, whose key is the same as this one's).
 // also  another list that holds more of the same part, if it has one.
-// replaces  the entry a switch rule stands in place of, whose rule it
-//       changes, so the two are never explained together.
 // rule  what it means, for someone solving.
 // draw  how to put it on, for someone typing a puzzle in or making one.
 
-import { RULES, LOCKOUT_GAP, SUM_LINE_MAX } from "./variant.js";
+import { RULES, LOCKOUT_GAP, SUM_LINE_MAX, hasRule } from "./variant.js";
 
 export const RULE_HELP = {
   killer: {
@@ -51,20 +49,20 @@ export const RULE_HELP = {
   equalsum: {
     name: "Equal Sum",
     list: "equalsums",
-    rule: "A dashed cage marked Σ comes in pieces apart from each other, and every piece adds up to the same total: a 7 alone, and a 3 with a 4. With more than one, ΣA's pieces match each other, and ΣB's theirs. Digits may repeat if nothing else stops them.",
-    draw: "Tap Cages, then the cells of two or more pieces, and tap Add cage. Cells touching along a side make one piece, so keep the pieces apart. With other kinds of cage on, pick Equal Sum cage first.",
+    rule: "A dashed cage marked Σ comes in pieces, each outlined on its own, and every piece adds up to the same total: a 7 alone, and a 3 with a 4. With more than one, ΣA's pieces match each other, and ΣB's theirs. Digits may repeat if nothing else stops them.",
+    draw: "Tap Cages, then the cells of two or more pieces, and tap Add cage. Cells touching along a side make one piece, unless you tap Next piece between them. With other kinds of cage on, pick Equal Sum cage first.",
   },
   samevalue: {
     name: "Same Values",
     list: "samevalues",
-    rule: "A dashed cage marked ≡ comes in pieces of the same size, apart from each other, and every piece holds the same digits in any order: 1 2 4 in one, 4 1 2 in another. A digit twice in one is twice in each.",
-    draw: "Tap Cages, then the cells of two or more pieces the same size, and tap Add cage. Cells touching along a side make one piece, so keep the pieces apart. With other kinds of cage on, pick Same Values cage first.",
+    rule: "A dashed cage marked ≡ comes in pieces of the same size, each outlined on its own, and every piece holds the same digits in any order: 1 2 4 in one, 4 1 2 in another. A digit twice in one is twice in each.",
+    draw: "Tap Cages, then the cells of two or more pieces the same size, and tap Add cage. Cells touching along a side make one piece, unless you tap Next piece between them. With other kinds of cage on, pick Same Values cage first.",
   },
   connected: {
     name: "Connected Values",
     list: "connecteds",
-    rule: "In a dashed cage marked with digits, like ~135, the cells holding any of them join up edge to edge into one group, and at least one does.",
-    draw: "Tap Cages, then the cells of a cage, type its digits, like 135, and tap Add cage. With other kinds of cage on, pick Connected Values cage first.",
+    rule: "In a dashed cage marked with digits, like ~135, the cells holding any of them join up edge to edge into one group, and at least one does. A number after a colon, like ~135:4, is how many cells that group has.",
+    draw: "Tap Cages, then the cells of a cage, type its digits, like 135, and if you like the group's size in the Size box, and tap Add cage. With other kinds of cage on, pick Connected Values cage first.",
   },
   countdistinct: {
     name: "Count Distinct",
@@ -110,14 +108,14 @@ export const RULE_HELP = {
   whisper: {
     name: "German Whispers",
     list: "whispers",
-    rule: "Digits next to each other on a green line differ by at least 5, so a 5 never goes on one.",
+    rule: "Digits next to each other on a solid green line differ by at least 5, so a 5 never goes on one.",
     draw: "Tap Whispers, then each cell along the line from one end, and tap Add whisper.",
   },
-  dutchwhispers: {
+  dutch: {
     name: "Dutch Whispers",
-    replaces: "whisper",
-    rule: "The green lines are Dutch Whispers: digits next to each other on one differ by at least 4, so a 5 on one sits only next to a 1 or a 9.",
-    draw: "Draw the lines with Whispers; this turns every one of them Dutch.",
+    list: "dutches",
+    rule: "Digits next to each other on a dashed green line differ by at least 4, so a 5 on one sits only next to a 1 or a 9.",
+    draw: "Tap Whispers, then each cell along the line from one end, and tap Add whisper. With German Whispers on too, the kind button says which a line is.",
   },
   renban: {
     name: "Renban",
@@ -213,14 +211,14 @@ export const RULE_HELP = {
   chaosarrow: {
     name: "Chaos Arrow",
     list: "chaosarrows",
-    rule: "Under Chaos Construction, a digit with small arrows at its edges counts itself and the cells of its own region in a straight line from it each way an arrow points, up to the first cell that is not: a 4 pointing left and right, with its region running two cells left and one right.",
-    draw: "Turn on Chaos Construction too. Tap Marks, tap the Middle button until it says Chaos arrow, then tap the middle of a cell for an arrow pointing every way, and tap near one of its sides to turn that way off or back on. Tap its middle again to take it off.",
+    rule: "Under Chaos Construction, a digit with small arrows at its edges counts itself and the cells of its own region in a straight line from it each way an arrow points, up to the first cell that is not: a 4 pointing left and right, with its region running two cells left and one right. An arrow with dotted arms of its own counts along those instead, turns and all.",
+    draw: "Turn on Chaos Construction too. Tap Marks, tap the Middle button until it says Chaos arrow, then tap the middle of a cell for an arrow pointing every way, and tap near one of its sides to turn that way off or back on. Tap its middle again to take it off. For arms of its own, pick Chaos arms with Middle, tap the arrow's cell, then cells one beside the next along each arm; the last cell of an arm takes it back, and the arrow's cell is done.",
   },
   chaoscount: {
     name: "Chaos Count",
     list: "chaoscounts",
-    rule: "Under Chaos Construction, a digit in a dashed square counts itself and the cells round it, touching it along a side or at a corner, that are in its own region: a 3 has two of the eight round it in its region.",
-    draw: "Turn on Chaos Construction too. Tap Marks, tap the Middle button until it says Chaos count, then tap the middle of a cell to put one in it, or take it out.",
+    rule: "Under Chaos Construction, a digit in a dashed square counts itself and the cells round it, touching it along a side or at a corner, that are in its own region: a 3 has two of the eight round it in its region. One that names cells of its own, marked with small dashed squares, counts those instead, wherever they are.",
+    draw: "Turn on Chaos Construction too. Tap Marks, tap the Middle button until it says Chaos count, then tap the middle of a cell to put one in it, or take it out. For cells of its own, pick Count cells with Middle, tap the count's cell, then each cell it counts, and its cell again when done.",
   },
   yinyang: {
     name: "Yin-Yang",
@@ -356,11 +354,13 @@ export const RULE_HELP = {
 
 // The rules a variant uses, as keys of RULE_HELP in its order: those whose
 // part it has, and its switch rules. variant: as variant.js has it, or a
-// made seed.
+// made seed. A seed from before Dutch Whispers lines had a rule turning
+// every whisper line Dutch, so its lines are explained as Dutch.
 export function rulesOf(variant) {
   if (!variant) return [];
+  const dutch = hasRule(variant.rules ?? 0, "dutchwhispers");
   const keys = Object.entries(RULE_HELP)
-    .filter(([key, h]) => (h.list ? variant[h.list]?.length || variant[h.also]?.length : (variant.rules ?? 0) & (RULES.find((r) => r.key === key)?.bit ?? 0)))
+    .filter(([key, h]) => (h.list ? variant[h.list]?.length || variant[h.also]?.length || (key === "dutch" && dutch && variant.whispers?.length) : (variant.rules ?? 0) & (RULES.find((r) => r.key === key)?.bit ?? 0)))
     .map(([key]) => key);
-  return keys.filter((key) => !keys.some((other) => RULE_HELP[other].replaces === key));
+  return dutch ? keys.filter((key) => key !== "whisper") : keys;
 }

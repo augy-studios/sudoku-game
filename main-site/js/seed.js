@@ -17,7 +17,7 @@
 // QCV for Connected Values cages, QCD for Count Distinct cages,
 // T for thermometers, A for arrows, QDA for double arrows, QPA for pill
 // arrows, S for German Whispers lines, R for renban lines, O for
-// palindrome lines, Z for zipper lines, C for between lines, F for
+// palindrome lines, QDL for Dutch Whispers lines, Z for zipper lines, C for between lines, F for
 // lockout lines, QEN for entropic lines, QMO for modular
 // lines, QSL for sum lines, QRS for region sum lines, QVX for value
 // indexing lines, P for Kropki dots, V for XV marks, QGT for Greater Than signs, QQD
@@ -28,7 +28,9 @@
 // QFR for Full Rank clues, QRX for Row/Column Indexing marks, QCX for single
 // indexing cells and J for a Jigsaw's regions, which the seed then carries
 // too, and D, N, G, W, QDG, QAC, QSK, QSX, QGE, QGM, QAT, QDF, QDW, QNT,
-// QCT, QCH and QDP for the switch rules (variant.js). Under Doppelgänger,
+// QCT, QCH and QDP for the switch rules (variant.js), then QGS for
+// Connected Values cages' group sizes, QAM for Chaos Arrows' own arms and
+// QCL for Chaos Counts' own cells (DETAILS). Under Doppelgänger,
 // QDP, the clues go in base 10, its 0 the tenth. Once the single
 // letters ran out, a new one became Q and two more: Q is read with the two
 // after it, and never alone, so a seed from before reads as it did.
@@ -47,7 +49,8 @@ import {
   sameValueProblem,
   connectedProblem,
   distinctProblem,
-  piecesOf,
+  piecesFor,
+  tidyPieces,
   clueMask,
   LUNCHBOX_MAX,
   thermoProblem,
@@ -57,6 +60,7 @@ import {
   PILL_ARROW_MOST,
   touching,
   whisperProblem,
+  dutchProblem,
   renbanProblem,
   palindromeProblem,
   zipperProblem,
@@ -86,6 +90,8 @@ import {
   CIRCLE_SETS_MOST,
   chaosArrowProblem,
   chaosCountProblem,
+  countCell,
+  sideOf,
   hasRule,
   shadeProblem,
   zeroClash,
@@ -262,8 +268,14 @@ function decodeGrid(body, base = 9) {
    and each one's cell and whether it goes by its row or its column. Then
    a Jigsaw's regions: for each pair of neighbours, whether
    they share a region, which gives back the regions as the shared edges
-   give back cages. Each part is there only when the seed's letters say
-   so, so a seed from before a part came reads as it did. */
+   give back cages. Then the details: for each Connected Values cage its
+   group size or none; for each Chaos Arrow whether it has arms of its own,
+   and if so how many and each one's length and steps; for each Chaos Count
+   whether it counts cells of its own, and if so how many and each cell.
+   Each part, and each detail, is there only when the seed's letters say
+   so, so a seed from before a part came reads as it did. Equal Sum and
+   Same Values pieces side by side need nothing more: as pieces are written
+   as cages, the sides between them say where one ends. */
 
 function packDigits(digits) {
   let n = 0n;
@@ -321,6 +333,7 @@ function encodeParts(grid, parts, base = 9) {
   for (let c = 0; c < 81; c++) digits.push([grid[c] ? 1 : 0, 2]);
   for (let c = 0; c < 81; c++) if (grid[c]) digits.push([grid[c] - 1, base]);
   for (const p of PARTS) if (parts[p.list].length) p.write(digits, parts[p.list]);
+  for (const d of detailsOf(parts)) d.write(digits, parts[d.list]);
   return toBody(packDigits(digits));
 }
 
@@ -344,8 +357,10 @@ function writeSay(digits, { clue }) {
 // Cages in pieces, Equal Sum or Same Values: the pieces as cages, then for
 // each piece, in order of its first cell, which cage it is in, counting
 // cages as their first piece comes: one of those so far, or the next.
+// Pieces side by side are told apart as cages are, by the sides between
+// them, so they need nothing more.
 function writePieces(digits, cages) {
-  const pieces = cages.flatMap((cage, k) => piecesOf(cage.cells).map((cells) => ({ cells, k }))).sort((a, b) => a.cells[0] - b.cells[0]);
+  const pieces = cages.flatMap((cage, k) => piecesFor(cage).map((cells) => ({ cells, k }))).sort((a, b) => a.cells[0] - b.cells[0]);
   writeCages(digits, pieces, () => {});
   const order = new Map();
   for (const { k } of pieces) {
@@ -355,14 +370,16 @@ function writePieces(digits, cages) {
   }
 }
 
+// The other way: each cage's pieces, kept as `pieces` only where some sit
+// side by side, so a seed from before reads as it did.
 function readPieces(take) {
   const cages = [];
   for (const { cells } of readCages(take, () => ({}))) {
     const k = take(cages.length + 1);
-    if (k === cages.length) cages.push({ cells: [] });
-    cages[k].cells.push(...cells);
+    if (k === cages.length) cages.push([]);
+    cages[k].push(cells);
   }
-  return cages.map(({ cells }) => ({ cells: cells.sort((a, b) => a - b) }));
+  return cages.map((pieces) => tidyPieces(pieces.flat().sort((a, b) => a - b), pieces));
 }
 
 function readSay(take) {
@@ -561,10 +578,11 @@ function readCircleSets(take) {
 // Each set's cells in order, the sets as they were drawn.
 const sortCircleSets = (sets) => sets.map(sortCircles);
 
-// Chaos Arrows: how many, then each one's cell and its ways.
+// Chaos Arrows: how many, then each one's cell and its ways. One with arms
+// of its own has them written after every part (DETAILS), and 1 here.
 function writeChaosArrows(digits, arrows) {
   digits.push([arrows.length - 1, 81]);
-  for (const { cell, ways } of arrows) digits.push([cell, 81], [ways - 1, 15]);
+  for (const { cell, ways } of arrows) digits.push([cell, 81], [(ways ?? 1) - 1, 15]);
 }
 
 function readChaosArrows(take) {
@@ -572,7 +590,72 @@ function readChaosArrows(take) {
   return Array.from({ length: count }, () => ({ cell: take(81), ways: take(15) + 1 }));
 }
 
-const sortChaosArrows = (arrows) => arrows.map(({ cell, ways }) => ({ cell, ways })).sort((a, b) => a.cell - b.cell);
+const sortChaosArrows = (arrows) =>
+  arrows.map(({ cell, ways, arms }) => (arms ? { cell, arms: arms.map((arm) => arm.slice()) } : { cell, ways })).sort((a, b) => a.cell - b.cell);
+
+// A Chaos Arrow's own arms, for each arrow in order: 0 for none, or 1 and
+// how many, and each one's length and steps, each to the cell beside the
+// last, up, right, down or left, from the arrow's cell.
+const SIDE_STEPS = [-9, 1, 9, -1];
+function writeArms(digits, arrows) {
+  for (const { cell, arms } of arrows) {
+    digits.push([arms ? 1 : 0, 2]);
+    if (!arms) continue;
+    digits.push([arms.length - 1, 4]);
+    for (const arm of arms) {
+      digits.push([arm.length - 1, 80]);
+      arm.forEach((c, i) => digits.push([SIDE_STEPS.indexOf(c - (i ? arm[i - 1] : cell)), 4]));
+    }
+  }
+}
+
+// The other way; null if an arm steps off the board or round onto the next
+// row.
+function readArms(take, arrows) {
+  const out = [];
+  for (const { cell, ways } of arrows) {
+    if (!take(2)) {
+      out.push({ cell, ways });
+      continue;
+    }
+    const arms = [];
+    for (let a = take(4) + 1; a > 0; a--) {
+      const arm = [];
+      for (let n = take(80) + 1, at = cell; n > 0; n--) {
+        const next = at + SIDE_STEPS[take(4)];
+        if (next < 0 || next > 80 || sideOf(at, next) < 0) return null;
+        arm.push((at = next));
+      }
+      arms.push(arm);
+    }
+    out.push({ cell, arms });
+  }
+  return out;
+}
+
+// A Chaos Count's own cells, for each count in order: 0 for none, or 1 and
+// how many, and each cell.
+function writeCounted(digits, counts) {
+  for (const count of counts) {
+    const own = typeof count !== "number";
+    digits.push([own ? 1 : 0, 2]);
+    if (!own) continue;
+    digits.push([count.cells.length - 1, 80]);
+    for (const c of count.cells) digits.push([c, 81]);
+  }
+}
+
+function readCounted(take, counts) {
+  return counts.map((cell) => {
+    if (!take(2)) return cell;
+    const n = take(80) + 1;
+    return { cell, cells: Array.from({ length: n }, () => take(81)) };
+  });
+}
+
+// By cell, those of their own with their cells in reading order.
+const sortCounts = (counts) =>
+  counts.map((x) => (typeof x === "number" ? x : { cell: x.cell, cells: x.cells.slice().sort((a, b) => a - b) })).sort((a, b) => countCell(a) - countCell(b));
 
 // Yin-Yang's circles: a flag, then either how many and each one's cell and
 // shade, or every cell's shade, 0 for none; whichever is shorter.
@@ -736,8 +819,9 @@ const sortLittles = (littles) =>
     .sort((a, b) => a.cells[0] - b.cells[0] || b.cells[1] - a.cells[1]);
 
 // withs: which parts the seed's letters say it has, { cages, thermos, ... }
-// as PARTS names them; base as encodeGrid has it.
-function decodeParts(body, withs, base = 9) {
+// as PARTS names them; details, the DETAILS they name; base as encodeGrid
+// has it.
+function decodeParts(body, withs, details = [], base = 9) {
   let n = fromBody(body);
   if (n == null) return null;
   const take = (radix) => {
@@ -754,6 +838,11 @@ function decodeParts(body, withs, base = 9) {
   for (const p of PARTS) {
     out[p.list] = withs[p.list] ? p.read(take) : [];
     if (!out[p.list]) return null;
+  }
+  for (const d of details) {
+    if (!out[d.list].length) return null;
+    out[d.list] = d.read(take, out[d.list]);
+    if (!out[d.list]) return null;
   }
   return n === 0n ? out : null;
 }
@@ -779,13 +868,16 @@ function readCages(take, clue = () => ({ sum: take(46) })) {
 
 // Cages in order of their first cell, each cage's cells in reading order,
 // with its clue, if its kind has one, and its control, if it has one.
+// A Connected Values cage keeps its size, and a cage in pieces side by side
+// its pieces.
 function sortCages(cages) {
   return cages
-    .map(({ sum, clue, control, cells }) => ({
+    .map(({ sum, clue, control, size, cells, pieces }) => ({
       ...(sum != null ? { sum } : {}),
       ...(clue != null ? { clue } : {}),
       ...(control != null ? { control } : {}),
-      cells: cells.slice().sort((a, b) => a - b),
+      ...(size != null ? { size } : {}),
+      ...(pieces ? tidyPieces(cells.slice().sort((a, b) => a - b), pieces) : { cells: cells.slice().sort((a, b) => a - b) }),
     }))
     .sort((a, b) => a.cells[0] - b.cells[0]);
 }
@@ -876,6 +968,7 @@ const PARTS = [
   lines("doubles", "QDA", "Double Arrow", doubleProblem),
   { list: "pills", letter: "QPA", name: "Pill Arrow", problem: pillProblem, write: writePills, read: readPills, sort: copyPills },
   lines("whispers", "S", "German Whispers", whisperProblem),
+  lines("dutches", "QDL", "Dutch Whispers", dutchProblem),
   lines("renbans", "R", "Renban", renbanProblem),
   lines("palindromes", "O", "Palindrome", palindromeProblem),
   lines("zippers", "Z", "Zipper", zipperProblem),
@@ -901,9 +994,11 @@ const PARTS = [
     name: "Chaos Count",
     rule: "chaos",
     problem: chaosCountProblem,
-    write: (digits, counts) => writeCircles(digits, counts, 81),
+    // A count of its own cells is written by its cell here, and its cells
+    // after every part (DETAILS).
+    write: (digits, counts) => writeCircles(digits, counts.map(countCell), 81),
     read: (take) => readCircles(take, 81),
-    sort: sortCircles,
+    sort: sortCounts,
   },
   { list: "shades", letter: "QYY", name: "Yin-Yang", problem: shadeProblem, write: writeShades, read: readShades, sort: sortShades },
   { list: "sandwiches", letter: "B", name: "Sandwich", problem: sandwichProblem, write: writeSandwiches, read: readSandwiches, sort: sortSandwiches },
@@ -918,8 +1013,32 @@ const PARTS = [
   { list: "regions", letter: "J", name: "Jigsaw", problem: regionProblem, write: writeRegions, read: readRegions, sort: sortRegions },
 ];
 
+// More about parts already written, each under letters of its own and in
+// the body after every part, so a seed without them reads its parts as
+// they always were: a Connected Values cage's group size, a Chaos Arrow's
+// own arms and a Chaos Count's own cells. For each: the list it adds to,
+// whether a list needs it, and how it is written and read, read giving the
+// list with it, or null if it cannot be.
+const DETAILS = [
+  {
+    list: "connecteds",
+    letter: "QGS",
+    name: "Connected Values",
+    needed: (cages) => cages.some((k) => k.size != null),
+    // For each cage in order, its size, or 0 for none.
+    write: (digits, cages) => cages.forEach((k) => digits.push([k.size ?? 0, 82])),
+    read: (take, cages) =>
+      cages.map((k) => {
+        const size = take(82);
+        return size ? { ...k, size } : k;
+      }),
+  },
+  { list: "chaosarrows", letter: "QAM", name: "Chaos Arrow", needed: (arrows) => arrows.some((a) => a.arms), write: writeArms, read: readArms },
+  { list: "chaoscounts", letter: "QCL", name: "Chaos Count", needed: (counts) => counts.some((x) => typeof x !== "number"), write: writeCounted, read: readCounted },
+];
+
 // The letters that start a variant seed, in this order.
-const PREFIX = [...PARTS.map((p) => p.letter), ...RULES.map((r) => r.letter)];
+const PREFIX = [...PARTS.map((p) => p.letter), ...RULES.map((r) => r.letter), ...DETAILS.map((d) => d.letter)];
 
 // The variant's letters at the front of `raw`, as PREFIX has them: one
 // character each, or Q and the two after it. { letters, at }, `at` where
@@ -940,12 +1059,16 @@ function readLetters(raw) {
 function prefixFor(parts, rules) {
   return (
     PARTS.filter((p) => parts[p.list].length).map((p) => p.letter).join("") +
-    RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("")
+    RULES.filter((r) => rules & r.bit).map((r) => r.letter).join("") +
+    detailsOf(parts).map((d) => d.letter).join("")
   );
 }
 
+// The DETAILS the parts need.
+const detailsOf = (parts) => DETAILS.filter((d) => parts[d.list].length && d.needed(parts[d.list]));
+
 // The seed of a made puzzle. variant: { cages, relliks, lunchboxes,
-// looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
+// looksays, equalities, equalsums, samevalues, connecteds, distincts, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars,
 // sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, sandwiches, littles, skyscrapers, xsums, hiddens,
 // rooms, ranks, indexings, indexcells, regions, rules } for a variant puzzle (variant.js), or nothing for
 // a classic one.
@@ -1020,7 +1143,7 @@ export function seedVariantName(text) {
   const head = String(text).split("-")[0].toUpperCase();
   if (LEVEL_IDS.includes(head)) return "";
   const { letters } = readLetters(head);
-  const names = letters.map((letter) => (PARTS.find((p) => p.letter === letter) ?? RULES.find((r) => r.letter === letter)).name);
+  const names = letters.map((letter) => [...PARTS, ...RULES, ...DETAILS].find((p) => p.letter === letter).name);
   const rules = RULES.filter((r) => letters.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
   // A part with two letters, such as Counting Circles' sets, is named once.
   return renamed([...new Set(names)], rules).join(", ");
@@ -1037,20 +1160,26 @@ function parseMade(letters, level, body) {
   let seed = null;
   const rules = RULES.filter((r) => letters.includes(r.letter)).reduce((m, r) => m | r.bit, 0);
   const withs = Object.fromEntries(PARTS.map((p) => [p.list, letters.includes(p.letter)]));
+  const details = DETAILS.filter((d) => letters.includes(d.letter));
   const base = hasRule(rules, "doppelganger") ? 10 : 9;
   if (PARTS.some((p) => withs[p.list])) {
-    const got = decodeParts(body, withs, base);
+    const got = decodeParts(body, withs, details, base);
     const variant = got && { ...got, rules };
     // Each part the letters name is there, well formed, and with the part or
-    // the rule it comes with, if it has one; and drawn regions never come
-    // with regions found while solving.
+    // the rule it comes with, if it has one; each detail named is one its
+    // part needs; and drawn regions never come with regions found while
+    // solving.
     const ok =
       variant &&
       PARTS.every((p) => !withs[p.list] || (variant[p.list].length && !(p.ruled ? p.problem(variant[p.list], rules) : p.problem(variant[p.list])) && (!p.with || withs[p.with]) && (!p.rule || hasRule(rules, p.rule)))) &&
+      details.every((d) => d.needed(variant[d.list])) &&
       !(withs.regions && hasRule(rules, "chaos")) &&
       !zeroClash(variant) &&
       variantSolutions(got.grid, variant, 2)?.length === 1;
     seed = ok ? madeSeed(level, got.grid, variant) : null;
+  } else if (details.length) {
+    // Details of parts the seed does not have.
+    seed = null;
   } else if (rules) {
     // The rules do some of the clues' work, so there is no least number.
     const grid = decodeGrid(body, base);
