@@ -88,7 +88,9 @@ digit in a row, column or box), or from the answer when neither is left.
 Hints refuse to build on a wrong digit and mark it instead. Check marks
 wrong digits, the candidates can be shown, and Solve fills the rest. Kept
 in this browser, never scored, and nothing is sent. Save image downloads the
-clues as a PNG.
+clues as a PNG, 8K (7680 pixels along its longer side) to print as large as
+anyone likes; a browser that cannot hold a canvas that big, as phones often
+cannot, gets the biggest it can, down to about a thousand pixels.
 
 **Create.** The fifth tab makes a puzzle. The clues go in as in the solver,
 and Check it says whether they have exactly one answer: when there are more,

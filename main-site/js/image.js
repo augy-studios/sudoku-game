@@ -61,8 +61,9 @@ const CIRCLE_SET_COLOURS = ["#3f86d4", "#d4509a", "#e0692a", "#9a5bd8", "#2f9e57
 // regionsums, indexes, dots, xvs, signs, quads, circles, circlesets,
 // sandwiches,
 // littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules } (variant.js), or nothing for
-// a classic puzzle.
-export async function drawPuzzle(grid, variant = null) {
+// a classic puzzle. side: how many pixels its longer side is, or 0 for as
+// drawn, about a thousand.
+export async function drawPuzzle(grid, variant = null, side = 0) {
   const cages = variant?.cages ?? [];
   const rules = variant?.rules ?? 0;
   const thermos = variant?.thermos ?? [];
@@ -110,13 +111,20 @@ export async function drawPuzzle(grid, variant = null) {
   } catch {
     // Falls back to the system font.
   }
+  // Drawn at its own size, then scaled as a whole to `side` pixels along its
+  // longer side, so everything stays in proportion and sharp.
+  const w = WIDTH + margin * 2;
+  const h = HEIGHT + margin * 2;
+  const scale = side ? side / Math.max(w, h) : 1;
   const canvas = document.createElement("canvas");
-  canvas.width = WIDTH + margin * 2;
-  canvas.height = HEIGHT + margin * 2;
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
   const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("no canvas that big");
+  ctx.scale(scale, scale);
 
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, w, h);
   ctx.translate(margin, margin);
 
   // Alternate boxes tinted, as on the board; a Jigsaw has none, nor does
@@ -644,7 +652,7 @@ export async function drawPuzzle(grid, variant = null) {
   const name = variantName({ ...variant, cages, thermos, arrows, doubles, pills, whispers, dutches, renbans, palindromes, zippers, betweens, lockouts, entropics, modulars, sumlines, regionsums, indexes, dots, xvs, signs, quads, circles, circlesets, chaosarrows, chaoscounts, shades, sandwiches, littles, skyscrapers, xsums, hiddens, rooms, ranks, indexings, indexcells, regions, rules });
   const caption = `${name ? `${name}  ·  ` : ""}uwuSudoku  ·  sudoku.uwuapps.org`;
   // A long list of rules shrinks to fit across the image.
-  const room = canvas.width - PAD * 2;
+  const room = w - PAD * 2;
   const wide = ctx.measureText(caption).width;
   if (wide > room) ctx.font = `${Math.floor((30 * room) / wide)}px ${FONT}`;
   ctx.fillText(caption, WIDTH / 2, PAD * 2 + BOARD + 20 + margin);
@@ -713,10 +721,28 @@ function cornerLabel(ctx, c, label) {
   ctx.fillText(label, x, y);
 }
 
-// Saves the grid as a PNG through the browser's download. True if it went.
+// The longer side a saved image tries for, biggest first: 8K, 7680 pixels,
+// for printing as large as anyone likes. A browser that cannot hold a canvas
+// that big, as phones often cannot, gets the biggest it can, down to the
+// image as drawn.
+const SAVE_SIDES = [7680, 4096, 2048, 0];
+
+// Saves the grid as a PNG through the browser's download, as big as the
+// browser allows. True if it went.
 export async function savePuzzleImage(grid, filename = "sudoku.png", variant = null) {
-  const canvas = await drawPuzzle(grid, variant);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  let blob = null;
+  for (const side of SAVE_SIDES) {
+    try {
+      const canvas = await drawPuzzle(grid, variant, side);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      // Release the pixels at once: an 8K canvas holds a quarter of a
+      // gigabyte.
+      canvas.width = canvas.height = 0;
+    } catch {
+      blob = null;
+    }
+    if (blob) break;
+  }
   if (!blob) return false;
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

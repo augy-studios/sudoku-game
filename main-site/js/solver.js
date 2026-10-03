@@ -1301,9 +1301,11 @@ async function onSeedCopy() {
   flash("solverSeedCopyLabel", (await copyText(seedLabel(made))) ? "Copied" : "Copy failed", "Copy seed");
 }
 
-// The clues as a PNG, to print or send.
+// The clues as a PNG, to print or send: 8K if the browser can hold it, which
+// takes a moment to make.
 async function onImage() {
   if (!s.clues.some(Boolean) && !drawn()) return;
+  $("solverImageLabel").textContent = "Saving…";
   let ok = false;
   try {
     ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png", variant());
