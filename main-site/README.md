@@ -105,8 +105,9 @@ Jigsaw's regions and an indexing mark, and takes every part from that grid,
 each checked by the engine, so every sum and mark is true; under a strict
 rule every side its marks fit is marked. Rules that cannot all hold in one
 grid are left out of its digits, and it says so. It follows the rule
-buttons as they are pressed, and Hide sample brings the person's own puzzle
-back untouched.
+buttons as they are pressed. Hide sample brings the person's own puzzle
+back untouched; Use sample puts the sample's clues and parts in as theirs,
+undoably, to change and check, as it may need more clues for one answer.
 
 Both open a seed, in the Open a seed box over the rule buttons or through
 Paste, while the clues go in: a generated seed's clues, or a made seed's

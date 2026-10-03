@@ -3043,6 +3043,24 @@ function scheduleSample() {
 
 const sampleReady = () => sample && sample.key === sampleKey();
 
+// Use sample: the sample's clues and parts go in as the person's own, to
+// change and check, undoably; of the rules on, any it has nothing of are
+// cleared. A Jigsaw's regions come too; Chaos Construction's are found, so
+// they never do.
+function useSample() {
+  if (!showingSample() || !sampleReady()) return;
+  const parts = {};
+  for (const [kind, P] of [...Object.entries(CAGES), ...Object.entries(LINES), ...Object.entries(EDGES), ...Object.entries(QUADS), ...Object.entries(OUTSIDE), ...Object.entries(EXTRAS)]) {
+    if (s[kind]) parts[P.list] = structuredClone(sample.parts[P.list] ?? []);
+  }
+  if (s.jigsaw && sample.regions) parts.regions = sample.regions.slice();
+  endCage();
+  change(sample.clues.slice(), parts);
+  sampleOn = false;
+  selected = null;
+  say("The sample is your puzzle now. It may need more clues for one answer: change it, then tap Check it. Undo brings yours back.");
+}
+
 // The board's view of the sample: its clues as givens, its parts, and the
 // regions and shading it was made with.
 function sampleView(settings) {
@@ -3080,7 +3098,7 @@ function sampleStatus() {
   if (chaosOnly.length && !chaos()) parts.push(`${chaosOnly.map((k) => RULE_HELP[k].name).join(" and ")} need Chaos Construction on.`);
   const rest = sample.missing.filter((k) => !chaosOnly.includes(k));
   if (rest.length) parts.push(`No example of ${rest.map((k) => RULE_HELP[k].name).join(", ")} fits this one.`);
-  parts.push("Turn rules on or off to see others, or tap Hide sample to go back to yours.");
+  parts.push("Turn rules on or off to see others. Use sample makes it yours to change; Hide sample goes back to yours.");
   return parts.join(" ");
 }
 
@@ -3387,11 +3405,13 @@ function render() {
     solverCopy: !cageKinds().length && !s.jigsaw && ![LINES, EDGES, QUADS, OUTSIDE].some((table) => Object.keys(table).some((kind) => s[kind])) && !s.rules,
     solverAnswer: solved,
     solverSample: creating() && enter,
+    solverUseSample: sampled,
     solverImage: true,
   };
   // A sample shows only itself, the rule buttons that change it, and the
-  // way back.
-  if (sampled) for (const id of Object.keys(shown)) if (!["solverRules", "solverRuleHelp", "solverSample"].includes(id)) shown[id] = false;
+  // ways back: hiding it, or using it.
+  if (sampled) for (const id of Object.keys(shown)) if (!["solverRules", "solverRuleHelp", "solverSample", "solverUseSample"].includes(id)) shown[id] = false;
+  $("solverUseSample").disabled = !sampleReady();
   for (const [id, on] of Object.entries(shown)) $(id).classList.toggle("hidden", !on);
   $("solverSample").setAttribute("aria-pressed", String(sampled));
   $("solverSampleLabel").textContent = sampled ? "Hide sample" : "Show sample";
@@ -3583,6 +3603,7 @@ export function initSolver({ reopen = true } = {}) {
   $("solverAnswer").addEventListener("click", onCopyAnswer);
   $("solverImage").addEventListener("click", onImage);
   $("solverSample").addEventListener("click", toggleSample);
+  $("solverUseSample").addEventListener("click", useSample);
   $("solverEdit").addEventListener("click", onEdit);
   $("solverBack").addEventListener("click", closeSolver);
   $("solverSeedOpen").addEventListener("click", onSeedOpen);
