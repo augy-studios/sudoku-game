@@ -97,7 +97,10 @@ and Check it says whether they have exactly one answer: when there are more,
 it points at a cell two answers disagree on, where a clue is wanted. A
 puzzle that passes is rated (by its blanks, and at least Hard if singles
 alone cannot finish it) and gets a seed that carries the whole puzzle, to
-copy, play, or save as an image with the clues.
+copy, play, or save as an image with the clues. The image is named by that
+seed, as `sudoku-H-B7K4Q-M9TRZ.png`: its short code, asked for first if it
+has not come yet, or the whole seed with no connection. A puzzle not yet
+checked has no seed, so its image is `sudoku-puzzle.png`.
 
 Show sample, while the clues go in, puts a made-up puzzle in the board's
 place with an example of each part the rules on would draw: a classic one

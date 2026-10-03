@@ -1302,13 +1302,20 @@ async function onSeedCopy() {
 }
 
 // The clues as a PNG, to print or send: 8K if the browser can hold it, which
-// takes a moment to make.
+// takes a moment to make. A made puzzle's is named by its seed, the short
+// code as Copy seed has it, asked for first if it has not come yet, or the
+// whole seed with no connection; one not yet checked has no seed to name.
 async function onImage() {
   if (!s.clues.some(Boolean) && !drawn()) return;
   $("solverImageLabel").textContent = "Saving…";
   let ok = false;
   try {
-    ok = await savePuzzleImage(s.clues, "sudoku-puzzle.png", variant());
+    let name = "sudoku-puzzle";
+    if (made) {
+      await fetchCode(made);
+      name = `sudoku-${seedLabel(made)}`;
+    }
+    ok = await savePuzzleImage(s.clues, `${name}.png`, variant());
   } catch {
     ok = false;
   }
